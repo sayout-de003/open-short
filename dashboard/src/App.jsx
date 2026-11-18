@@ -348,6 +348,16 @@ function App() {
 
   const [uploadUserId, setUploadUserId] = useState(() => localStorage.getItem('uploadUserId') || '');
   const [userProfiles, setUserProfiles] = useState([]); // List of {username, connected: []}
+  const [ytDirectConfigured, setYtDirectConfigured] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/youtube/config')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.configured) setYtDirectConfigured(true);
+      })
+      .catch(() => {});
+  }, []);
   // Post-generation social nudge: shown at the results peak until the user
   // either connects a network or dismisses it. Only 2.7% of cloud users who
   // reach the social flow ever connect an account — this is the moment (clips
@@ -2650,6 +2660,32 @@ function App() {
                 />
               </>
             )}
+          </div>
+
+          {/* YouTube Direct Publishing (OAuth 2.0) block */}
+          <div className={`rounded-input p-4 space-y-2 border ${ytDirectConfigured ? 'border-rule opacity-90' : 'border-rule2'}`}>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-ink flex items-center gap-2">
+                {ytDirectConfigured ? <Check size={12} className="text-ok" /> : <Youtube size={14} className="text-red-500" />}
+                YouTube Direct Publishing (OAuth 2.0) {ytDirectConfigured && <span className="text-ok font-semibold">— Connected</span>}
+              </p>
+              {ytDirectConfigured ? (
+                <span className="badge-ok text-[10px]">Active</span>
+              ) : (
+                <span className="badge-quiet text-[10px] text-warn">Not Connected</span>
+              )}
+            </div>
+            <p className="text-xs text-muted leading-relaxed">
+              Publish Shorts directly to your YouTube channel using Google YouTube Data API v3 without needing third-party aggregator keys.
+            </p>
+            <div className="pt-2">
+              <a
+                href="/api/youtube/auth/login"
+                className="btn-primary inline-flex items-center gap-2 py-2 px-4 text-xs font-medium"
+              >
+                <Youtube size={14} /> {ytDirectConfigured ? 'Reconnect / Switch YouTube Channel' : '1-Click Connect YouTube Channel'}
+              </a>
+            </div>
           </div>
 
           {/* Upload-Post block */}

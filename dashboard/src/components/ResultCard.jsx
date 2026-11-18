@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, Share2, AlertCircle, Loader2, Copy, Check, Wand2, Type, Calendar, Languages, FileText, Link2, Scissors, Crosshair, TrendingUp, Sparkles } from 'lucide-react';
+import { Download, Share2, AlertCircle, Loader2, Copy, Check, Wand2, Type, Calendar, Languages, FileText, Link2, Scissors, Crosshair, TrendingUp, Sparkles, Youtube } from 'lucide-react';
 import { getApiUrl } from '../config';
 import { apiFetch } from '../lib/api';
 import { platformOptions as buildPlatformOptions, defaultPlatformFlags, flagsFromList } from '../lib/socialPlatforms';
@@ -1234,7 +1234,14 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                 title="post clip"
                 size="md"
                 footer={
-                    (noAccountsConnected && !platforms.youtube) ? (
+                    (platforms.youtube && !ytDirectConfigured && !uploadPostKey && Object.keys(platforms).filter(k => platforms[k]).length === 1) ? (
+                        <a
+                            href="/api/youtube/auth/login"
+                            className="btn-primary w-full flex items-center justify-center gap-2 py-2.5 text-xs text-center font-medium"
+                        >
+                            <Youtube size={16} /> 1-Click Connect YouTube Channel
+                        </a>
+                    ) : (noAccountsConnected && !platforms.youtube) ? (
                         <button onClick={handleConnectAccounts} className="btn-primary w-full">
                             <Link2 size={16} /> connect accounts
                         </button>
@@ -1249,6 +1256,26 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                     )
                 }
             >
+                {platforms.youtube && !ytDirectConfigured && (
+                    <div className="mb-4 p-3 rounded-input text-xs bg-paper border border-brass/50 space-y-2 animate-fade">
+                        <div className="flex items-center justify-between">
+                            <span className="font-semibold text-ink flex items-center gap-1.5">
+                                <Youtube size={16} className="text-red-500" /> YouTube Direct Publishing
+                            </span>
+                            <span className="badge-quiet text-[10px] text-warn">1-Click OAuth</span>
+                        </div>
+                        <p className="text-xs text-muted leading-relaxed">
+                            Authorize your YouTube channel in 1 click to upload this clip directly to YouTube Shorts.
+                        </p>
+                        <a
+                            href="/api/youtube/auth/login"
+                            className="btn-primary w-full flex items-center justify-center gap-2 py-2 text-xs font-medium"
+                        >
+                            <Youtube size={14} /> 1-Click Connect YouTube Channel
+                        </a>
+                    </div>
+                )}
+
                 {!canPost && (
                     <div className="mb-4 px-3 py-2 rounded-input text-xs text-warn bg-[color-mix(in_oklab,var(--color-warn)_10%,transparent)] flex items-start gap-2">
                         <AlertCircle size={14} className="mt-0.5 shrink-0" />
@@ -1334,11 +1361,15 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                     {platforms.youtube && (
                         <div className="p-3 bg-paper rounded-input border border-rule space-y-2 animate-fade">
                             <div className="flex items-center justify-between text-xs text-ink2">
-                                <span className="eyebrow">YOUTUBE PRIVACY</span>
-                                {ytDirectConfigured && (
-                                    <span className="badge-quiet text-[10px] text-ok border border-ok/30 px-1.5 py-0.5 rounded">
-                                        Direct API Connected
+                                <span className="eyebrow flex items-center gap-1.5"><Youtube size={14} className="text-red-500" /> YOUTUBE PRIVACY</span>
+                                {ytDirectConfigured ? (
+                                    <span className="badge-quiet text-[10px] text-ok border border-ok/30 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                        <Check size={10} /> Direct API Connected
                                     </span>
+                                ) : (
+                                    <a href="/api/youtube/auth/login" className="text-[10px] text-brass hover:underline flex items-center gap-1 font-medium">
+                                        <Youtube size={12} /> 1-Click Connect →
+                                    </a>
                                 )}
                             </div>
                             <div className="flex gap-2">
