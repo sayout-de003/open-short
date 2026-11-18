@@ -38,6 +38,7 @@ import media_auth
 import remote_worker
 import yt_account
 import youtube_publisher
+import buffer_publisher
 import scheduler
 from jsonfile import write_json_atomic
 
@@ -9127,6 +9128,115 @@ async def publish_to_youtube(req: YouTubePublishRequest, request: Request):
         raise HTTPException(status_code=500, detail=f"YouTube API Error: {str(e)}")
 
 
+class BufferPublishRequest(BaseModel):
+    job_id: str
+    clip_index: int
+    channel_ids: Optional[List[str]] = None
+    title: Optional[str] = None
+    text: Optional[str] = None
+    due_at: Optional[str] = None
+
+
+class BufferTokenRequest(BaseModel):
+    token: str
+
+
+@app.get("/api/buffer/status")
+async def buffer_status():
+    """Check Buffer API configuration, account information, and connected channels."""
+    configured = buffer_publisher.is_buffer_configured()
+    account = None
+    channels = []
+    if configured:
+        try:
+            account = await asyncio.to_thread(buffer_publisher.get_account_info)
+            channels = await asyncio.to_thread(buffer_publisher.list_channels)
+        except Exception as e:
+            logger.warning(f"Error fetching Buffer status: {e}")
+    return {
+        "configured": configured,
+        "account": account,
+        "channels": channels,
+    }
+
+
+@app.get("/api/buffer/channels")
+async def buffer_channels():
+    """List connected social media channels in Buffer."""
+    if not buffer_publisher.is_buffer_configured():
+        return {"channels": []}
+    try:
+        channels = await asyncio.to_thread(buffer_publisher.list_channels)
+        return {"channels": channels}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Buffer API error: {str(e)}")
+
+
+@app.post("/api/buffer/token")
+async def set_buffer_token(req: BufferTokenRequest):
+    """Save or update the Buffer Access Token."""
+    if not req.token.strip():
+        raise HTTPException(status_code=400, detail="Token cannot be empty")
+    try:
+        # Validate token first
+        account = await asyncio.to_thread(buffer_publisher.get_account_info, token=req.token.strip())
+        buffer_publisher.save_buffer_token_to_env(req.token.strip())
+        return {"success": True, "account": account}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Buffer Token: {str(e)}")
+
+
+@app.post("/api/buffer/publish")
+async def publish_to_buffer(req: BufferPublishRequest, request: Request):
+    """Publish or schedule a clip to Buffer channels."""
+    if not buffer_publisher.is_buffer_configured():
+        raise HTTPException(status_code=400, detail="Buffer API is not configured. Set BUFFER_ACCESS_TOKEN in .env.")
+    
+    await _ensure_job_files(req.job_id, request)
+    if req.job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = jobs.get(req.job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    await _assert_job_owner(request, job)
+
+    clip, file_path, filename = _resolve_clip_video_file(job, req.job_id, req.clip_index)
+    title = req.title or clip.get("video_title_for_youtube_short") or "Short"
+    text = req.text or clip.get("video_description_for_instagram") or clip.get("video_description_for_tiktok") or title
+
+    all_channels = await asyncio.to_thread(buffer_publisher.list_channels)
+    if not all_channels:
+        raise HTTPException(
+            status_code=400, 
+            detail="No connected channels found in your Buffer organization. Please connect channels in buffer.com first."
+        )
+
+    if req.channel_ids:
+        target_channels = [c for c in all_channels if c.get("id") in req.channel_ids]
+    else:
+        target_channels = all_channels
+
+    if not target_channels:
+        raise HTTPException(status_code=400, detail="None of the specified channels were found in your Buffer account")
+
+    base_url = str(request.base_url).rstrip("/")
+    video_url = f"{base_url}/videos/{req.job_id}/{filename}"
+
+    try:
+        results = await asyncio.to_thread(
+            buffer_publisher.publish_to_buffer_channels,
+            channels=target_channels,
+            text=text,
+            video_url=video_url,
+            due_at=req.due_at,
+            title=title
+        )
+        return {"success": True, "results": results}
+    except Exception as e:
+        logger.error(f"Buffer publish failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Buffer error: {str(e)}")
+
+
 class ScheduleClipRequest(BaseModel):
     job_id: str
     clip_index: int
@@ -9343,11 +9453,44 @@ async def post_to_socials(req: SocialPostRequest, request: Request):
         if not req.platforms:
             return direct_yt_result or {"success": True, "direct_youtube": True}
 
+    # Check if Buffer is configured and has channels for remaining platforms
+    if buffer_publisher.is_buffer_configured():
+        try:
+            all_buf_channels = await asyncio.to_thread(buffer_publisher.list_channels)
+            matching = [c for c in all_buf_channels if c.get("service", "").lower() in [p.lower() for p in req.platforms]]
+            if matching:
+                clip, file_path, filename = _resolve_clip_video_file(job, req.job_id, req.clip_index)
+                title = req.title or clip.get("video_title_for_youtube_short") or "Short"
+                text = req.description or clip.get("video_description_for_instagram") or title
+                base_url = str(request.base_url).rstrip("/")
+                video_url = f"{base_url}/videos/{req.job_id}/{filename}"
+                buf_results = await asyncio.to_thread(
+                    buffer_publisher.publish_to_buffer_channels,
+                    channels=matching,
+                    text=text,
+                    video_url=video_url,
+                    due_at=req.scheduled_date,
+                    title=title
+                )
+                handled_services = set(c.get("service", "").lower() for c in matching)
+                req.platforms = [p for p in req.platforms if p.lower() not in handled_services]
+                if not req.platforms:
+                    return {
+                        "success": True,
+                        "buffer": True,
+                        "results": buf_results,
+                        "direct_youtube": direct_yt_result is not None
+                    }
+        except Exception as be:
+            logger.warning(f"Buffer posting check failed: {be}")
+
     # Resolve the Upload-Post key + profile. For managed users the server key is
     # used and their own profile is forced (body api_key / user_id are ignored).
     upload_key, forced_profile = await resolve_upload_post(request, req.api_key)
     if not upload_key:
-        raise HTTPException(status_code=400, detail="Missing Upload-Post API key")
+        if direct_yt_result:
+            return direct_yt_result
+        raise HTTPException(status_code=400, detail="Missing Upload-Post API key or Buffer connected channels for selected platforms.")
     post_user = resolve_post_profile(forced_profile, req.user_id)
 
     if BILLING_ENABLED and forced_profile:

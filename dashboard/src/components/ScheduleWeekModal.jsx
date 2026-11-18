@@ -77,6 +77,7 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
     const [startOffset, setStartOffset] = useState(1);
     const [intervalHours, setIntervalHours] = useState(24);
     const [ytDirectConfigured, setYtDirectConfigured] = useState(false);
+    const [bufferConfigured, setBufferConfigured] = useState(false);
 
     React.useEffect(() => {
         apiFetch('/api/youtube/config')
@@ -84,6 +85,15 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
             .then(data => {
                 if (data && data.configured) {
                     setYtDirectConfigured(true);
+                }
+            })
+            .catch(() => {});
+
+        apiFetch('/api/buffer/status')
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.configured) {
+                    setBufferConfigured(true);
                 }
             })
             .catch(() => {});
@@ -120,8 +130,8 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
 
     const selectedPlatforms = Object.keys(platforms).filter(k => platforms[k]);
 
-    // Managed (cloud plan/trial) users post with the server-side key — no BYOK needed
-    const canPost = isManaged || (uploadPostKey && uploadUserId) || (ytDirectConfigured && platforms.youtube);
+    // Managed users, upload-post, direct YouTube, or Buffer
+    const canPost = isManaged || (uploadPostKey && uploadUserId) || (ytDirectConfigured && platforms.youtube) || bufferConfigured;
 
     const handleScheduleAll = async () => {
         if (!canPost) return;
@@ -231,7 +241,7 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
             {!canPost && (
                 <div className="mb-4 p-3 bg-warn/10 text-warn text-xs rounded-input flex items-start gap-2">
                     <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                    <div>Connect your YouTube channel in clip post modal or set Upload-Post API key in Settings.</div>
+                    <div>Connect your YouTube channel, Buffer account, or set Upload-Post API key in Settings.</div>
                 </div>
             )}
 

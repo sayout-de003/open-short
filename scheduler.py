@@ -183,32 +183,71 @@ async def execute_due_posts(app_module):
                 platforms = post.get("platforms", ["youtube"])
 
                 import youtube_publisher
-                # If YouTube is configured and in platforms
+                import buffer_publisher
+
+                job = app_module.jobs.get(job_id)
+                if not job:
+                    raise RuntimeError(f"Job {job_id} not found on server")
+
+                clip, file_path, filename = app_module._resolve_clip_video_file(job, job_id, clip_index)
+                title = post.get("title") or clip.get("video_title_for_youtube_short") or "Short"
+                description = post.get("description") or clip.get("video_description_for_instagram") or ""
+                results_collected = {}
+
+                # 1. Direct YouTube Publishing
                 if "youtube" in platforms and youtube_publisher.is_direct_youtube_configured():
-                    job = app_module.jobs.get(job_id)
-                    if not job:
-                        raise RuntimeError(f"Job {job_id} not found on server")
+                    try:
+                        yt_result = await asyncio.to_thread(
+                            youtube_publisher.upload_video_to_youtube,
+                            file_path=file_path,
+                            title=title,
+                            description=description,
+                            privacy_status=post.get("privacy_status", "public"),
+                        )
+                        results_collected["youtube"] = {
+                            "video_id": yt_result.get("video_id"),
+                            "url": yt_result.get("url"),
+                            "shorts_url": yt_result.get("shorts_url"),
+                        }
+                        print(f"✅ [Scheduler] Auto-posted to YouTube successfully: {yt_result.get('shorts_url')}")
+                    except Exception as yt_err:
+                        print(f"❌ [Scheduler] YouTube upload failed: {yt_err}")
+                        results_collected["youtube_error"] = str(yt_err)
 
-                    clip, file_path, filename = app_module._resolve_clip_video_file(job, job_id, clip_index)
-                    title = post.get("title") or clip.get("video_title_for_youtube_short") or "Short"
-                    description = post.get("description") or clip.get("video_description_for_instagram") or ""
+                # 2. Buffer Publishing across connected social channels
+                buffer_channels = post.get("buffer_channels")
+                if buffer_publisher.is_buffer_configured():
+                    try:
+                        all_buffer_channels = await asyncio.to_thread(buffer_publisher.list_channels)
+                        channels_to_post = []
+                        if buffer_channels:
+                            channels_to_post = [c for c in all_buffer_channels if c.get("id") in buffer_channels]
+                        else:
+                            # Match channels by platform (e.g. instagram, tiktok, facebook, linkedin, twitter, etc.)
+                            target_services = set(p.lower() for p in platforms if p != "youtube" or not youtube_publisher.is_direct_youtube_configured())
+                            channels_to_post = [c for c in all_buffer_channels if c.get("service", "").lower() in target_services]
 
-                    result = await asyncio.to_thread(
-                        youtube_publisher.upload_video_to_youtube,
-                        file_path=file_path,
-                        title=title,
-                        description=description,
-                        privacy_status=post.get("privacy_status", "public"),
-                    )
-                    post["status"] = "completed"
-                    post["result"] = {
-                        "video_id": result.get("video_id"),
-                        "url": result.get("url"),
-                        "shorts_url": result.get("shorts_url"),
-                    }
-                    print(f"✅ [Scheduler] Auto-posted to YouTube successfully: {result.get('shorts_url')}")
-                else:
-                    raise RuntimeError("Direct YouTube publishing is not configured in .env")
+                        if channels_to_post:
+                            video_url = clip.get("video_url")
+                            buf_results = await asyncio.to_thread(
+                                buffer_publisher.publish_to_buffer_channels,
+                                channels=channels_to_post,
+                                text=description or title,
+                                video_url=video_url,
+                                title=title,
+                            )
+                            results_collected["buffer"] = buf_results
+                            print(f"✅ [Scheduler] Auto-posted to Buffer channels: {len(buf_results)}")
+                    except Exception as buf_err:
+                        print(f"❌ [Scheduler] Buffer posting failed: {buf_err}")
+                        results_collected["buffer_error"] = str(buf_err)
+
+                if not results_collected or (all(k.endswith("_error") for k in results_collected)):
+                    err_msg = "; ".join(f"{k}: {v}" for k, v in results_collected.items()) if results_collected else "No active provider for selected platforms"
+                    raise RuntimeError(err_msg)
+
+                post["status"] = "completed"
+                post["result"] = results_collected
 
             except Exception as e:
                 print(f"❌ [Scheduler] Auto-posting failed for {post.get('id')}: {e}")

@@ -816,6 +816,49 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uploadPostKey, isManaged]);
 
+  const [bufferInfo, setBufferInfo] = useState({ configured: false, account: null, channels: [] });
+  const [bufferTokenInput, setBufferTokenInput] = useState('');
+  const [bufferSaved, setBufferSaved] = useState(false);
+  const [savingBuffer, setSavingBuffer] = useState(false);
+
+  const fetchBufferStatus = async () => {
+    try {
+      const res = await apiFetch('/api/buffer/status');
+      if (res.ok) {
+        const data = await res.json();
+        setBufferInfo(data);
+      }
+    } catch (_) {}
+  };
+
+  useEffect(() => {
+    fetchBufferStatus();
+  }, []);
+
+  const handleSaveBufferToken = async () => {
+    if (!bufferTokenInput.trim()) return;
+    setSavingBuffer(true);
+    try {
+      const res = await apiFetch('/api/buffer/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: bufferTokenInput.trim() })
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err);
+      }
+      setBufferSaved(true);
+      setBufferTokenInput('');
+      await fetchBufferStatus();
+      setTimeout(() => setBufferSaved(false), 3000);
+    } catch (e) {
+      alert('Failed to save Buffer token: ' + e.message);
+    } finally {
+      setSavingBuffer(false);
+    }
+  };
+
   // For managed users, fetch the durable R2 URLs of the current job's clips. The
   // preview player prefers them (free egress, edge-served, and not competing with
   // the renders for the API process), and falls back to /videos when the local
@@ -1882,6 +1925,77 @@ function App() {
 
                 </>
               )}
+
+              {/* Buffer API Integration */}
+              <div className="card p-4 sm:p-6 mt-8">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-input bg-paper3 flex items-center justify-center shrink-0">
+                      <Share2 size={16} className="text-brass" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-medium text-ink lowercase">Buffer Integration</h2>
+                      <p className="text-[11px] text-muted">Post & schedule clips across social networks</p>
+                    </div>
+                  </div>
+                  {bufferInfo.configured ? (
+                    <span className="badge-ok flex items-center gap-1 text-xs">
+                      <Check size={12} /> Connected
+                    </span>
+                  ) : (
+                    <span className="badge-quiet text-xs">Not configured</span>
+                  )}
+                </div>
+
+                {bufferInfo.configured && (
+                  <div className="mb-4 p-3 bg-paper3 rounded-input text-xs space-y-2 border border-rule">
+                    <div className="flex items-center justify-between">
+                      <span className="text-ink font-medium">Account:</span>
+                      <span className="text-muted font-mono">{bufferInfo.account?.email || 'Authenticated'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-ink font-medium">Connected Channels:</span>
+                      <span className="text-brass font-medium">{bufferInfo.channels?.length || 0} channels</span>
+                    </div>
+                    {bufferInfo.channels && bufferInfo.channels.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {bufferInfo.channels.map(ch => (
+                          <span key={ch.id} className="badge-quiet text-[10px] px-1.5 py-0.5">
+                            {ch.service} ({ch.name || ch.type})
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-muted pt-1">
+                        No social channels linked on Buffer yet. Go to <a href="https://publish.buffer.com/channels" target="_blank" rel="noopener noreferrer" className="text-brass underline">buffer.com/channels</a> to connect your YouTube, TikTok, Instagram, or LinkedIn accounts.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <label className="block text-sm text-muted">Buffer API Access Token</label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="password"
+                      value={bufferTokenInput}
+                      onChange={(e) => setBufferTokenInput(e.target.value)}
+                      className="input-field"
+                      placeholder={bufferInfo.configured ? "••••••••••••••••••••••••••••••••" : "Paste Buffer token (e.g. NXIH...)"}
+                    />
+                    <button
+                      onClick={handleSaveBufferToken}
+                      disabled={savingBuffer || !bufferTokenInput.trim()}
+                      className={bufferSaved ? 'badge-ok px-4' : 'btn-quiet py-2 px-4 text-sm'}
+                    >
+                      {savingBuffer ? 'saving…' : bufferSaved ? <><Check size={12} /> saved</> : 'Update Token'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted leading-relaxed">
+                    Uses Buffer's official GraphQL API (<code>https://api.buffer.com</code>). Token is saved securely to your <code>.env</code> file.
+                  </p>
+                </div>
+              </div>
 
               <div className="card p-4 sm:p-6 mt-8">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-4">

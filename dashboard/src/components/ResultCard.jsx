@@ -226,6 +226,9 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
     const [exchangingAuth, setExchangingAuth] = useState(false);
     const [ytDirectConfigured, setYtDirectConfigured] = useState(false);
     const [ytPrivacy, setYtPrivacy] = useState("public");
+    const [bufferConfigured, setBufferConfigured] = useState(false);
+    const [bufferAccount, setBufferAccount] = useState(null);
+    const [bufferChannels, setBufferChannels] = useState([]);
 
     useEffect(() => {
         apiFetch('/api/youtube/config')
@@ -234,6 +237,17 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                 if (data && data.configured) {
                     setYtDirectConfigured(true);
                     if (data.default_privacy) setYtPrivacy(data.default_privacy);
+                }
+            })
+            .catch(() => {});
+
+        apiFetch('/api/buffer/status')
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.configured) {
+                    setBufferConfigured(true);
+                    setBufferAccount(data.account);
+                    setBufferChannels(data.channels || []);
                 }
             })
             .catch(() => {});
@@ -393,11 +407,14 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
     // Which platforms the selected profile actually has linked. `null` means
     // unknown (profile list not loaded) — in that case nothing is gated.
     const knownConnections = Array.isArray(connectedPlatforms);
-    const noAccountsConnected = knownConnections && connectedPlatforms.length === 0 && !ytDirectConfigured;
+    const noAccountsConnected = knownConnections && connectedPlatforms.length === 0 && !ytDirectConfigured && !bufferConfigured;
     const platformOptions = knownConnections
         ? PLATFORM_OPTIONS.map((o) => {
             if (o.value === 'youtube' && ytDirectConfigured) return o;
-            return connectedPlatforms.includes(o.value) ? o : { ...o, disabled: true, hint: 'not connected' };
+            if (bufferChannels.some(c => c.service?.toLowerCase() === o.value)) return o;
+            if (connectedPlatforms.includes(o.value)) return o;
+            if (bufferConfigured) return o;
+            return { ...o, disabled: true, hint: 'not connected' };
           })
         : PLATFORM_OPTIONS;
 
@@ -801,8 +818,8 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
         }
     };
 
-    // Managed (cloud plan/trial) users post with the server-side key — no BYOK needed
-    const canPost = isManaged || (uploadPostKey && uploadUserId) || (ytDirectConfigured && platforms.youtube);
+    // Managed users, BYOK upload-post, direct YouTube, or Buffer integration
+    const canPost = isManaged || (uploadPostKey && uploadUserId) || (ytDirectConfigured && platforms.youtube) || bufferConfigured;
 
     const handlePost = async () => {
         if (!canPost) {
@@ -1425,6 +1442,32 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                                 </div>
                             )}
                         </div>
+                    </div>
+                )}
+
+                {bufferConfigured && (
+                    <div className="mb-4 p-3 rounded-input text-xs bg-paper border border-brass/40 space-y-2 animate-fade">
+                        <div className="flex items-center justify-between">
+                            <span className="font-semibold text-ink flex items-center gap-1.5">
+                                <Share2 size={15} className="text-brass" /> Buffer Publishing
+                            </span>
+                            <span className="badge-ok text-[10px]">
+                                {bufferChannels.length} {bufferChannels.length === 1 ? 'channel' : 'channels'} active
+                            </span>
+                        </div>
+                        {bufferChannels.length === 0 ? (
+                            <p className="text-[11px] text-muted leading-relaxed">
+                                Buffer account connected ({bufferAccount?.email || 'authenticated'}). You can link social channels on <a href="https://publish.buffer.com/channels" target="_blank" rel="noopener noreferrer" className="text-brass underline">buffer.com</a> to publish across networks.
+                            </p>
+                        ) : (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                                {bufferChannels.map(ch => (
+                                    <span key={ch.id} className="badge-quiet text-[10px] px-1.5 py-0.5">
+                                        {ch.service} ({ch.name || ch.type})
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
 
