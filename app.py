@@ -6631,21 +6631,38 @@ async def list_projects_endpoint():
                 pass
 
         clip_list = []
-        for f in sorted(glob.glob(os.path.join(job_dir, "*.mp4"))):
-            fname = os.path.basename(f)
-            if fname.startswith("temp_") or fname.endswith(".temp.mp4"):
-                continue
-            # If it's a clip file or finished video
-            if "clip_" in fname:
-                try:
-                    size_mb = round(os.path.getsize(f) / (1024 * 1024), 2)
-                except Exception:
-                    size_mb = 0
-                clip_list.append({
-                    "filename": fname,
-                    "url": f"/videos/{entry}/{fname}",
-                    "size_mb": size_mb
-                })
+        shorts = meta_data.get("shorts", [])
+        if shorts and meta_files:
+            base_clean = os.path.basename(meta_files[0]).replace('_metadata.json', '')
+            for idx in range(len(shorts)):
+                canon_file = _canonical_clip_file(job_dir, base_clean, idx)
+                canon_path = os.path.join(job_dir, canon_file)
+                if os.path.exists(canon_path) and os.path.getsize(canon_path) > 0:
+                    try:
+                        size_mb = round(os.path.getsize(canon_path) / (1024 * 1024), 2)
+                    except Exception:
+                        size_mb = 0
+                    clip_list.append({
+                        "filename": canon_file,
+                        "url": f"/videos/{entry}/{canon_file}",
+                        "size_mb": size_mb
+                    })
+        if not clip_list:
+            for f in sorted(glob.glob(os.path.join(job_dir, "*.mp4"))):
+                fname = os.path.basename(f)
+                if fname.startswith("temp_") or fname.endswith(".temp.mp4"):
+                    continue
+                # If it's a clip file or finished video
+                if "clip_" in fname:
+                    try:
+                        size_mb = round(os.path.getsize(f) / (1024 * 1024), 2)
+                    except Exception:
+                        size_mb = 0
+                    clip_list.append({
+                        "filename": fname,
+                        "url": f"/videos/{entry}/{fname}",
+                        "size_mb": size_mb
+                    })
 
         if entry in jobs:
             status = jobs[entry].get("status", "unknown")

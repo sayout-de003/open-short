@@ -380,6 +380,8 @@ def _trajectory_loop(next_frame, sparse, n_frames, scenes_boundaries,
             cameraman.current_center_x = orig_w / 2
             cameraman.target_center_x = orig_w / 2
             xs.append(None)
+            if hasattr(cameraman, 'frame_boxes'):
+                cameraman.frame_boxes.append(None)
         else:
             is_scene_start = (
                 current_scene_index < len(scenes_boundaries)
@@ -894,6 +896,8 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
             else:
                 seg_xs = [x if x is not None else 0 for x in xs[start_f:end_f]]
                 cmd_path = os.path.join(workdir, f"cmd_{idx:03d}.txt")
+                seg_boxes = getattr(cameraman, 'frame_boxes', None)
+                seg_boxes = seg_boxes[start_f:end_f] if (seg_boxes and len(seg_boxes) >= end_f) else None
                 if beats:
                     zooms = punch_in.zoom_curve(len(seg_xs), fps, beats,
                                                 start_offset=ss)
@@ -902,6 +906,12 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
                     lines = punch_in.sendcmd_lines(boxes, fps)
                     first = boxes[0]
                     init = f"w={first[0]}:h={first[1]}:x={first[2]}:y={first[3]}"
+                elif seg_boxes and any(b is not None and (b[0] != crop_w or b[1] != crop_h or b[3] != 0) for b in seg_boxes):
+                    clean_boxes = [b if b is not None else (crop_w, crop_h, seg_xs[k], 0) for k, b in enumerate(seg_boxes)]
+                    lines = punch_in.sendcmd_lines(clean_boxes, fps)
+                    first = clean_boxes[0]
+                    init = f"w={first[0]}:h={first[1]}:x={first[2]}:y={first[3]}"
+                    boxes = clean_boxes
                 else:
                     lines = dedupe_sendcmd_lines(seg_xs, fps)
                     # sendcmd only ever moves x, so y is whatever it starts as.

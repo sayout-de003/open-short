@@ -142,6 +142,17 @@ class ClipSelector:
             max_c = max(sub_scores) if sub_scores else 0.5
             viral_score = max(5, min(10, int(round(max_c * 10))))
 
+            # Generate viral social media captions & hashtags
+            tags = {
+                "gaming": "#gaming #gameplay #twitch #gamingclips #fyp #viralshorts",
+                "podcast": "#podcast #interview #insights #wisdom #trending #shorts",
+                "educational": "#education #learning #career #jobs #tips #knowledge",
+                "commentary": "#commentary #opinion #reaction #trends #viral #shorts"
+            }.get(profile_name.lower(), "#shorts #viral #trending #reels #fyp")
+
+            tiktok_caption = f"{hook}. Watch till the end! {tags}"
+            instagram_caption = f"{hook}\n\nWhat are your thoughts on this? Drop a comment below! 👇\n\n{tags}"
+
             shorts.append({
                 "start": round(s_start, 2),
                 "end": round(s_end, 2),
@@ -150,6 +161,8 @@ class ClipSelector:
                 "video_title_for_youtube_short": title,
                 "hook": hook,
                 "viral_hook_text": hook,
+                "video_description_for_tiktok": tiktok_caption,
+                "video_description_for_instagram": instagram_caption,
                 "reason": f"High multi-modal energy in {profile_name} mode ({clip_dur:.1f}s)",
                 "reason_for_virality": f"High multi-modal energy in {profile_name} mode ({clip_dur:.1f}s)",
                 "visual_context": vision_desc

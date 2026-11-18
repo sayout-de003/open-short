@@ -222,21 +222,18 @@ def detect_faces(video_path, window_start=0.0, window_end=None, samples=SAMPLES)
         if total:
             indices = [min(i, total - 1) for i in indices]
         frames = []
-        with _DETECTOR_LOCK:
-            detector = _detector()
-            for frame in read_at(cap, indices):
-                if frame is None:
-                    continue
-                h, w = frame.shape[:2]
-                if w > 720:
-                    frame = cv2.resize(frame, (720, int(h * 720 / w)))
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                result = detector.process(rgb)
-                boxes = []
-                for d in result.detections or []:
-                    b = d.location_data.relative_bounding_box
-                    boxes.append((b.xmin, b.ymin, b.xmin + b.width, b.ymin + b.height))
-                frames.append(boxes)
+        import main as m
+        for frame in read_at(cap, indices):
+            if frame is None:
+                continue
+            h, w = frame.shape[:2]
+            candidates = m.detect_face_candidates(frame)
+            boxes = []
+            for c in candidates:
+                bx, by, bw, bh = c['box']
+                boxes.append((bx / float(w), by / float(h),
+                              (bx + bw) / float(w), (by + bh) / float(h)))
+            frames.append(boxes)
         return frames or None
     except Exception as e:
         print(f"⚠️ Hook placement: face detection failed ({type(e).__name__}: {e})")

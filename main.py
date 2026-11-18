@@ -118,8 +118,28 @@ if _yolo_available and YOLO:
 else:
     model = None
 
-# --- MediaPipe Setup ---
-# Use standard Face Detection (BlazeFace) for speed
+# --- Face Detection Setup (YuNet ONNX + OpenCV Haar Cascade + MediaPipe Fallback) ---
+yunet_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "face_detection_yunet_2023mar.onnx")
+if not os.path.exists(yunet_path):
+    yunet_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "face_detection_yunet_2023mar.onnx")
+
+yunet_detector = None
+if os.path.exists(yunet_path) and hasattr(cv2, 'FaceDetectorYN'):
+    try:
+        yunet_detector = cv2.FaceDetectorYN.create(yunet_path, "", (320, 320), score_threshold=0.55)
+    except Exception as e:
+        print(f"YuNet initialization notice: {e}")
+        yunet_detector = None
+
+haar_detector = None
+try:
+    if hasattr(cv2, 'data') and hasattr(cv2.data, 'haarcascades'):
+        haar_path = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
+        if os.path.exists(haar_path):
+            haar_detector = cv2.CascadeClassifier(haar_path)
+except Exception as e:
+    haar_detector = None
+
 if mp and hasattr(mp, 'solutions'):
     try:
         mp_face_detection = mp.solutions.face_detection
@@ -131,6 +151,7 @@ if mp and hasattr(mp, 'solutions'):
 else:
     mp_face_detection = None
     face_detection = None
+
 
 # Consecutive detections a large target move must survive before the camera
 # follows it (see SmoothedCameraman.update_target). Env-overridable so the
@@ -168,6 +189,23 @@ class SmoothedCameraman:
         if self.crop_width > video_width:
              self.crop_width = video_width
              self.crop_height = int(self.crop_width / aspect_ratio)
+
+        self.crop_width -= self.crop_width % 2
+        self.crop_height -= self.crop_height % 2
+
+        # Face importance zoom parameters
+        self.face_importance_zoom = os.environ.get("FACE_ZOOM", "1") != "0"
+        self.target_face_ratio = 0.28  # Target ~28% of vertical frame height for face
+        self.max_zoom = float(os.environ.get("FACE_MAX_ZOOM", "1.45"))
+        self.frame_boxes = []
+
+        self.current_crop_w = float(self.crop_width)
+        self.current_crop_h = float(self.crop_height)
+        self.current_crop_y = float(max(0, (video_height - self.crop_height) // 2))
+
+        self.target_crop_w = float(self.crop_width)
+        self.target_crop_h = float(self.crop_height)
+        self.target_crop_y = float(self.current_crop_y)
              
         # Safe Zone: 20% of the video width
         # As long as the target is within this zone relative to current center, DO NOT MOVE.
@@ -222,7 +260,22 @@ class SmoothedCameraman:
         if not face_box:
             return
         x, y, w, h = face_box
-        new_center = x + w / 2
+        new_center = x + w / 2.0
+
+        # Calculate dynamic zoom & headroom based on face importance
+        if self.face_importance_zoom and h > 0 and self.video_height > 0:
+            face_ratio = h / float(self.video_height)
+            # If face is small/medium in frame, calculate zoom up to max_zoom
+            desired_zoom = min(self.max_zoom, max(1.0, self.target_face_ratio / max(face_ratio, 0.05)))
+            target_h = int(round(self.crop_height / desired_zoom))
+            target_w = int(round(target_h * self.aspect_ratio))
+            # Natural headroom: ~12-14% of crop height above the top of the face box
+            target_y = int(round(y - 0.12 * target_h))
+            target_y = max(0, min(self.video_height - target_h, target_y))
+        else:
+            target_w = self.crop_width
+            target_h = self.crop_height
+            target_y = max(0, (self.video_height - self.crop_height) // 2)
 
         if self._snap_pending:
             self._snap_pending = False
@@ -230,6 +283,12 @@ class SmoothedCameraman:
             self._pending_count = 0
             self.target_center_x = new_center
             self.current_center_x = new_center
+            self.target_crop_w = float(target_w)
+            self.target_crop_h = float(target_h)
+            self.target_crop_y = float(target_y)
+            self.current_crop_w = float(target_w)
+            self.current_crop_h = float(target_h)
+            self.current_crop_y = float(target_y)
             return
 
         if abs(new_center - self.target_center_x) > self.safe_zone_radius:
@@ -247,13 +306,19 @@ class SmoothedCameraman:
         self._pending_target = None
         self._pending_count = 0
         self.target_center_x = new_center
+        self.target_crop_w = float(target_w)
+        self.target_crop_h = float(target_h)
+        self.target_crop_y = float(target_y)
     
     def get_crop_box(self, force_snap=False):
         """
-        Returns the (x1, y1, x2, y2) for the current frame.
+        Returns the (x1, y1, x2, y2) for the current frame with smooth panning and zooming.
         """
         if force_snap:
             self.current_center_x = self.target_center_x
+            self.current_crop_w = self.target_crop_w
+            self.current_crop_h = self.target_crop_h
+            self.current_crop_y = self.target_crop_y
         else:
             diff = self.target_center_x - self.current_center_x
             
@@ -278,25 +343,41 @@ class SmoothedCameraman:
                 if (direction == 1 and new_diff < 0) or (direction == -1 and new_diff > 0):
                     self.current_center_x = self.target_center_x
             
-            # If inside safe zone, DO NOTHING (Stationary Camera)
+            # Smoothly interpolate crop zoom & vertical position
+            self.current_crop_w += (self.target_crop_w - self.current_crop_w) * 0.08
+            self.current_crop_h += (self.target_crop_h - self.current_crop_h) * 0.08
+            self.current_crop_y += (self.target_crop_y - self.current_crop_y) * 0.08
                 
-        # Clamp center
-        half_crop = self.crop_width / 2
-        
+        cw = int(round(self.current_crop_w))
+        ch = int(round(self.current_crop_h))
+        cw -= cw % 2
+        ch -= ch % 2
+        cw = max(2, min(self.video_width, cw))
+        ch = max(2, min(self.video_height, ch))
+
+        half_crop = cw / 2.0
         if self.current_center_x - half_crop < 0:
             self.current_center_x = half_crop
         if self.current_center_x + half_crop > self.video_width:
             self.current_center_x = self.video_width - half_crop
             
-        x1 = int(self.current_center_x - half_crop)
-        x2 = int(self.current_center_x + half_crop)
-        
-        x1 = max(0, x1)
-        x2 = min(self.video_width, x2)
-        
-        y1 = 0
-        y2 = self.video_height
-        
+        x1 = int(round(self.current_center_x - half_crop))
+        x2 = x1 + cw
+        x1 = max(0, min(self.video_width - cw, x1))
+        x2 = min(self.video_width, x1 + cw)
+
+        y1 = int(round(self.current_crop_y))
+        y1 = max(0, min(self.video_height - ch, y1))
+        y2 = min(self.video_height, y1 + ch)
+
+        x1 -= x1 % 2
+        y1 -= y1 % 2
+        x2 = x1 + cw
+        y2 = y1 + ch
+
+        if hasattr(self, 'frame_boxes'):
+            self.frame_boxes.append((cw, ch, x1, y1))
+
         return x1, y1, x2, y2
 
 class SpeakerTracker:
@@ -469,39 +550,80 @@ def _detection_frame(frame):
 
 def detect_face_candidates(frame):
     """
-    Returns list of all detected faces using lightweight FaceDetection.
-    Boxes are in ORIGINAL frame coordinates (detection runs downscaled;
-    MediaPipe's relative coords make the mapping exact).
+    Returns list of all detected faces using YuNet DNN, Haar Cascade, or MediaPipe.
+    Boxes are in ORIGINAL frame coordinates.
     """
-    height, width, _ = frame.shape
-    small, _scale = _detection_frame(frame)
-    rgb_frame = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
-    if face_detection is None:
+    if frame is None or frame.size == 0:
         return []
-
-    with DETECT_LOCK:
-        try:
-            results = face_detection.process(rgb_frame)
-        except Exception:
-            return []
-    
+    orig_h, orig_w = frame.shape[:2]
     candidates = []
-    
-    if not results.detections:
-        return []
-        
-    for detection in results.detections:
-        bboxC = detection.location_data.relative_bounding_box
-        x = int(bboxC.xmin * width)
-        y = int(bboxC.ymin * height)
-        w = int(bboxC.width * width)
-        h = int(bboxC.height * height)
-        
-        candidates.append({
-            'box': [x, y, w, h],
-            'score': w * h # Area as score
-        })
-            
+
+    # 1. Primary: OpenCV YuNet Deep Learning Detector (Fast, robust on tilted/distant faces)
+    if yunet_detector is not None:
+        try:
+            scale = 1.0
+            if max(orig_w, orig_h) > 640:
+                scale = 640.0 / max(orig_w, orig_h)
+                sw, sh = max(int(orig_w * scale), 2), max(int(orig_h * scale), 2)
+                small = cv2.resize(frame, (sw, sh), interpolation=cv2.INTER_AREA)
+            else:
+                sw, sh = orig_w, orig_h
+                small = frame
+            with DETECT_LOCK:
+                yunet_detector.setInputSize((sw, sh))
+                _, faces = yunet_detector.detect(small)
+            if faces is not None and len(faces) > 0:
+                for f in faces:
+                    bx, by, bw, bh = f[0:4] / scale
+                    bx, by = max(0, int(bx)), max(0, int(by))
+                    bw, bh = min(orig_w - bx, int(bw)), min(orig_h - by, int(bh))
+                    if bw > 8 and bh > 8:
+                        candidates.append({
+                            'box': [bx, by, bw, bh],
+                            'score': float(f[-1]) * (bw * bh)
+                        })
+                if candidates:
+                    return candidates
+        except Exception:
+            pass
+
+    # 2. Secondary: Haar Cascade
+    if haar_detector is not None and not haar_detector.empty():
+        try:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            boxes = haar_detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(24, 24))
+            if len(boxes) > 0:
+                for (x, y, w, h) in boxes:
+                    candidates.append({
+                        'box': [int(x), int(y), int(w), int(h)],
+                        'score': int(w * h)
+                    })
+                return candidates
+        except Exception:
+            pass
+
+    # 3. Tertiary: MediaPipe FaceDetection (if available)
+    if face_detection is not None:
+        small, _ = _detection_frame(frame)
+        rgb_frame = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
+        with DETECT_LOCK:
+            try:
+                results = face_detection.process(rgb_frame)
+            except Exception:
+                results = None
+        if results and results.detections:
+            for detection in results.detections:
+                bboxC = detection.location_data.relative_bounding_box
+                x = int(bboxC.xmin * orig_w)
+                y = int(bboxC.ymin * orig_h)
+                w = int(bboxC.width * orig_w)
+                h = int(bboxC.height * orig_h)
+                candidates.append({
+                    'box': [max(0, x), max(0, y), min(orig_w - x, w), min(orig_h - y, h)],
+                    'score': w * h
+                })
+            return candidates
+
     return candidates
 
 def detect_person_yolo(frame):
@@ -2212,7 +2334,7 @@ def _run_gemini_stage(client, model_name, prompt, schema):
         response_mime_type="application/json",
         response_schema=schema,
     )
-    max_attempts = 1 if use_local else 3
+    max_attempts = 2 if use_local else 3
     for attempt in range(1, max_attempts + 1):
         try:
             if use_local:
