@@ -37,6 +37,7 @@ import watermarked
 import media_auth
 import remote_worker
 import yt_account
+import youtube_publisher
 from jsonfile import write_json_atomic
 
 load_dotenv()
@@ -8897,6 +8898,95 @@ class SocialPostRequest(BaseModel):
     scheduled_date: Optional[str] = None # ISO-8601 string
     timezone: Optional[str] = "UTC"
 
+
+class YouTubePublishRequest(BaseModel):
+    job_id: str
+    clip_index: int
+    title: Optional[str] = None
+    description: Optional[str] = None
+    privacy_status: Optional[str] = "public"
+    tags: Optional[List[str]] = None
+    category_id: Optional[str] = None
+
+
+@app.get("/api/youtube/config")
+async def get_youtube_config():
+    """Check if direct YouTube Data API v3 publishing is configured."""
+    return {
+        "configured": youtube_publisher.is_direct_youtube_configured(),
+        "default_privacy": youtube_publisher.DEFAULT_PRIVACY,
+        "default_category_id": youtube_publisher.DEFAULT_CATEGORY_ID,
+    }
+
+
+def _resolve_clip_video_file(job, job_id: str, clip_index: int):
+    """Find the video file on disk for a job clip, handling recut and canonical names."""
+    if 'result' not in job or 'clips' not in job['result']:
+        raise HTTPException(status_code=400, detail="Job result not available")
+    if clip_index < 0 or clip_index >= len(job['result']['clips']):
+        raise HTTPException(status_code=404, detail="Clip index out of range")
+    clip = job['result']['clips'][clip_index]
+    filename = clip['video_url'].split('/')[-1]
+    file_path = os.path.join(OUTPUT_DIR, job_id, filename)
+    if not os.path.exists(file_path):
+        job_dir = os.path.join(OUTPUT_DIR, job_id)
+        meta_files = glob.glob(os.path.join(job_dir, "*_metadata.json"))
+        if meta_files:
+            base_name = os.path.basename(meta_files[0]).replace('_metadata.json', '')
+            newest = _canonical_clip_file(job_dir, base_name, clip_index)
+            if os.path.exists(os.path.join(job_dir, newest)):
+                filename, file_path = newest, os.path.join(job_dir, newest)
+                clip['video_url'] = f"/videos/{job_id}/{newest}"
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Video file not found")
+    return clip, file_path, filename
+
+
+@app.post("/api/youtube/publish")
+async def publish_to_youtube(req: YouTubePublishRequest, request: Request):
+    """Publish a clip directly to YouTube via YouTube Data API v3 (videos.insert)."""
+    if not youtube_publisher.is_direct_youtube_configured():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Direct YouTube publishing is not configured. Please set "
+                "YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, and YOUTUBE_REFRESH_TOKEN in your .env file."
+            )
+        )
+    await _ensure_job_files(req.job_id, request)
+    if req.job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = jobs.get(req.job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    await _assert_job_owner(request, job)
+
+    clip, file_path, filename = _resolve_clip_video_file(job, req.job_id, req.clip_index)
+
+    final_title = req.title or clip.get('video_title_for_youtube_short') or clip.get('title', 'Viral Short')
+    final_description = (
+        req.description or
+        clip.get('video_description_for_instagram') or
+        clip.get('video_description_for_tiktok') or
+        "Check out this clip!"
+    )
+
+    try:
+        print(f"📡 Uploading clip {req.clip_index} of job {req.job_id} directly to YouTube...")
+        result = await asyncio.to_thread(
+            youtube_publisher.upload_video_to_youtube,
+            file_path=file_path,
+            title=final_title,
+            description=final_description,
+            privacy_status=req.privacy_status,
+            tags=req.tags,
+            category_id=req.category_id,
+        )
+        return result
+    except Exception as e:
+        print(f"❌ YouTube Data API Direct Upload Error: {e}")
+        raise HTTPException(status_code=500, detail=f"YouTube API Error: {str(e)}")
+
 import httpx
 
 
@@ -8987,14 +9077,6 @@ async def post_to_socials(req: SocialPostRequest, request: Request):
     if req.job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Resolve the Upload-Post key + profile. For managed users the server key is
-    # used and their own profile is forced (body api_key / user_id are ignored).
-    upload_key, forced_profile = await resolve_upload_post(request, req.api_key)
-    if not upload_key:
-        raise HTTPException(status_code=400, detail="Missing Upload-Post API key")
-    post_user = resolve_post_profile(forced_profile, req.user_id)
-
-    # The awaits above can let cleanup or an account delete drop the job.
     job = jobs.get(req.job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -9002,6 +9084,47 @@ async def post_to_socials(req: SocialPostRequest, request: Request):
     if 'result' not in job or 'clips' not in job['result']:
         raise HTTPException(status_code=400, detail="Job result not available")
     await _check_social_post_rate(request)
+
+    # Check if direct YouTube upload should handle YouTube
+    yt_direct = youtube_publisher.is_direct_youtube_configured()
+    direct_yt_result = None
+
+    if "youtube" in req.platforms and yt_direct:
+        try:
+            clip, file_path, filename = _resolve_clip_video_file(job, req.job_id, req.clip_index)
+            final_title = req.title or clip.get('video_title_for_youtube_short') or clip.get('title', 'Viral Short')
+            final_description = (
+                req.description or
+                clip.get('video_description_for_instagram') or
+                clip.get('video_description_for_tiktok') or
+                "Check out this clip!"
+            )
+            print(f"📡 Uploading directly to YouTube via YouTube Data API v3...")
+            direct_yt_result = await asyncio.to_thread(
+                youtube_publisher.upload_video_to_youtube,
+                file_path=file_path,
+                title=final_title,
+                description=final_description,
+            )
+        except Exception as e:
+            print(f"❌ Direct YouTube upload failed: {e}")
+            if req.platforms == ["youtube"]:
+                raise HTTPException(status_code=500, detail=f"YouTube API Error: {e}")
+
+        if req.platforms == ["youtube"] and direct_yt_result:
+            return direct_yt_result
+
+        # Remove YouTube from remaining platforms so Upload-Post doesn't duplicate it
+        req.platforms = [p for p in req.platforms if p != "youtube"]
+        if not req.platforms:
+            return direct_yt_result or {"success": True, "direct_youtube": True}
+
+    # Resolve the Upload-Post key + profile. For managed users the server key is
+    # used and their own profile is forced (body api_key / user_id are ignored).
+    upload_key, forced_profile = await resolve_upload_post(request, req.api_key)
+    if not upload_key:
+        raise HTTPException(status_code=400, detail="Missing Upload-Post API key")
+    post_user = resolve_post_profile(forced_profile, req.user_id)
 
     if BILLING_ENABLED and forced_profile:
         stale = await _platforms_needing_reconnect(post_user, req.platforms)

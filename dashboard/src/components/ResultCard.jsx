@@ -212,6 +212,20 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
     const [postDescription, setPostDescription] = useState("");
     const [isScheduling, setIsScheduling] = useState(false);
     const [scheduleDate, setScheduleDate] = useState("");
+    const [ytDirectConfigured, setYtDirectConfigured] = useState(false);
+    const [ytPrivacy, setYtPrivacy] = useState("public");
+
+    useEffect(() => {
+        apiFetch('/api/youtube/config')
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.configured) {
+                    setYtDirectConfigured(true);
+                    if (data.default_privacy) setYtPrivacy(data.default_privacy);
+                }
+            })
+            .catch(() => {});
+    }, []);
 
     const [posting, setPosting] = useState(false);
     const [postResult, setPostResult] = useState(null);
@@ -318,9 +332,12 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
     // Which platforms the selected profile actually has linked. `null` means
     // unknown (profile list not loaded) — in that case nothing is gated.
     const knownConnections = Array.isArray(connectedPlatforms);
-    const noAccountsConnected = knownConnections && connectedPlatforms.length === 0;
+    const noAccountsConnected = knownConnections && connectedPlatforms.length === 0 && !ytDirectConfigured;
     const platformOptions = knownConnections
-        ? PLATFORM_OPTIONS.map((o) => (connectedPlatforms.includes(o.value) ? o : { ...o, disabled: true, hint: 'not connected' }))
+        ? PLATFORM_OPTIONS.map((o) => {
+            if (o.value === 'youtube' && ytDirectConfigured) return o;
+            return connectedPlatforms.includes(o.value) ? o : { ...o, disabled: true, hint: 'not connected' };
+          })
         : PLATFORM_OPTIONS;
 
     const handleConnectAccounts = () => {
@@ -339,13 +356,17 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
             setPostResult(null);
             // Only preselect platforms the profile can actually publish to.
             if (knownConnections) {
-                setPlatforms(flagsFromList(connectedPlatforms));
+                const initialPlatforms = flagsFromList(connectedPlatforms);
+                if (ytDirectConfigured && connectedPlatforms.length === 0) {
+                    initialPlatforms.youtube = true;
+                }
+                setPlatforms(initialPlatforms);
             }
         }
         // Reset only when the modal opens for a clip; connection changes while
         // it is open must not wipe the user's selection.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [showModal, clip]);
+    }, [showModal, clip, ytDirectConfigured]);
 
     const handleAutoEdit = async () => {
         setIsEditing(true);
@@ -720,7 +741,7 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
     };
 
     // Managed (cloud plan/trial) users post with the server-side key — no BYOK needed
-    const canPost = isManaged || (uploadPostKey && uploadUserId);
+    const canPost = isManaged || (uploadPostKey && uploadUserId) || (ytDirectConfigured && platforms.youtube);
 
     const handlePost = async () => {
         if (!canPost) {
@@ -746,6 +767,43 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
 
         setPosting(true);
         setPostResult(null);
+
+        // Check if direct YouTube upload should handle YouTube directly
+        const isDirectYt = ytDirectConfigured && selectedPlatforms.includes('youtube') && (!uploadPostKey || selectedPlatforms.length === 1);
+        if (isDirectYt && selectedPlatforms.length === 1 && !isScheduling) {
+            try {
+                const res = await apiFetch('/api/youtube/publish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        job_id: jobId,
+                        clip_index: index,
+                        title: postTitle,
+                        description: postDescription,
+                        privacy_status: ytPrivacy,
+                    })
+                });
+                if (!res.ok) {
+                    const errText = await res.text();
+                    let detail = errText;
+                    try { detail = JSON.parse(errText).detail || errText; } catch {}
+                    throw new Error(detail);
+                }
+                const sent = await res.json();
+                const link = sent.shorts_url || sent.url;
+                setPostResult({
+                    success: true,
+                    msg: "Published directly to YouTube Shorts!",
+                    url: link,
+                });
+                return;
+            } catch (e) {
+                setPostResult({ success: false, msg: `YouTube Upload Failed: ${e.message}` });
+                return;
+            } finally {
+                setPosting(false);
+            }
+        }
 
         try {
             const payload = {
@@ -779,6 +837,14 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
             }
 
             const sent = await res.json().catch(() => ({}));
+            if (sent?.shorts_url || sent?.url) {
+                setPostResult({
+                    success: true,
+                    msg: "Published to YouTube!",
+                    url: sent.shorts_url || sent.url,
+                });
+                return;
+            }
             if (isScheduling || !sent?.request_id) {
                 setPostResult({ success: true, msg: isScheduling ? "Scheduled successfully!" : "Sent for publishing." });
                 setTimeout(() => {
@@ -1168,7 +1234,7 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                 title="post clip"
                 size="md"
                 footer={
-                    noAccountsConnected ? (
+                    (noAccountsConnected && !platforms.youtube) ? (
                         <button onClick={handleConnectAccounts} className="btn-primary w-full">
                             <Link2 size={16} /> connect accounts
                         </button>
@@ -1186,11 +1252,11 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                 {!canPost && (
                     <div className="mb-4 px-3 py-2 rounded-input text-xs text-warn bg-[color-mix(in_oklab,var(--color-warn)_10%,transparent)] flex items-start gap-2">
                         <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                        <div className="lowercase">configure api key in settings first.</div>
+                        <div className="lowercase">configure api key in settings or youtube credentials in .env first.</div>
                     </div>
                 )}
 
-                {noAccountsConnected && (
+                {noAccountsConnected && !platforms.youtube && (
                     <div className="mb-4 px-3 py-2 rounded-input text-xs text-warn bg-[color-mix(in_oklab,var(--color-warn)_10%,transparent)] flex items-start gap-2">
                         <AlertCircle size={14} className="mt-0.5 shrink-0" />
                         <div className="lowercase">no social accounts connected yet — link tiktok, instagram, youtube, facebook, linkedin, threads or bluesky to publish this clip.</div>
@@ -1265,10 +1331,49 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                         />
                     </div>
 
+                    {platforms.youtube && (
+                        <div className="p-3 bg-paper rounded-input border border-rule space-y-2 animate-fade">
+                            <div className="flex items-center justify-between text-xs text-ink2">
+                                <span className="eyebrow">YOUTUBE PRIVACY</span>
+                                {ytDirectConfigured && (
+                                    <span className="badge-quiet text-[10px] text-ok border border-ok/30 px-1.5 py-0.5 rounded">
+                                        Direct API Connected
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex gap-2">
+                                {['public', 'unlisted', 'private'].map((p) => (
+                                    <button
+                                        key={p}
+                                        type="button"
+                                        onClick={() => setYtPrivacy(p)}
+                                        className={`px-3 py-1 text-xs rounded capitalize transition-colors ${ytPrivacy === p ? 'bg-brass text-paper font-semibold' : 'bg-surface2 text-ink2 hover:bg-surface3'}`}
+                                    >
+                                        {p}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {postResult && (
-                        <div className={postResult.success ? 'badge-ok' : 'badge-danger'}>
-                            {postResult.success ? <Check size={12} className="shrink-0" /> : <AlertCircle size={12} className="shrink-0" />}
-                            {postResult.msg}
+                        <div className={`space-y-1.5 p-3 rounded-input text-xs ${postResult.success ? 'badge-ok' : 'badge-danger'}`}>
+                            <div className="flex items-center gap-1.5">
+                                {postResult.success ? <Check size={14} className="shrink-0 text-ok" /> : <AlertCircle size={14} className="shrink-0 text-danger" />}
+                                <span className="font-medium">{postResult.msg}</span>
+                            </div>
+                            {postResult.url && (
+                                <div className="pt-1">
+                                    <a
+                                        href={postResult.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-brass hover:underline break-all font-mono"
+                                    >
+                                        {postResult.url} ↗
+                                    </a>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
