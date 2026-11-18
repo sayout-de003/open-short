@@ -4904,6 +4904,9 @@ def _finish_job(job_id, returncode, output_dir):
         jobs[job_id]['logs'].append(_scrub_secrets(f"Process failed with exit code {returncode}"))
 
 
+_running_processes: Dict[str, subprocess.Popen] = {}
+
+
 async def _run_main(job_id, cmd, env, tick=None):
     """Run a main.py command of ``job_id`` to its end and return its exit
     code: output lines into the job's log, the manifest heartbeated, ``tick``
@@ -4918,30 +4921,34 @@ async def _run_main(job_id, cmd, env, tick=None):
         cwd=os.getcwd(),
         preexec_fn=_lower_priority,
     )
+    _running_processes[job_id] = process
     # We need to capture logs in a thread because Popen isn't async
     t_log = threading.Thread(target=enqueue_output, args=(process.stdout, job_id))
     t_log.daemon = True
     t_log.start()
 
-    last_heartbeat = time.time()
-    while process.poll() is None:
-        try:
-            await asyncio.sleep(2)
-        except asyncio.CancelledError:
+    try:
+        last_heartbeat = time.time()
+        while process.poll() is None:
             try:
-                process.kill()
-            except Exception:
-                pass
-            raise
-        if time.time() - last_heartbeat >= HEARTBEAT_EVERY:
-            _touch_manifest(job_id)
-            last_heartbeat = time.time()
-        if tick is not None:
-            tick()
-    # The exit code can be read before the reader thread saw the last lines
-    # (SOURCE_READY is printed right before the exit).
-    await asyncio.to_thread(t_log.join, 5)
-    return process.returncode
+                await asyncio.sleep(2)
+            except asyncio.CancelledError:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+                raise
+            if time.time() - last_heartbeat >= HEARTBEAT_EVERY:
+                _touch_manifest(job_id)
+                last_heartbeat = time.time()
+            if tick is not None:
+                tick()
+        # The exit code can be read before the reader thread saw the last lines
+        # (SOURCE_READY is printed right before the exit).
+        await asyncio.to_thread(t_log.join, 5)
+        return process.returncode
+    finally:
+        _running_processes.pop(job_id, None)
 
 
 async def run_job(job_id, job_data):
@@ -6531,6 +6538,24 @@ async def get_source_video(job_id: str, request: Request,
                                              "Referrer-Policy": "no-referrer"})
         raise HTTPException(status_code=404, detail="Source not found")
     return FileResponse(source_path, media_type="video/mp4")
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job_endpoint(job_id: str):
+    """Stop and cancel an active video clipping job."""
+    proc = _running_processes.get(job_id)
+    if proc:
+        try:
+            proc.terminate()
+            time.sleep(0.5)
+            if proc.poll() is None:
+                proc.kill()
+        except Exception as e:
+            logger.warning(f"Error terminating job process {job_id}: {e}")
+    if job_id in jobs:
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["logs"].append("🛑 Job cancelled by user.")
+    return {"ok": True, "message": "Job cancelled"}
 
 
 @app.get("/api/jobs/{job_id}/download-all")
@@ -9276,6 +9301,8 @@ async def api_schedule_clip(req: ScheduleClipRequest, request: Request):
     """Schedule a specific clip for automated publishing."""
     await _ensure_job_files(req.job_id, request)
     job = jobs.get(req.job_id)
+    if job is None:
+        job = _job_view_from_disk(req.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     await _assert_job_owner(request, job)
@@ -9304,6 +9331,8 @@ async def api_auto_schedule_project(req: AutoScheduleProjectRequest, request: Re
     """Automatically schedule all clips in a project spaced out over time."""
     await _ensure_job_files(req.job_id, request)
     job = jobs.get(req.job_id)
+    if job is None:
+        job = _job_view_from_disk(req.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     await _assert_job_owner(request, job)

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Upload, Sparkles, Youtube, Instagram, Share2, ChevronDown, Check, Activity, LayoutDashboard, Settings, Plus, History, X, Terminal, Shield, LayoutGrid, Image, Globe, RotateCcw, Calendar, AlertTriangle, KeyRound, Bot, Users, Smartphone, ExternalLink, Copy, CheckCircle2, Mail, Loader2, Download, Menu, Lock, Rocket } from 'lucide-react';
+import { Upload, Sparkles, Youtube, Instagram, Share2, ChevronDown, Check, Activity, LayoutDashboard, Settings, Plus, History, X, Terminal, Shield, LayoutGrid, Image, Globe, RotateCcw, Calendar, AlertTriangle, KeyRound, Bot, Users, Smartphone, ExternalLink, Copy, CheckCircle2, Mail, Loader2, Download, Menu, Lock, Rocket, Square } from 'lucide-react';
 import KeyInput from './components/KeyInput';
 import MediaInput from './components/MediaInput';
 import McpConnectCard from './components/McpConnectCard';
@@ -415,13 +415,17 @@ function App() {
   // Pre-flight quality gate: { info: {max_height, min_height, cookies_invalid}, data }
   const [qualityGate, setQualityGate] = useState(null);
   const [logs, setLogs] = useState([]);
+  const logsEndRef = useRef(null);
   // When each server log line arrived (epoch s, parallel to logs), from /api/status.
   const [logTimes, setLogTimes] = useState([]);
-  // Collapsed on phones: the log tail is the least useful thing on a 360px
-  // screen and it was pushing the actual clips a full scroll down.
-  const [logsVisible, setLogsVisible] = useState(() => {
-    try { return window.innerWidth >= 768; } catch { return true; }
-  });
+  const [logsVisible, setLogsVisible] = useState(true);
+
+  // Auto-scroll logs to bottom as they arrive
+  useEffect(() => {
+    if (logsVisible && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, logsVisible]);
   const [processingMedia, setProcessingMedia] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, settings
   // Mobile only: the full nav lives in a drawer behind the header's menu button.
@@ -934,6 +938,12 @@ function App() {
           if (data.partial) setPartialJob(data.partial);
           setQueueInfo(data.status === 'queued' && data.queue ? data.queue : null);
 
+          // Always update logs if available
+          if (data.logs && data.logs.length > 0) {
+            setLogs(data.logs);
+            setLogTimes(data.log_times || []);
+          }
+
           if (data.status === 'completed' || data.status === 'complete') {
             setQueueInfo(null);
             setStatus('complete');
@@ -943,15 +953,8 @@ function App() {
             setStatus('error');
             const errorMsg = data.error || (data.logs && data.logs.length > 0 ? data.logs[data.logs.length - 1] : "Process failed");
             setJobError(readableError(errorMsg));
-            setLogs(prev => [...prev, "Error: " + errorMsg]);
             clearInterval(interval);
             refreshMe();
-          } else {
-            // Update logs if available
-            if (data.logs) {
-              setLogs(data.logs);
-              setLogTimes(data.log_times || []);
-            }
           }
         } catch (e) {
           console.error("Polling error", e);
@@ -1427,6 +1430,18 @@ function App() {
     setJobError('');
     localStorage.removeItem(SESSION_KEY);
   };
+
+  const handleCancelJob = async () => {
+    if (!jobId) return;
+    if (!window.confirm("Stop and cancel this video clipping process?")) return;
+    try {
+      await apiFetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+    } catch (e) {
+      console.warn("Cancel request failed", e);
+    }
+    handleReset();
+  };
+
   useEffect(() => {
     handleResetRef.current = handleReset;
   });
@@ -2321,6 +2336,10 @@ function App() {
                     if (d?.result?.clips?.length) {
                       setResults(d.result);
                     }
+                    if (d?.logs && d.logs.length > 0) {
+                      setLogs(d.logs);
+                      setLogTimes(d.log_times || []);
+                    }
                     if (d?.status) {
                       const norm = normalizeStatus(d.status);
                       if (proj?.clips?.length && norm !== 'error') {
@@ -2422,12 +2441,23 @@ function App() {
                     <Activity className={`text-brass ${status === 'processing' ? 'animate-pulse' : ''}`} size={18} />
                     Live Analysis
                   </h2>
-                  <span className={status === 'processing' ? 'badge-brass' :
-                    status === 'complete' ? 'badge-ok' :
-                      'badge-danger'
-                    }>
-                    {status.toUpperCase()}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {status === 'processing' && (
+                      <button
+                        onClick={handleCancelJob}
+                        className="py-1 px-2.5 rounded-input bg-danger/10 hover:bg-danger text-danger hover:text-white border border-danger/30 text-xs flex items-center gap-1 font-medium transition-colors"
+                        title="Stop and cancel current video clipping process"
+                      >
+                        <Square size={12} className="fill-current" /> Stop
+                      </button>
+                    )}
+                    <span className={status === 'processing' ? 'badge-brass' :
+                      status === 'complete' ? 'badge-ok' :
+                        'badge-danger'
+                      }>
+                      {status.toUpperCase()}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Trimmed run: say it while it renders, not only once the
@@ -2548,6 +2578,7 @@ function App() {
                       {status === 'processing' && (
                         <div className="animate-pulse text-brass">_</div>
                       )}
+                      <div ref={logsEndRef} />
                     </div>
                   )}
                 </div>

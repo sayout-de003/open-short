@@ -1349,10 +1349,24 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                     </button>
 
                     <button
-                        onClick={() => setShowModal(true)}
+                        onClick={() => {
+                            setIsScheduling(false);
+                            setShowModal(true);
+                        }}
                         className="btn-primary flex-col gap-1 py-2.5 sm:py-2 px-1 text-[11px] leading-none rounded-input whitespace-nowrap"
+                        title="Publish this clip now"
                     >
-                        <Share2 size={16} className="shrink-0" /> post
+                        <Share2 size={16} className="shrink-0" /> publish
+                    </button>
+                    <button
+                        onClick={() => {
+                            setIsScheduling(true);
+                            setShowModal(true);
+                        }}
+                        className="btn-primary flex-col gap-1 py-2.5 sm:py-2 px-1 text-[11px] leading-none rounded-input whitespace-nowrap bg-brass/20 text-brass hover:bg-brass hover:text-paper border border-brass/40"
+                        title="Schedule this clip to auto-post at a specific date & time"
+                    >
+                        <Calendar size={16} className="shrink-0" /> schedule
                     </button>
                     <button
                         onClick={(e) => {

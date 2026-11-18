@@ -187,6 +187,8 @@ async def execute_due_posts(app_module):
 
                 job = app_module.jobs.get(job_id)
                 if not job:
+                    job = app_module._job_view_from_disk(job_id)
+                if not job:
                     raise RuntimeError(f"Job {job_id} not found on server")
 
                 clip, file_path, filename = app_module._resolve_clip_video_file(job, job_id, clip_index)

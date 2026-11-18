@@ -115,6 +115,25 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
     const [progress, setProgress] = useState({ current: 0, total: 0, results: [] });
     const [done, setDone] = useState(false);
 
+    const [selectedClips, setSelectedClips] = useState(() => new Set((clips || []).map((_, i) => i)));
+
+    const toggleClip = (idx) => {
+        setSelectedClips(prev => {
+            const next = new Set(prev);
+            if (next.has(idx)) next.delete(idx);
+            else next.add(idx);
+            return next;
+        });
+    };
+
+    const toggleAllClips = () => {
+        if (selectedClips.size === (clips || []).length) {
+            setSelectedClips(new Set());
+        } else {
+            setSelectedClips(new Set((clips || []).map((_, i) => i)));
+        }
+    };
+
     // Reset state when modal reopens
     const prevOpen = React.useRef(false);
     React.useEffect(() => {
@@ -122,9 +141,10 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
             setScheduling(false);
             setDone(false);
             setProgress({ current: 0, total: 0, results: [] });
+            setSelectedClips(new Set((clips || []).map((_, i) => i)));
         }
         prevOpen.current = isOpen;
-    }, [isOpen]);
+    }, [isOpen, clips]);
 
     if (!isOpen) return null;
 
@@ -137,14 +157,17 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
         if (!canPost) return;
         if (selectedPlatforms.length === 0) return;
 
+        const targets = schedule.filter(s => selectedClips.has(s.index));
+        if (targets.length === 0) return;
+
         setScheduling(true);
         setDone(false);
-        const total = schedule.length;
+        const total = targets.length;
         setProgress({ current: 0, total, results: [] });
 
         const results = [];
-        for (let i = 0; i < schedule.length; i++) {
-            const { clip, index, date } = schedule[i];
+        for (let i = 0; i < targets.length; i++) {
+            const { clip, index, date } = targets[i];
             const scheduledIso = date.toISOString();
 
             const payload = {
@@ -171,9 +194,9 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
                     throw new Error(detail);
                 }
 
-                results.push({ index: i, success: true });
+                results.push({ index, success: true });
             } catch (e) {
-                results.push({ index: i, success: false, error: e.message });
+                results.push({ index, success: false, error: e.message });
             }
 
             setProgress({ current: i + 1, total, results: [...results] });
@@ -198,7 +221,7 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
             {!done ? (
                 <button
                     onClick={handleScheduleAll}
-                    disabled={scheduling || !canPost || selectedPlatforms.length === 0}
+                    disabled={scheduling || !canPost || selectedPlatforms.length === 0 || selectedClips.size === 0}
                     className="btn-primary flex-1"
                 >
                     {scheduling ? (
@@ -209,7 +232,7 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
                     ) : (
                         <>
                             <Calendar size={16} />
-                            schedule {clips?.length || 0} clips
+                            schedule {selectedClips.size} selected {selectedClips.size === 1 ? 'clip' : 'clips'}
                         </>
                     )}
                 </button>
@@ -323,38 +346,58 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
             </div>
 
             {/* Calendar list */}
-            <div className="mb-5 border-y border-rule divide-y divide-rule">
-                {schedule.map(({ clip, index, date }) => (
-                    <div key={index} className="flex items-center gap-3 py-2.5">
-                        <div className="w-24 shrink-0">
-                            <span className="readout">{getDayLabel(date)} · {formatDate(date)}</span>
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                            <div className="text-xs text-ink truncate">
-                                {clip.video_title_for_youtube_short || 'Viral Short'}
+            <div className="mb-2 flex items-center justify-between text-xs">
+                <span className="eyebrow">SELECT CLIPS TO SCHEDULE</span>
+                <button
+                    type="button"
+                    onClick={toggleAllClips}
+                    className="text-brass hover:underline font-medium text-xs"
+                >
+                    {selectedClips.size === (clips || []).length ? 'Deselect All' : 'Select All'}
+                </button>
+            </div>
+            <div className="mb-5 border-y border-rule divide-y divide-rule max-h-60 overflow-y-auto custom-scrollbar">
+                {schedule.map(({ clip, index, date }) => {
+                    const isSelected = selectedClips.has(index);
+                    return (
+                        <div key={index} className={`flex items-center gap-3 py-2.5 px-1 rounded transition-colors ${isSelected ? 'bg-paper/40' : 'opacity-60'}`}>
+                            <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleClip(index)}
+                                disabled={scheduling}
+                                className="w-4 h-4 accent-brass cursor-pointer shrink-0"
+                            />
+                            <div className="w-24 shrink-0">
+                                <span className="readout">{getDayLabel(date)} · {formatDate(date)}</span>
                             </div>
-                            <div className="readout mt-0.5 truncate">
-                                {time} · {TIMEZONES.find(t => t.value === timezone)?.label || timezone}
+
+                            <div className="flex-1 min-w-0">
+                                <div className="text-xs text-ink truncate font-medium">
+                                    {clip.video_title_for_youtube_short || `Clip #${index + 1}`}
+                                </div>
+                                <div className="readout mt-0.5 truncate">
+                                    {time} · {TIMEZONES.find(t => t.value === timezone)?.label || timezone}
+                                </div>
+                            </div>
+
+                            <div className="shrink-0">
+                                {progress.results.find(r => r.index === index)?.success === true && (
+                                    <CheckCircle size={16} className="text-ok" />
+                                )}
+                                {progress.results.find(r => r.index === index)?.success === false && (
+                                    <AlertCircle size={16} className="text-danger" />
+                                )}
+                                {scheduling && progress.current === index && (
+                                    <Loader2 size={16} className="text-brass animate-spin" />
+                                )}
+                                {!scheduling && !progress.results.some(r => r.index === index) && (
+                                    <Circle size={16} className={isSelected ? "text-brass" : "text-muted"} />
+                                )}
                             </div>
                         </div>
-
-                        <div className="shrink-0">
-                            {progress.results[index]?.success === true && (
-                                <CheckCircle size={16} className="text-ok" />
-                            )}
-                            {progress.results[index]?.success === false && (
-                                <AlertCircle size={16} className="text-danger" />
-                            )}
-                            {scheduling && progress.current === index && (
-                                <Loader2 size={16} className="text-brass animate-spin" />
-                            )}
-                            {!scheduling && progress.results[index] === undefined && (
-                                <Circle size={16} className="text-muted" />
-                            )}
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
             {/* Platforms */}
