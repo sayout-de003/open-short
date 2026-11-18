@@ -99,7 +99,7 @@ class LocalIntelligencePipeline:
         shorts = self.selector.select_clips(
             timeline=timeline,
             video_path=video_path,
-            vision_analyzer=self.vision_analyzer,
+            vision_analyzer=self.vision_analyzer if not transcript_segments else None,
             profile_name=self.profile_name,
         )
         print(f"   🎯 Extracted and ranked {len(shorts)} viral highlights")

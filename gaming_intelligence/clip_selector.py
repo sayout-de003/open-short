@@ -112,7 +112,7 @@ class ClipSelector:
 
             # Vision description for silent video or gaming visual context
             vision_desc = ""
-            if video_path and vision_analyzer and os.path.exists(video_path):
+            if not hook and video_path and vision_analyzer and os.path.exists(video_path):
                 try:
                     tmp_out = os.path.join(os.path.dirname(video_path), f".vision_tmp_{idx}")
                     frames = sampler.extract_key_frames(video_path, [center_ts], tmp_out)

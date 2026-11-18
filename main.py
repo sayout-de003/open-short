@@ -2212,7 +2212,7 @@ def _run_gemini_stage(client, model_name, prompt, schema):
         response_mime_type="application/json",
         response_schema=schema,
     )
-    max_attempts = 3
+    max_attempts = 1 if use_local else 3
     for attempt in range(1, max_attempts + 1):
         try:
             if use_local:

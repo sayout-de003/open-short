@@ -1,0 +1,19 @@
+# Educational Profile Configuration
+name: educational
+description: "Optimized for tutorials, coding, key insights, explanations, and key takeaways."
+weights:
+  visual: 0.20
+  audio: 0.20
+  transcript: 0.45
+  context: 0.15
+
+clip_limits:
+  min_duration: 20.0
+  max_duration: 60.0
+  target_count: 5
+
+thresholds:
+  motion_significance: 0.15
+  audio_spike_percentile: 70.0
+  scene_change_boost: 0.10
+  silence_allowed: false

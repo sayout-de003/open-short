@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DEFAULT_MODEL = "llama3.1:8b"
-DEFAULT_TIMEOUT = 120.0  # local models on CPU: fast timeout with local intelligence fallback
+DEFAULT_TIMEOUT = 45.0  # local models on CPU: fast timeout with local intelligence fallback
 
 
 def provider() -> str:

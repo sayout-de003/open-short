@@ -20,21 +20,10 @@ if ! docker ps | grep -q "ollama"; then
       ollama/ollama:latest
 fi
 
-# 2. Start Backend FastAPI if not running
-if ! pgrep -f "uvicorn app:app" > /dev/null; then
-    echo "Starting OpenShorts Backend (port 8000)..."
-    nohup /root/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000 > /root/openshort/output/backend.log 2>&1 &
-    sleep 2
-fi
-
-# 3. Start Frontend Dashboard if not running
-if ! pgrep -f "vite --host" > /dev/null; then
-    echo "Starting OpenShorts Web Dashboard (port 5175)..."
-    cd "$DIR/dashboard"
-    nohup npx vite --host 0.0.0.0 --port 5175 > /root/openshort/output/frontend.log 2>&1 &
-    cd "$DIR"
-    sleep 2
-fi
+# 2. Start services via systemd
+echo "Starting OpenShorts services via systemd..."
+systemctl start openshort-backend openshort-frontend
+sleep 2
 
 echo "=================================================="
 echo " Studio is LIVE and Operational!"
