@@ -26,11 +26,12 @@ SCOPES = [
 ENV_PATH = "/root/openshort/.env"
 
 
-def update_env_file(client_id: str, client_secret: str, refresh_token: str, env_path: str = ENV_PATH):
+def update_env_file(client_id: str, client_secret: str, refresh_token: str, env_path: str = None):
     """Write or update YouTube credentials in .env file."""
+    target_path = env_path or ENV_PATH
     lines = []
-    if os.path.exists(env_path):
-        with open(env_path, "r", encoding="utf-8") as f:
+    if os.path.exists(target_path):
+        with open(target_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
     updates = {
@@ -56,10 +57,10 @@ def update_env_file(client_id: str, client_secret: str, refresh_token: str, env_
         if key not in seen:
             new_lines.append(f"{key}={val}\n")
 
-    with open(env_path, "w", encoding="utf-8") as f:
+    with open(target_path, "w", encoding="utf-8") as f:
         f.writelines(new_lines)
 
-    print(f"\n✅ Successfully updated YouTube credentials in: {env_path}")
+    print(f"\n✅ Successfully updated YouTube credentials in: {target_path}")
 
 
 def main():

@@ -8909,14 +8909,151 @@ class YouTubePublishRequest(BaseModel):
     category_id: Optional[str] = None
 
 
+import urllib.parse
+import youtube_auth_helper
+
+
+class YouTubeExchangeRequest(BaseModel):
+    code: Optional[str] = None
+    redirect_uri: Optional[str] = None
+    refresh_token: Optional[str] = None
+
+
 @app.get("/api/youtube/config")
-async def get_youtube_config():
+async def get_youtube_config(request: Request):
     """Check if direct YouTube Data API v3 publishing is configured."""
+    client_id = os.environ.get("YOUTUBE_CLIENT_ID")
+    configured = youtube_publisher.is_direct_youtube_configured()
+    redirect_uri = os.environ.get(
+        "YOUTUBE_REDIRECT_URI",
+        f"{str(request.base_url).rstrip('/')}/api/youtube/auth/callback"
+    )
     return {
-        "configured": youtube_publisher.is_direct_youtube_configured(),
+        "configured": configured,
+        "has_client_id": bool(client_id),
+        "has_api_key": bool(os.environ.get("YOUTUBE_API_KEY")),
         "default_privacy": youtube_publisher.DEFAULT_PRIVACY,
         "default_category_id": youtube_publisher.DEFAULT_CATEGORY_ID,
+        "connect_url": "/api/youtube/auth/login" if client_id else None,
+        "redirect_uri": redirect_uri,
     }
+
+
+@app.get("/api/youtube/test")
+async def test_youtube_api():
+    """Verify YouTube Data API v3 connectivity with configured API key / credentials."""
+    return youtube_publisher.test_api_key()
+
+
+@app.get("/api/youtube/auth/login")
+async def youtube_auth_login(request: Request):
+    """Redirect to Google OAuth 2.0 consent screen for YouTube upload permission."""
+    client_id = os.environ.get("YOUTUBE_CLIENT_ID")
+    if not client_id:
+        raise HTTPException(
+            status_code=400,
+            detail="YOUTUBE_CLIENT_ID is not configured in .env"
+        )
+    redirect_uri = os.environ.get(
+        "YOUTUBE_REDIRECT_URI",
+        f"{str(request.base_url).rstrip('/')}/api/youtube/auth/callback"
+    )
+    scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube"
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": scope,
+        "access_type": "offline",
+        "prompt": "consent",
+    }
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
+    return RedirectResponse(auth_url)
+
+
+@app.get("/api/youtube/auth/callback")
+async def youtube_auth_callback(code: str, request: Request):
+    """Exchange authorization code for refresh token and save to .env."""
+    redirect_uri = os.environ.get(
+        "YOUTUBE_REDIRECT_URI",
+        f"{str(request.base_url).rstrip('/')}/api/youtube/auth/callback"
+    )
+    client_id = os.environ.get("YOUTUBE_CLIENT_ID")
+    client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET")
+    try:
+        tokens = await asyncio.to_thread(
+            youtube_publisher.exchange_code_for_tokens,
+            code=code,
+            redirect_uri=redirect_uri,
+        )
+    except Exception as e:
+        return HTMLResponse(
+            f"<html><body style='font-family:sans-serif;padding:40px;color:#d32f2f;'>"
+            f"<h2>OAuth Exchange Error</h2><p>{str(e)}</p>"
+            f"<p><a href='/'>Return to OpenShorts</a></p></body></html>",
+            status_code=400
+        )
+
+    refresh_token = tokens.get("refresh_token")
+    access_token = tokens.get("access_token")
+    if refresh_token:
+        youtube_auth_helper.update_env_file(client_id, client_secret, refresh_token)
+        os.environ["YOUTUBE_REFRESH_TOKEN"] = refresh_token
+    if access_token:
+        os.environ["YOUTUBE_ACCESS_TOKEN"] = access_token
+
+    return HTMLResponse(
+        "<html><body style='font-family:sans-serif;padding:50px;text-align:center;background:#0d1117;color:#e6edf3;'>"
+        "<div style='max-width:500px;margin:auto;padding:30px;background:#161b22;border-radius:12px;border:1px solid #30363d;'>"
+        "<h2 style='color:#3fb950;margin-top:0;'>🎉 YouTube Connected Successfully!</h2>"
+        "<p style='color:#8b949e;'>Your Google account has been authorized. OpenShorts can now publish directly to YouTube Shorts.</p>"
+        "<div style='margin-top:24px;'><a href='/' style='background:#f59e0b;color:#000;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600;'>Return to OpenShorts Dashboard</a></div>"
+        "</div>"
+        "<script>setTimeout(() => { window.location.href = '/'; }, 3000);</script>"
+        "</body></html>"
+    )
+
+
+@app.post("/api/youtube/auth/exchange")
+async def youtube_auth_exchange(req: YouTubeExchangeRequest, request: Request):
+    """Directly exchange an authorization code or store a refresh token."""
+    client_id = os.environ.get("YOUTUBE_CLIENT_ID")
+    client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise HTTPException(status_code=400, detail="YouTube Client credentials not set in .env")
+
+    if req.refresh_token:
+        youtube_auth_helper.update_env_file(client_id, client_secret, req.refresh_token.strip())
+        os.environ["YOUTUBE_REFRESH_TOKEN"] = req.refresh_token.strip()
+        return {"success": True, "message": "Refresh token updated successfully"}
+
+    if req.code:
+        redirect_uri = req.redirect_uri or os.environ.get(
+            "YOUTUBE_REDIRECT_URI",
+            f"{str(request.base_url).rstrip('/')}/api/youtube/auth/callback"
+        )
+        try:
+            tokens = await asyncio.to_thread(
+                youtube_publisher.exchange_code_for_tokens,
+                code=req.code.strip(),
+                redirect_uri=redirect_uri,
+            )
+            refresh_token = tokens.get("refresh_token")
+            access_token = tokens.get("access_token")
+            if refresh_token:
+                youtube_auth_helper.update_env_file(client_id, client_secret, refresh_token)
+                os.environ["YOUTUBE_REFRESH_TOKEN"] = refresh_token
+            if access_token:
+                os.environ["YOUTUBE_ACCESS_TOKEN"] = access_token
+            return {
+                "success": True,
+                "has_refresh_token": bool(refresh_token),
+                "has_access_token": bool(access_token),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    raise HTTPException(status_code=400, detail="Either 'code' or 'refresh_token' must be provided")
 
 
 def _resolve_clip_video_file(job, job_id: str, clip_index: int):

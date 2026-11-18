@@ -6,6 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import youtube_publisher
+from fastapi.testclient import TestClient
+from app import app
+
+client = TestClient(app)
 
 
 class TestYouTubePublisher(unittest.TestCase):
@@ -80,3 +84,24 @@ class TestYouTubePublisher(unittest.TestCase):
         finally:
             if os.path.exists(dummy_file):
                 os.remove(dummy_file)
+
+def test_test_youtube_api():
+    # Tests the /api/youtube/test endpoint with live API key
+    resp = client.get("/api/youtube/test")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is True
+    assert "sample_categories" in data
+
+
+def test_youtube_auth_exchange_refresh_token(monkeypatch, tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("YOUTUBE_CLIENT_ID=test_id\nYOUTUBE_CLIENT_SECRET=test_sec\n")
+    monkeypatch.setattr("youtube_auth_helper.ENV_PATH", str(env_file))
+    monkeypatch.setenv("YOUTUBE_CLIENT_ID", "test_id")
+    monkeypatch.setenv("YOUTUBE_CLIENT_SECRET", "test_sec")
+
+    resp = client.post("/api/youtube/auth/exchange", json={"refresh_token": "mock_refresh_token_abc"})
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    assert "mock_refresh_token_abc" in env_file.read_text()

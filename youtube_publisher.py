@@ -46,6 +46,53 @@ def is_direct_youtube_configured() -> bool:
     return bool(client_id and client_secret and refresh_token)
 
 
+def test_api_key(api_key: Optional[str] = None) -> Dict[str, Any]:
+    """Test YouTube Data API v3 access using API key."""
+    key = api_key or os.environ.get("YOUTUBE_API_KEY")
+    if not key:
+        return {"success": False, "error": "No API key configured"}
+    import requests
+    url = f"https://www.googleapis.com/youtube/v3/videoCategories?part=snippet&regionCode=US&key={key}"
+    try:
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            categories = [item.get("snippet", {}).get("title") for item in data.get("items", [])[:5]]
+            return {
+                "success": True,
+                "message": "YouTube Data API v3 is active and operational with provided API key",
+                "sample_categories": categories,
+            }
+        return {
+            "success": False,
+            "status_code": resp.status_code,
+            "error": resp.text,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def exchange_code_for_tokens(code: str, redirect_uri: str) -> Dict[str, Any]:
+    """Exchange an OAuth2 authorization code for refresh and access tokens."""
+    client_id = os.environ.get("YOUTUBE_CLIENT_ID")
+    client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise ValueError("YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET must be set")
+    import requests
+    token_url = "https://oauth2.googleapis.com/token"
+    data = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": redirect_uri,
+    }
+    resp = requests.post(token_url, data=data, timeout=15)
+    if resp.status_code != 200:
+        raise RuntimeError(f"Token exchange failed ({resp.status_code}): {resp.text}")
+    return resp.json()
+
+
 def get_youtube_credentials() -> google.oauth2.credentials.Credentials:
     """Build and refresh Google OAuth2 Credentials object from environment variables."""
     access_token = os.environ.get("YOUTUBE_ACCESS_TOKEN")
