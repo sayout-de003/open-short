@@ -1276,6 +1276,7 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
                   f"transcribing once the video is in.")
 
     def _attempt(extractor_args, fmt, proxy, cookies=True):
+        nonlocal _range_cap
         _dl_bytes["total"] = 0
         _dl_bytes["partial"] = 0
         # Extracted ONCE, unprocessed, and handed to the download below: a
@@ -1301,8 +1302,8 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
         # Real-time live video cutting: do not wait for the stream to end.
         is_live = bool(info.get('is_live') or info.get('live_status') == 'is_live')
         if is_live:
-            # Default to 120s (2 minutes) rolling window (1-2 min delay) for ultra-fast reel generation
-            live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "120"))
+            # Default to 90s-120s rolling window (1-2 min delay) for ultra-fast reel generation
+            live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "90"))
             print(f"🔴 Live video stream detected! Real-time live clipping active (capturing {live_seconds/60:.1f}m rolling window from 1-2 min buffer)...")
             os.environ["IS_LIVE_STREAM"] = "1"
             if not os.environ.get("X264_PRESET"):
@@ -1312,33 +1313,40 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
             if not os.environ.get("CLIP_TARGET_MIN"):
                 os.environ["CLIP_TARGET_MIN"] = "1"
 
-            stream_url = info.get('url')
-            if not stream_url and info.get('formats'):
+            v_url = None
+            a_url = None
+            if info.get('formats'):
+                # Extract best video and best audio HLS streams (YouTube separates them)
                 for f in reversed(info['formats']):
-                    if f.get('url') and ('m3u8' in f.get('url') or 'mp4' in f.get('ext', '') or 'live' in str(f.get('format_note', '')).lower()):
-                        stream_url = f['url']
-                        break
-                if not stream_url and info['formats']:
-                    stream_url = info['formats'][-1].get('url')
+                    if f.get('vcodec') != 'none' and not v_url and f.get('url'):
+                        v_url = f.get('url')
+                    if f.get('acodec') != 'none' and f.get('vcodec') == 'none' and not a_url and f.get('url'):
+                        a_url = f.get('url')
 
+            stream_url = info.get('url') or v_url
             if stream_url:
                 try:
-                    # Rolling HLS index: YouTube live segments are typically 2-5s each.
-                    # Negative index starts from the end of the sliding window.
-                    # E.g., for 120s, ~35-40 segments back = ~1-2 minutes back in time.
-                    start_index = -int(max(15, live_seconds // 3))
-                    cmd = [
-                        'ffmpeg', '-y',
-                        '-live_start_index', str(start_index),
-                        '-http_persistent', '1',
-                        '-http_multiple', '1',
-                        '-max_reload', '1',
-                        '-reconnect', '1', '-reconnect_at_eof', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '2',
-                        '-i', stream_url,
-                        '-t', str(int(live_seconds)),
-                        '-c', 'copy',
-                        expected
-                    ]
+                    start_index = -int(max(10, live_seconds // 3))
+                    if v_url and a_url and v_url != a_url:
+                        cmd = [
+                            'ffmpeg', '-y',
+                            '-live_start_index', str(start_index),
+                            '-i', v_url,
+                            '-live_start_index', str(start_index),
+                            '-i', a_url,
+                            '-t', str(int(live_seconds)),
+                            '-c', 'copy',
+                            expected
+                        ]
+                    else:
+                        cmd = [
+                            'ffmpeg', '-y',
+                            '-live_start_index', str(start_index),
+                            '-i', stream_url,
+                            '-t', str(int(live_seconds)),
+                            '-c', 'copy',
+                            expected
+                        ]
                     print(f"🎬 Capturing live stream via fast HLS demuxer for {live_seconds}s (start index {start_index})...")
                     proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=int(live_seconds + 30))
                     if os.path.exists(expected) and os.path.getsize(expected) > 256 * 1024:
@@ -1349,7 +1357,7 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
 
         # If live stream fell back to yt-dlp, ensure _range_cap is set to live_seconds
         if is_live and not _range_cap:
-            _range_cap = float(os.environ.get("LIVE_CUT_SECONDS", "120"))
+            _range_cap = float(os.environ.get("LIVE_CUT_SECONDS", "90"))
 
         # Only when the whole source is far bigger than what was paid for: a
         # ranged fetch goes through ffmpeg at ~1-2.5x realtime, while a native
