@@ -54,8 +54,9 @@ export default function HistoryTab({ onReopenProject }) {
   };
 
   const handleOpenProject = (jobId) => {
+    const proj = (projects || []).find(p => p.job_id === jobId);
     if (onReopenProject) {
-      onReopenProject(jobId);
+      onReopenProject(jobId, proj);
     } else {
       window.location.hash = `#/app?job=${jobId}`;
       window.location.reload();

@@ -26,6 +26,7 @@ import TrialGate from './components/TrialGate';
 import AdvancedBanner from './components/AdvancedBanner';
 import HistoryTab from './components/HistoryTab';
 import AutopilotTab from './components/AutopilotTab';
+import ErrorBoundary from './components/ErrorBoundary';
 import ProfileMenu from './components/ProfileMenu';
 import Modal from './components/ui/Modal';
 import { useAuth } from './contexts/AuthContext';
@@ -282,6 +283,15 @@ const pollJob = async (jobId) => {
   const res = await apiFetch(`/api/status/${jobId}`);
   if (!res.ok) throw new JobPollError(res.status);
   return res.json();
+};
+
+const normalizeStatus = (s) => {
+  if (!s) return 'idle';
+  const str = String(s).toLowerCase();
+  if (str === 'completed' || str === 'complete') return 'complete';
+  if (str === 'failed' || str === 'error') return 'error';
+  if (str === 'processing' || str === 'queued' || str === 'running') return 'processing';
+  return 'idle';
 };
 
 function App() {
@@ -743,7 +753,7 @@ function App() {
         if (session.projectState) setProjectState(session.projectState);
         if (session.activeTab) setActiveTab(session.activeTab);
         // If was processing, resume polling; if complete/error, just show results
-        setStatus(session.status === 'processing' ? 'processing' : session.status);
+        setStatus(normalizeStatus(session.status));
         setSessionRecovered(true);
         setTimeout(() => setSessionRecovered(false), 5000);
       }
@@ -924,12 +934,12 @@ function App() {
           if (data.partial) setPartialJob(data.partial);
           setQueueInfo(data.status === 'queued' && data.queue ? data.queue : null);
 
-          if (data.status === 'completed') {
+          if (data.status === 'completed' || data.status === 'complete') {
             setQueueInfo(null);
             setStatus('complete');
             clearInterval(interval);
             refreshMe();
-          } else if (data.status === 'failed') {
+          } else if (data.status === 'failed' || data.status === 'error') {
             setStatus('error');
             const errorMsg = data.error || (data.logs && data.logs.length > 0 ? data.logs[data.logs.length - 1] : "Process failed");
             setJobError(readableError(errorMsg));
@@ -1008,7 +1018,7 @@ function App() {
         setJobId(urlJobId);
         pollJob(urlJobId).then((d) => {
           if (d?.result) setResults(d.result);
-          if (d?.status) setStatus(d.status === 'completed' ? 'complete' : d.status);
+          if (d?.status) setStatus(normalizeStatus(d.status));
         }).catch(() => {});
       }
       const qa = q.get('tutorial');
@@ -1808,6 +1818,7 @@ function App() {
 
         {/* Main Workspace */}
         <div className="flex-1 overflow-hidden relative">
+          <ErrorBoundary onReset={handleReset}>
 
           {/* View: Settings */}
           {activeTab === 'settings' && (
@@ -2273,13 +2284,45 @@ function App() {
           {activeTab === 'history' && (
             <div className="h-full overflow-y-auto custom-scrollbar animate-fade">
               <div className="max-w-6xl mx-auto p-4 sm:p-6 md:p-8">
-                <HistoryTab onReopenProject={(jid) => {
+                <HistoryTab onReopenProject={(jid, proj) => {
                   setJobId(jid);
+                  setJobGone(false);
+                  flushClipState();
+                  setNoSource(true);
+                  setProcessingMedia(null);
+
+                  // If project from HistoryTab already has clips, display them IMMEDIATELY!
+                  if (proj && proj.clips && proj.clips.length > 0) {
+                    const shorts = (proj.shorts && proj.shorts.length > 0) ? proj.shorts : proj.clips.map((c, i) => ({
+                      title: `${proj.title || 'Clip'} #${i + 1}`,
+                      video_title_for_youtube_short: `${proj.title || 'Clip'} #${i + 1}`,
+                      video_url: c.url,
+                      start: 0,
+                      end: 0,
+                      virality_score: 5,
+                    }));
+                    setResults({ clips: shorts });
+                    setStatus('complete');
+                    setLogs(['♻️ Project loaded from your local library.']);
+                    setLogTimes([Date.now() / 1000]);
+                    setActiveTab('dashboard');
+                  }
+
+                  // Also poll backend to sync freshest state
                   pollJob(jid).then((d) => {
                     if (d?.result) setResults(d.result);
-                    if (d?.status) setStatus(d.status === 'completed' ? 'complete' : d.status);
+                    if (d?.status) {
+                      setStatus(normalizeStatus(d.status));
+                    }
+                    setNoSource(true);
+                    setProcessingMedia(null);
                     setActiveTab('dashboard');
-                  }).catch(() => {
+                  }).catch((err) => {
+                    console.warn("Poll job on reopen:", err);
+                    if (!proj || !proj.clips || proj.clips.length === 0) {
+                      setStatus('error');
+                      setJobError("Could not retrieve project clips from server.");
+                    }
                     setActiveTab('dashboard');
                   });
                 }} />
@@ -2308,7 +2351,7 @@ function App() {
           )} */}
 
           {/* View: Dashboard (Idle) */}
-          {activeTab === 'dashboard' && status === 'idle' && (
+          {activeTab === 'dashboard' && (status === 'idle' || !status) && (
             <div className="h-full overflow-y-auto custom-scrollbar animate-fade">
               <div className="min-h-full flex flex-col items-center justify-center px-4 py-5 sm:p-6">
               {/* On a phone the hero used to fill the fold on its own and push
@@ -2352,7 +2395,7 @@ function App() {
           )}
 
           {/* View: Processing / Results (Split View) */}
-          {activeTab === 'dashboard' && (status === 'processing' || status === 'complete' || status === 'error') && (
+          {activeTab === 'dashboard' && (status === 'processing' || status === 'complete' || status === 'completed' || status === 'error' || status === 'failed') && (
             <div className="h-full flex flex-col md:flex-row gap-3 md:gap-4 p-3 md:p-4 overflow-y-auto md:overflow-y-hidden custom-scrollbar animate-fade">
 
               {/* Left Panel: Preview & Status */}
@@ -2701,9 +2744,27 @@ function App() {
                           They appear here one by one as each finishes rendering.
                         </p>
                       </div>
-                    ) : status === 'error' ? (
-                      <div className="h-full min-h-[120px] flex flex-col items-center justify-center text-danger space-y-2">
-                        <p>Generation failed.</p>
+                    ) : (status === 'error' || status === 'failed') ? (
+                      <div className="h-full min-h-[160px] flex flex-col items-center justify-center text-danger space-y-3 p-6 text-center animate-fade">
+                        <AlertCircle size={28} className="text-danger" />
+                        <p className="font-medium text-sm text-ink">{jobError || "Generation failed"}</p>
+                        <p className="text-xs text-muted max-w-sm leading-relaxed">
+                          An error occurred during video processing. You can try another video, check server logs on the left, or start fresh.
+                        </p>
+                        <div className="flex items-center gap-2 pt-2">
+                          <button
+                            onClick={handleReset}
+                            className="btn-primary py-2 px-4 text-xs flex items-center gap-1.5"
+                          >
+                            <Plus size={14} /> Start New Project
+                          </button>
+                          <button
+                            onClick={() => goToTab('history')}
+                            className="btn-quiet py-2 px-4 text-xs flex items-center gap-1.5"
+                          >
+                            <Film size={14} /> Back to History
+                          </button>
+                        </div>
                       </div>
                     ) : null
                   )}
@@ -2713,6 +2774,17 @@ function App() {
             </div>
           )}
 
+          {/* Fallback View for any unexpected status */}
+          {activeTab === 'dashboard' && status !== 'idle' && status !== 'processing' && status !== 'complete' && status !== 'completed' && status !== 'error' && status !== 'failed' && (
+            <div className="h-full min-h-[200px] flex flex-col items-center justify-center p-6 text-center space-y-3 animate-fade">
+              <p className="text-sm text-muted">No active project in progress.</p>
+              <button onClick={handleReset} className="btn-primary py-2 px-4 text-xs flex items-center gap-2">
+                <Plus size={14} /> Create Shorts
+              </button>
+            </div>
+          )}
+
+          </ErrorBoundary>
         </div>
 
         {/* Phone navigation. A flex sibling of the scrolling pane, not a fixed
