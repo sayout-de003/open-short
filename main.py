@@ -12,17 +12,32 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scenedetect import open_video, SceneManager
 from scenedetect.detectors import ContentDetector
-from ultralytics import YOLO
-import torch
+try:
+    from ultralytics import YOLO
+    import torch
+    _yolo_available = True
+except Exception:
+    YOLO = None
+    torch = None
+    _yolo_available = False
+
+try:
+    import mediapipe as mp
+except Exception:
+    mp = None
+
 import os
 import math
 import numpy as np
 from tqdm import tqdm
 import yt_dlp
-import mediapipe as mp
 # import whisper (replaced by faster_whisper inside function)
-from google import genai
-from google.genai import types as genai_types
+try:
+    from google import genai
+    from google.genai import types as genai_types
+except Exception:
+    genai = None
+    genai_types = None
 
 import frame_sampler
 import gpu_decode
@@ -94,12 +109,28 @@ OUTPUT — RETURN ONLY VALID JSON (no markdown, no comments). Order clips by pre
 # Load the YOLO model once (Keep for backup or scene analysis if needed)
 # YOLO_MODEL_PATH lets deployments point at a pre-downloaded weights file so a
 # volume mounted over the workdir doesn't trigger a re-download at startup.
-model = YOLO(os.environ.get("YOLO_MODEL_PATH", "yolov8n.pt"))
+if _yolo_available and YOLO:
+    try:
+        model = YOLO(os.environ.get("YOLO_MODEL_PATH", "yolov8n.pt"))
+    except Exception as e:
+        print(f"YOLO initialization notice: {e}")
+        model = None
+else:
+    model = None
 
 # --- MediaPipe Setup ---
 # Use standard Face Detection (BlazeFace) for speed
-mp_face_detection = mp.solutions.face_detection
-face_detection = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
+if mp and hasattr(mp, 'solutions'):
+    try:
+        mp_face_detection = mp.solutions.face_detection
+        face_detection = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
+    except Exception as e:
+        print(f"MediaPipe initialization notice: {e}")
+        mp_face_detection = None
+        face_detection = None
+else:
+    mp_face_detection = None
+    face_detection = None
 
 # Consecutive detections a large target move must survive before the camera
 # follows it (see SmoothedCameraman.update_target). Env-overridable so the
@@ -445,8 +476,14 @@ def detect_face_candidates(frame):
     height, width, _ = frame.shape
     small, _scale = _detection_frame(frame)
     rgb_frame = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
+    if face_detection is None:
+        return []
+
     with DETECT_LOCK:
-        results = face_detection.process(rgb_frame)
+        try:
+            results = face_detection.process(rgb_frame)
+        except Exception:
+            return []
     
     candidates = []
     
@@ -474,9 +511,15 @@ def detect_person_yolo(frame):
     ORIGINAL frame coordinates (inference runs on a downscaled copy).
     """
     small, scale = _detection_frame(frame)
+    if model is None:
+        return None
+
     # Use the globally loaded model
     with DETECT_LOCK:
-        results = model(small, verbose=False, classes=[0]) # class 0 is person
+        try:
+            results = model(small, verbose=False, classes=[0]) # class 0 is person
+        except Exception:
+            return None
 
     if not results:
         return None
@@ -2587,19 +2630,6 @@ def get_visual_clips(video_path, video_duration, language="en", viewer_clips=Non
     stretch (``vision_segments``), and the picks are merged, de-overlapped
     and cut to the best ``CLIP_TARGET_MAX`` by score: a silent multi-hour
     console capture used to fail at the model."""
-    print("🎥  Silent video — analyzing with Gemini vision (no transcript)...")
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        if llm_backend.active():
-            print("❌ This video has no usable speech, so it has to be clipped by "
-                  "watching it, and that needs Gemini (a text-only LLM server "
-                  "cannot see the footage). Add a GEMINI_API_KEY for silent videos.")
-        else:
-            print("❌ Error: GEMINI_API_KEY not found.")
-        return None
-    client = genai.Client(api_key=api_key)
-    model_name = os.environ.get("GEMINI_MODEL") or 'gemini-3.1-flash-lite'
-
     # The vision path has no scoring windows to derive a count from, so the
     # env targets (user request) apply directly over the classic 3-15.
     def _env_int(name, default):
@@ -2610,6 +2640,31 @@ def get_visual_clips(video_path, video_duration, language="en", viewer_clips=Non
     v_min_clips = _env_int("CLIP_TARGET_MIN", 3)
     v_max_clips = max(v_min_clips, _env_int("CLIP_TARGET_MAX", 15))
     v_min_secs, v_max_secs = clip_duration_bounds()
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("🎮 No Gemini API key detected — switching to 100% Local Intelligence Pipeline...")
+        from gaming_intelligence.pipeline import LocalIntelligencePipeline
+        pipeline = LocalIntelligencePipeline(
+            profile_name=os.getenv("CLIPPING_PROFILE", "gaming"),
+            min_clip_sec=v_min_secs,
+            max_clip_sec=v_max_secs,
+            max_clips=v_max_clips,
+            llm_base_url=os.getenv("LLM_BASE_URL"),
+        )
+        shorts, meta = pipeline.process_video(video_path, float(video_duration))
+        cost_analysis = {
+            "model": "local_multimodal_pipeline",
+            "total_cost": 0.0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "thinking_tokens": 0,
+        }
+        return {"shorts": shorts, "cost_analysis": cost_analysis}
+
+    print("🎥  Silent video — analyzing with Gemini vision (no transcript)...")
+    client = genai.Client(api_key=api_key)
+    model_name = os.environ.get("GEMINI_MODEL") or 'gemini-3.1-flash-lite'
 
     segments = vision_segments(video_duration, VISION_SEGMENT_SECONDS, VISION_MAX_SEGMENTS)
     try:

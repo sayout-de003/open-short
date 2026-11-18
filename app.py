@@ -5401,6 +5401,54 @@ async def get_config():
         # Self-host only: tells the dashboard the Gemini key is optional
         # because the moment picker runs on an OpenAI-compatible server.
         "localLlm": None if BILLING_ENABLED else llm_backend.describe(),
+        "localIntelligence": True,
+        "profiles": ["gaming", "podcast", "commentary", "generic"],
+    }
+
+
+@app.get("/api/intelligence/profiles")
+async def get_intelligence_profiles():
+    import yaml
+    prof_dir = os.path.join(os.path.dirname(__file__), "gaming_intelligence", "profiles")
+    out = {}
+    if os.path.exists(prof_dir):
+        for f in os.listdir(prof_dir):
+            if f.endswith(".yaml"):
+                name = f[:-5]
+                try:
+                    with open(os.path.join(prof_dir, f), "r") as pf:
+                        out[name] = yaml.safe_load(pf)
+                except Exception:
+                    pass
+    return {"profiles": out}
+
+
+class StreamCaptureRequest(BaseModel):
+    url: str
+    platform: str = "twitch"  # "twitch" or "youtube"
+    duration_seconds: int = 120
+    profile: str = "gaming"
+
+
+@app.post("/api/intelligence/stream")
+async def capture_live_stream(req: StreamCaptureRequest):
+    from gaming_intelligence.stream_recorder import StreamRecorder
+    recorder = StreamRecorder(output_dir=UPLOAD_DIR)
+    try:
+        if req.platform.lower() == "twitch":
+            recorded_file = recorder.capture_twitch_stream(req.url, duration_sec=req.duration_seconds)
+        else:
+            recorded_file = recorder.capture_youtube_live(req.url, duration_sec=req.duration_seconds)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Stream capture failed: {str(e)}")
+
+    return {
+        "ok": True,
+        "file": recorded_file,
+        "filename": os.path.basename(recorded_file),
+        "profile": req.profile,
+        "duration_seconds": req.duration_seconds,
+        "message": f"Successfully captured {req.duration_seconds}s from {req.url}"
     }
 
 async def _probe_youtube_quality(url: str) -> dict:
@@ -5801,6 +5849,7 @@ async def process_endpoint(
     max_minutes: Optional[str] = Form(None),
     source_start: Optional[str] = Form(None),
     source_end: Optional[str] = Form(None),
+    clipping_profile: Optional[str] = Form(None),
 ):
     api_key = await resolve_gemini(request)
     if not api_key and not (llm_backend.active() and not BILLING_ENABLED):
@@ -5835,6 +5884,7 @@ async def process_endpoint(
         max_minutes = body.get("max_minutes")
         source_start = body.get("source_start")
         source_end = body.get("source_end")
+        clipping_profile = body.get("clipping_profile") or body.get("category") or body.get("profile")
 
     # Normalize output format (auto = keep pipeline default).
     if output_format not in ("vertical", "horizontal", "square"):
@@ -5916,6 +5966,8 @@ async def process_endpoint(
     # probe above already gets this right.
     cmd = [sys.executable, "-u", "main.py"] # -u for unbuffered
     env = child_env()
+    if clipping_profile:
+        env["CLIPPING_PROFILE"] = str(clipping_profile).strip().lower()
     if api_key:
         env["GEMINI_API_KEY"] = api_key # Override with key from request
     else:

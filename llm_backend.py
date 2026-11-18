@@ -29,6 +29,9 @@ from typing import Optional, Tuple, Type
 
 import httpx
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+load_dotenv()
 
 DEFAULT_MODEL = "llama3.1:8b"
 DEFAULT_TIMEOUT = 600.0  # local models on CPU are slow; a scoring batch can take minutes

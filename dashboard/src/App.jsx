@@ -935,11 +935,10 @@ function App() {
   };
 
   // Hosted is paid-only (no BYOK core). Self-host uses BYOK keys.
-  // `keysMissing` now means "self-host BYOK keys missing" — it never fires on hosted.
-  // A self-hosted server running the moment picker on a local LLM
-  // (LLM_BASE_URL) does not need a Gemini key for the core pipeline.
+  // In self-host mode, if localLlm is active or apiKey is present, video generation and direct downloads work 100% locally.
+  // Upload-Post is purely optional for auto-publishing to social accounts.
   const geminiOk = !!apiKey || !!localLlm;
-  const keysMissing = !billingEnabled && (!geminiOk || !uploadPostKey);
+  const keysMissing = !billingEnabled && !geminiOk;
   const needsPlan = billingEnabled && !isManaged;   // hosted, signed-out or no active plan/trial
 
   // Fresh sign-up: Clip Generator tutorial (AuthContext set os_show_clip_tutorial
@@ -1209,6 +1208,7 @@ function App() {
         // Set when the user took the quota wall's "clip the first N minutes"
         // offer: the server reserves N minutes and cuts the source to them.
         max_minutes: data.maxMinutes || null,
+        clipping_profile: data.clipping_profile || null,
         // The stretch picked under the cost line (seconds); absent = whole video.
         source_start: data.sourceStart ?? null,
         source_end: data.sourceEnd ?? null,
@@ -1651,6 +1651,16 @@ function App() {
             )}
             {billingEnabled && isSignedIn && <ProfileMenu onUpgrade={isManaged ? openUpsell : null} />}
 
+            {localLlm && (
+              <div
+                className="badge-ok hidden sm:inline-flex items-center gap-1.5 py-1 px-2.5 text-xs select-none"
+                title={`Running 100% locally on Ollama (${localLlm.model || 'qwen3:1.7b'})`}
+              >
+                <Check size={12} className="text-ok" />
+                <span>Local AI ({localLlm.model || 'qwen3:1.7b'})</span>
+              </div>
+            )}
+
             {/* Hidden below sm: the standing banner underneath already says the
                 same thing, and two warnings in a 360px header is just noise. */}
             {keysMissing && (
@@ -1660,13 +1670,7 @@ function App() {
                 title="Configure API keys or choose a plan"
               >
                 <AlertTriangle size={12} />
-                <span className="hidden md:inline">
-                  {!geminiOk && !uploadPostKey
-                    ? 'Gemini & Upload-Post keys missing'
-                    : !geminiOk
-                      ? 'Gemini API Key Missing'
-                      : 'Upload-Post API Key Missing'}
-                </span>
+                <span className="hidden md:inline">Gemini API Key Missing</span>
                 <span className="md:hidden">keys missing</span>
               </button>
             )}
@@ -1681,11 +1685,7 @@ function App() {
               <div className="min-w-0">
                 <span className="font-medium text-ink">Required API keys missing.</span>{' '}
                 <span className="text-muted">
-                  {!geminiOk && !uploadPostKey
-                    ? 'Set your Gemini and Upload-Post API keys to use OpenShorts.'
-                    : !geminiOk
-                      ? 'Set your Gemini API key to use OpenShorts.'
-                      : 'Set your Upload-Post API key to use OpenShorts.'}
+                  Set your Gemini API key or enable local models in .env to use OpenShorts.
                 </span>
               </div>
             </div>
@@ -1807,7 +1807,7 @@ function App() {
                 </div>
               ) : (
                 <>
-              <KeyInput onKeySet={setApiKey} savedKey={apiKey} />
+              <KeyInput onKeySet={setApiKey} savedKey={apiKey} localLlm={localLlm} />
 
               <div className="card p-4 sm:p-6 mt-8">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
@@ -1815,13 +1815,13 @@ function App() {
                     <div className="w-9 h-9 rounded-input bg-paper3 flex items-center justify-center shrink-0">
                       <Share2 size={16} className="text-brass" />
                     </div>
-                    <h2 className="text-base font-medium text-ink lowercase">Social Integration</h2>
+                    <h2 className="text-base font-medium text-ink lowercase">Social Publishing (Optional)</h2>
                   </div>
-                  <span className="badge-warn">Required</span>
+                  <span className="badge-quiet">Optional</span>
                 </div>
                 <p className="text-xs text-muted mb-6 leading-relaxed">
-                  Required to publish your clips to TikTok, Instagram Reels, and YouTube Shorts via <strong>Upload-Post</strong>.
-                  Includes a <strong>free tier</strong> (no credit card required).
+                  Optional: Only required if you want to publish clips directly to TikTok, Instagram Reels, and YouTube Shorts via <strong>Upload-Post</strong>.
+                  Leave blank to generate and download clips directly to your computer.
                 </p>
                 <div className="space-y-4">
                   <label className="block text-sm text-muted">Upload-Post API Key</label>
@@ -2594,11 +2594,7 @@ function App() {
         isOpen={showKeyModal}
         onClose={() => setShowKeyModal(false)}
         eyebrow="SETUP"
-        title={!geminiOk && !uploadPostKey
-          ? 'Required API Keys Missing'
-          : !geminiOk
-            ? 'Gemini API Key Required'
-            : 'Upload-Post API Key Required'}
+        title={!geminiOk ? 'AI Model or Gemini Key Required' : 'Configuration'}
         footer={
           <div className="flex gap-3">
             <button
@@ -2618,7 +2614,7 @@ function App() {
       >
         <div className="space-y-4">
           <p className="text-sm text-muted">
-            OpenShorts needs both a <strong className="text-ink2">Gemini</strong> API key and an <strong className="text-ink2">Upload-Post</strong> API key. Both have free tiers.
+            Configure your AI engine: run 100% locally with <strong>Ollama (Qwen3 / Moondream)</strong>, or connect a <strong>Gemini</strong> API key. Direct video downloads are available locally without any paid services.
           </p>
 
           {/* Gemini block */}
@@ -2652,13 +2648,13 @@ function App() {
           {/* Upload-Post block */}
           <div className={`rounded-input p-4 space-y-2 border ${!uploadPostKey ? 'border-rule2' : 'border-rule opacity-70'}`}>
             <p className="text-xs font-medium text-ink flex items-center gap-2">
-              {uploadPostKey ? <Check size={12} className="text-ok" /> : <AlertTriangle size={12} className="text-warn" />}
+              {uploadPostKey ? <Check size={12} className="text-ok" /> : <span className="badge-quiet text-[10px]">Optional</span>}
               Upload-Post API Key {uploadPostKey && <span className="text-ok">— set</span>}
             </p>
             {!uploadPostKey && (
               <>
                 <p className="text-xs text-muted">
-                  Required to publish your clips to TikTok, Instagram Reels, and YouTube Shorts. Free tier available, no credit card needed.
+                  Optional: Only needed if you want to publish clips directly to TikTok, Instagram Reels, and YouTube Shorts. Not needed for local video generation or downloads.
                 </p>
                 <ol className="text-xs text-muted space-y-1 list-decimal list-inside">
                   <li>Register at <a href="https://app.upload-post.com/login" target="_blank" rel="noopener noreferrer" className="text-brass underline">app.upload-post.com</a></li>

@@ -1,0 +1,19 @@
+# Gaming Profile Configuration
+name: gaming
+description: "Optimized for fast-paced gameplay, combat, chases, stunts, and high energy moments."
+weights:
+  visual: 0.40
+  audio: 0.35
+  transcript: 0.15
+  context: 0.10
+
+clip_limits:
+  min_duration: 15.0
+  max_duration: 60.0
+  target_count: 5
+
+thresholds:
+  motion_significance: 0.20
+  audio_spike_percentile: 85.0
+  scene_change_boost: 0.15
+  silence_allowed: true

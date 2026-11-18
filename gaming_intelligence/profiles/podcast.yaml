@@ -1,0 +1,19 @@
+# Podcast Profile Configuration
+name: podcast
+description: "Optimized for compelling dialogue, stories, punchlines, debate, and speaker interaction."
+weights:
+  visual: 0.15
+  audio: 0.20
+  transcript: 0.50
+  context: 0.15
+
+clip_limits:
+  min_duration: 25.0
+  max_duration: 60.0
+  target_count: 5
+
+thresholds:
+  motion_significance: 0.10
+  audio_spike_percentile: 75.0
+  scene_change_boost: 0.05
+  silence_allowed: false

@@ -64,6 +64,9 @@ export default function MediaInput({ onProcess, isProcessing }) {
     const [layout, setLayout] = useState(() => {
         try { return localStorage.getItem('os_layout') || 'auto'; } catch { return 'auto'; }
     });
+    const [clippingProfile, setClippingProfile] = useState(() => {
+        try { return localStorage.getItem('os_clipping_profile') || 'gaming'; } catch { return 'gaming'; }
+    });
     const infoRef = useRef(null);
 
     // Close the compatibility popover on any outside click.
@@ -127,6 +130,7 @@ export default function MediaInput({ onProcess, isProcessing }) {
             autoHook,
             autoHookStyle,
             layout,
+            clipping_profile: clippingProfile,
             sourceStart: range ? Math.round(range.start) : null,
             sourceEnd: range ? Math.round(range.end) : null,
         };
@@ -134,6 +138,7 @@ export default function MediaInput({ onProcess, isProcessing }) {
             localStorage.setItem('os_auto_hook', autoHook ? '1' : '0');
             localStorage.setItem('os_auto_hook_style_v2', autoHookStyle);
             localStorage.setItem('os_layout', layout);
+            localStorage.setItem('os_clipping_profile', clippingProfile);
         } catch { /* ignore */ }
         if (mode === 'url' && url) {
             onProcess({ type: 'url', payload: url, acknowledged: true, outputFormat, ...advanced });
@@ -354,6 +359,20 @@ export default function MediaInput({ onProcess, isProcessing }) {
                                 Targets, not guarantees: the AI returns fewer clips when the
                                 material doesn't hold them. Leave blank to let it decide.
                             </p>
+                            <div className="col-span-1 sm:col-span-3 flex flex-wrap items-center justify-between gap-3 pt-3 sm:pt-1 border-t border-rule">
+                                <span className="text-xs text-ink2">clipping mode</span>
+                                <select
+                                    value={clippingProfile}
+                                    onChange={(e) => setClippingProfile(e.target.value)}
+                                    className="input-field !w-auto text-xs py-1.5"
+                                    aria-label="clipping mode"
+                                >
+                                    <option value="gaming">Gaming (action, kills, hype)</option>
+                                    <option value="podcast">Podcast (quotes & conversations)</option>
+                                    <option value="commentary">Commentary / Vlog / YouTube</option>
+                                    <option value="generic">Generic (multi-modal)</option>
+                                </select>
+                            </div>
                             <div className="col-span-1 sm:col-span-3 flex flex-wrap items-center justify-between gap-3 pt-3 sm:pt-1 border-t border-rule">
                                 <span className="text-xs text-ink2">vertical layout</span>
                                 <select

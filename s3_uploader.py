@@ -1,14 +1,17 @@
 import os
 from dotenv import load_dotenv
 load_dotenv()
-import boto3
-from botocore.exceptions import ClientError
-import logging
-
-# Configure silent logging for boto3 and botocore
-logging.getLogger('boto3').setLevel(logging.CRITICAL)
-logging.getLogger('botocore').setLevel(logging.CRITICAL)
-logging.getLogger('s3transfer').setLevel(logging.CRITICAL)
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+    import logging
+    logging.getLogger('boto3').setLevel(logging.CRITICAL)
+    logging.getLogger('botocore').setLevel(logging.CRITICAL)
+    logging.getLogger('s3transfer').setLevel(logging.CRITICAL)
+except ImportError:
+    boto3 = None
+    ClientError = Exception
+    import logging
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -41,7 +44,10 @@ def upload_file_to_s3(file_path, bucket_name, s3_key):
         return False
 
 
-from botocore.config import Config
+try:
+    from botocore.config import Config
+except ImportError:
+    Config = None
 import json
 import time as time_module
 

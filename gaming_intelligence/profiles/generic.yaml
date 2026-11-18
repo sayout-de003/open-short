@@ -1,0 +1,19 @@
+# Generic Profile Configuration
+name: generic
+description: "Balanced multi-modal profile suitable for general videos, interviews, and vlogs."
+weights:
+  visual: 0.25
+  audio: 0.25
+  transcript: 0.35
+  context: 0.15
+
+clip_limits:
+  min_duration: 20.0
+  max_duration: 60.0
+  target_count: 5
+
+thresholds:
+  motion_significance: 0.15
+  audio_spike_percentile: 80.0
+  scene_change_boost: 0.10
+  silence_allowed: true
