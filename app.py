@@ -5854,6 +5854,7 @@ async def process_endpoint(
     source_start: Optional[str] = Form(None),
     source_end: Optional[str] = Form(None),
     clipping_profile: Optional[str] = Form(None),
+    live_cut_seconds: Optional[str] = Form(None),
 ):
     api_key = await resolve_gemini(request)
     if not api_key and not (llm_backend.active() and not BILLING_ENABLED):
@@ -5889,6 +5890,7 @@ async def process_endpoint(
         source_start = body.get("source_start")
         source_end = body.get("source_end")
         clipping_profile = body.get("clipping_profile") or body.get("category") or body.get("profile")
+        live_cut_seconds = body.get("live_cut_seconds")
 
     # Normalize output format (auto = keep pipeline default).
     if output_format not in ("vertical", "horizontal", "square"):
@@ -6041,6 +6043,13 @@ async def process_endpoint(
     if captions is not None and str(captions).lower() in ("0", "false", "no"):
         env["AUTO_CAPTIONS"] = "0"
         print(f"[captions] job={job_id} auto-captions off")
+
+    if live_cut_seconds:
+        try:
+            env["LIVE_CUT_SECONDS"] = str(int(live_cut_seconds))
+            print(f"[live-controls] job={job_id} live_cut_seconds={int(live_cut_seconds)}")
+        except (ValueError, TypeError):
+            pass
 
     input_path = None
     if url:

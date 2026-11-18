@@ -1301,8 +1301,17 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
         # Real-time live video cutting: do not wait for the stream to end.
         is_live = bool(info.get('is_live') or info.get('live_status') == 'is_live')
         if is_live:
-            live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "600"))  # 10 minutes default
-            print(f"🔴 Live video stream detected! Real-time live clipping active (capturing {live_seconds/60:.1f}m window without waiting for stream to finish)...")
+            # Default to 120s (2 minutes) rolling window (1-2 min delay) for ultra-fast reel generation
+            live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "120"))
+            print(f"🔴 Live video stream detected! Real-time live clipping active (capturing {live_seconds/60:.1f}m rolling window from 1-2 min buffer)...")
+            os.environ["IS_LIVE_STREAM"] = "1"
+            if not os.environ.get("X264_PRESET"):
+                os.environ["X264_PRESET"] = "ultrafast"
+            if not os.environ.get("CLIP_TARGET_MAX"):
+                os.environ["CLIP_TARGET_MAX"] = "2"
+            if not os.environ.get("CLIP_TARGET_MIN"):
+                os.environ["CLIP_TARGET_MIN"] = "1"
+
             stream_url = info.get('url')
             if not stream_url and info.get('formats'):
                 for f in reversed(info['formats']):
@@ -1314,21 +1323,33 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
 
             if stream_url:
                 try:
+                    # Rolling HLS index: YouTube live segments are typically 2-5s each.
+                    # Negative index starts from the end of the sliding window.
+                    # E.g., for 120s, ~35-40 segments back = ~1-2 minutes back in time.
+                    start_index = -int(max(15, live_seconds // 3))
                     cmd = [
                         'ffmpeg', '-y',
+                        '-live_start_index', str(start_index),
+                        '-http_persistent', '1',
+                        '-http_multiple', '1',
+                        '-max_reload', '1',
                         '-reconnect', '1', '-reconnect_at_eof', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '2',
                         '-i', stream_url,
                         '-t', str(int(live_seconds)),
                         '-c', 'copy',
                         expected
                     ]
-                    print(f"🎬 Capturing live stream via ffmpeg for {live_seconds}s...")
-                    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=int(live_seconds + 45))
-                    if os.path.exists(expected) and os.path.getsize(expected) > 512 * 1024:
+                    print(f"🎬 Capturing live stream via fast HLS demuxer for {live_seconds}s (start index {start_index})...")
+                    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=int(live_seconds + 30))
+                    if os.path.exists(expected) and os.path.getsize(expected) > 256 * 1024:
                         print(f"✅ Real-time live stream captured ({os.path.getsize(expected)} bytes). Cutting clips immediately!")
                         return sanitized
                 except Exception as e:
                     print(f"⚠️ Live ffmpeg capture error ({e}), falling back to bounded yt-dlp...")
+
+        # If live stream fell back to yt-dlp, ensure _range_cap is set to live_seconds
+        if is_live and not _range_cap:
+            _range_cap = float(os.environ.get("LIVE_CUT_SECONDS", "120"))
 
         # Only when the whole source is far bigger than what was paid for: a
         # ranged fetch goes through ffmpeg at ~1-2.5x realtime, while a native
@@ -1338,7 +1359,7 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
         ranged = False
         if _range_cap or is_live:
             _dur = info.get('duration')
-            ranged = is_live or not _dur or float(_dur) > max(3 * _range_cap, _range_cap + 2700)
+            ranged = is_live or not _dur or float(_dur) > max(3 * (_range_cap or 120), (_range_cap or 120) + 2700)
         # Once per download, and not on the per-GB proxy (that is paid bytes,
         # and it is the last resort anyway). Not for a ranged download either:
         # the early audio would be the whole source.
