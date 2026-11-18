@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DEFAULT_MODEL = "llama3.1:8b"
-DEFAULT_TIMEOUT = 600.0  # local models on CPU are slow; a scoring batch can take minutes
+DEFAULT_TIMEOUT = 120.0  # local models on CPU: fast timeout with local intelligence fallback
 
 
 def provider() -> str:
@@ -87,10 +87,10 @@ def _client(**kwargs) -> httpx.Client:
 
 
 def _response_formats(schema: Type[BaseModel]):
+    yield {"type": "json_object"}
     name = getattr(schema, "__name__", "response").lower()
     yield {"type": "json_schema",
            "json_schema": {"name": name, "schema": schema.model_json_schema()}}
-    yield {"type": "json_object"}
     yield None
 
 
@@ -122,7 +122,7 @@ def generate_json(prompt: str, schema: Type[BaseModel], model: Optional[str] = N
     last_rejection: Optional[str] = None
     with _client() as client:
         for fmt in _response_formats(schema):
-            body = {"model": model, "messages": messages, "temperature": 0.2, "stream": False}
+            body = {"model": model, "messages": messages, "temperature": 0.2, "max_tokens": 1500, "stream": False}
             if fmt is not None:
                 body["response_format"] = fmt
             resp = client.post(url, json=body, headers=_headers())

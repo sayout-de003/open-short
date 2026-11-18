@@ -3059,10 +3059,30 @@ if __name__ == '__main__':
         else:
             clips_data = get_visual_clips(input_video, duration, viewer_clips=viewer_clips)
 
-        if not clips_data or 'shorts' not in clips_data:
-            # Deliberately fail instead of reframing the whole video: that path
-            # wrote no metadata.json, so app.py marked the job failed anyway
-            # (app.py:1087) after burning GPU on a render nobody could see.
+        if not clips_data or not clips_data.get('shorts'):
+            print("🤖 LLM did not return usable clips — activating 100% Local Intelligence Pipeline...")
+            try:
+                from gaming_intelligence.pipeline import LocalIntelligencePipeline
+                v_min_secs, v_max_secs = clip_duration_bounds()
+                local_pipe = LocalIntelligencePipeline(
+                    profile_name=os.getenv("CLIPPING_PROFILE", "podcast"),
+                    min_clip_sec=v_min_secs,
+                    max_clip_sec=v_max_secs,
+                    max_clips=5,
+                    llm_base_url=os.getenv("LLM_BASE_URL"),
+                )
+                local_shorts, local_meta = local_pipe.process_video(
+                    input_video,
+                    duration,
+                    transcript_segments=transcript.get("segments", []) if transcript else None,
+                )
+                if local_shorts:
+                    clips_data = {"shorts": local_shorts, "cost_analysis": local_meta}
+                    print(f"✅ Local Intelligence successfully selected {len(local_shorts)} clips!")
+            except Exception as fallback_err:
+                print(f"⚠️ Local Intelligence fallback warning: {fallback_err}")
+
+        if not clips_data or 'shorts' not in clips_data or not clips_data['shorts']:
             raise RuntimeError(
                 "Clip detection failed — the AI model did not return usable clips for this video.")
         else:

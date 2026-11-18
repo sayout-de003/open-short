@@ -147,8 +147,11 @@ class ClipSelector:
                 "end": round(s_end, 2),
                 "virality_score": viral_score,
                 "title": title,
+                "video_title_for_youtube_short": title,
                 "hook": hook,
+                "viral_hook_text": hook,
                 "reason": f"High multi-modal energy in {profile_name} mode ({clip_dur:.1f}s)",
+                "reason_for_virality": f"High multi-modal energy in {profile_name} mode ({clip_dur:.1f}s)",
                 "visual_context": vision_desc
             })
 

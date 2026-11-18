@@ -1381,7 +1381,7 @@ function App() {
     { id: 'ai-agent', ord: '04', icon: Bot, label: 'AI Agent', short: 'agent', byok: true },
     { id: 'ugc-gallery', ord: '05', icon: LayoutGrid, label: 'UGC Gallery', short: 'gallery', primary: true },
     { id: 'thumbnails', ord: '06', icon: Image, label: 'YouTube Studio', short: 'studio', primary: true },
-    ...(billingEnabled && isSignedIn ? [{ id: 'history', ord: '07', icon: History, label: 'History', short: 'history' }] : []),
+    { id: 'history', ord: '07', icon: History, label: 'Projects & Library', short: 'projects', primary: true },
     { id: 'settings', ord: '08', icon: Settings, label: 'Settings', short: 'settings' },
   ];
   const activeNav = navItems.find((n) => n.id === activeTab);
@@ -2149,18 +2149,16 @@ function App() {
           {activeTab === 'history' && (
             <div className="h-full overflow-y-auto custom-scrollbar animate-fade">
               <div className="max-w-6xl mx-auto p-4 sm:p-6 md:p-8">
-                {billingEnabled && !isSignedIn ? (
-                  <div className="max-w-2xl mx-auto card p-8 text-center">
-                    <History size={28} className="mx-auto mb-4 text-brass" />
-                    <h1 className="font-display lowercase text-2xl text-ink mb-2">your clips are saved to your account</h1>
-                    <p className="text-muted text-sm mb-6">
-                      Sign in with the email address you used to create them and they open right here.
-                    </p>
-                    <button onClick={() => setShowLogin(true)} className="btn-primary">sign in</button>
-                  </div>
-                ) : (
-                  <HistoryTab onReopenProject={restoreProject} />
-                )}
+                <HistoryTab onReopenProject={(jid) => {
+                  setJobId(jid);
+                  pollJob(jid).then((d) => {
+                    if (d?.result) setResults(d.result);
+                    if (d?.status) setStatus(d.status === 'completed' ? 'complete' : d.status);
+                    setActiveTab('dashboard');
+                  }).catch(() => {
+                    setActiveTab('dashboard');
+                  });
+                }} />
               </div>
             </div>
           )}

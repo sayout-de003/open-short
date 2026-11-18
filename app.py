@@ -6589,6 +6589,111 @@ async def download_all_clips(job_id: str, request: Request):
     )
 
 
+@app.get("/api/projects")
+async def list_projects_endpoint():
+    """List all local projects/jobs in OUTPUT_DIR with their status, metadata, and clips."""
+    projects = []
+    if not os.path.exists(OUTPUT_DIR):
+        return {"projects": []}
+
+    try:
+        entries = sorted(
+            os.listdir(OUTPUT_DIR),
+            key=lambda x: os.path.getmtime(os.path.join(OUTPUT_DIR, x)) if os.path.exists(os.path.join(OUTPUT_DIR, x)) else 0,
+            reverse=True
+        )
+    except Exception:
+        entries = []
+
+    for entry in entries:
+        job_dir = os.path.join(OUTPUT_DIR, entry)
+        if not os.path.isdir(job_dir) or entry in ("thumbnails", "assets"):
+            continue
+
+        try:
+            mtime = os.path.getmtime(job_dir)
+            dt = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            mtime = 0
+            dt = "Unknown"
+
+        meta_files = glob.glob(os.path.join(job_dir, "*_metadata.json"))
+        meta_data = {}
+        title = entry
+        if meta_files:
+            try:
+                with open(meta_files[0], "r", encoding="utf-8") as f:
+                    meta_data = json.load(f)
+                    source_vid = meta_data.get("source_video", "")
+                    if source_vid:
+                        title = source_vid.replace(f"{entry}_", "").replace(".mp4", "")
+            except Exception:
+                pass
+
+        clip_list = []
+        for f in sorted(glob.glob(os.path.join(job_dir, "*.mp4"))):
+            fname = os.path.basename(f)
+            if fname.startswith("temp_") or fname.endswith(".temp.mp4"):
+                continue
+            # If it's a clip file or finished video
+            if "clip_" in fname:
+                try:
+                    size_mb = round(os.path.getsize(f) / (1024 * 1024), 2)
+                except Exception:
+                    size_mb = 0
+                clip_list.append({
+                    "filename": fname,
+                    "url": f"/videos/{entry}/{fname}",
+                    "size_mb": size_mb
+                })
+
+        if entry in jobs:
+            status = jobs[entry].get("status", "unknown")
+        elif len(clip_list) > 0:
+            status = "completed"
+        elif glob.glob(os.path.join(job_dir, ".resume.json")):
+            status = "failed"
+        else:
+            status = "empty"
+
+        projects.append({
+            "job_id": entry,
+            "title": title,
+            "status": status,
+            "created_at": dt,
+            "timestamp": mtime,
+            "clip_count": len(clip_list),
+            "clips": clip_list,
+            "shorts": meta_data.get("shorts", [])
+        })
+
+    return {"projects": projects}
+
+
+@app.delete("/api/projects/{job_id}")
+async def delete_project_endpoint(job_id: str):
+    """Delete a project folder and its associated upload files."""
+    safe_id = os.path.basename(job_id.strip())
+    if not safe_id or safe_id in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid job ID")
+
+    target_dir = os.path.join(OUTPUT_DIR, safe_id)
+    deleted = False
+    if os.path.exists(target_dir):
+        shutil.rmtree(target_dir, ignore_errors=True)
+        deleted = True
+
+    for up in glob.glob(os.path.join(UPLOAD_DIR, f"{safe_id}*")):
+        try:
+            if os.path.isfile(up):
+                os.remove(up)
+        except Exception:
+            pass
+
+    jobs.pop(safe_id, None)
+    return {"success": True, "job_id": safe_id, "deleted": deleted}
+
+
 # --- Project restore (paid mode) --------------------------------------------
 # Re-hydrates an archived project from R2 back into output/{job_id}/ so every
 # edit endpoint works on it again. Restored files land with a fresh mtime, so
