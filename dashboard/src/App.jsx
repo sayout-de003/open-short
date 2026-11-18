@@ -949,6 +949,15 @@ function App() {
     let resumeCoach = false;
     try {
       const q = new URLSearchParams((window.location.hash.split('?')[1] || ''));
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlJobId = q.get('job') || searchParams.get('job');
+      if (urlJobId) {
+        setJobId(urlJobId);
+        pollJob(urlJobId).then((d) => {
+          if (d?.result) setResults(d.result);
+          if (d?.status) setStatus(d.status === 'completed' ? 'complete' : d.status);
+        }).catch(() => {});
+      }
       const qa = q.get('tutorial');
       if (qa === '1') showTutorial = true;
       if (qa === 'coach') resumeCoach = true;
