@@ -3554,6 +3554,8 @@ def _should_auto_retry(job) -> bool:
     # here, whatever it printed: this host decides what a video's failure is.
     if not (job and job.get('status') == 'failed' and not _draining and job.get('cmd')):
         return False
+    if job.get('cancelled'):
+        return False
     # YouTube limiting the account is neither the video's fault nor a server
     # fault: the job waits out the cooldown, a few times at most, on its own
     # counter (it has not used its one retry for real failures).
@@ -6543,7 +6545,7 @@ async def get_source_video(job_id: str, request: Request,
 @app.post("/api/jobs/{job_id}/cancel")
 async def cancel_job_endpoint(job_id: str):
     """Stop and cancel an active video clipping job."""
-    proc = _running_processes.get(job_id)
+    proc = _running_processes.pop(job_id, None)
     if proc:
         try:
             proc.terminate()
@@ -6553,6 +6555,7 @@ async def cancel_job_endpoint(job_id: str):
         except Exception as e:
             logger.warning(f"Error terminating job process {job_id}: {e}")
     if job_id in jobs:
+        jobs[job_id]["cancelled"] = True
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["logs"].append("🛑 Job cancelled by user.")
     return {"ok": True, "message": "Job cancelled"}
