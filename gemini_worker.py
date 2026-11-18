@@ -44,6 +44,8 @@ class DetailClipModel(BaseModel):
     # the dashboard. Defaulted so a small local model that skips it does not
     # fail schema validation and lose the clip.
     why: str = ""
+    caption: str = ""
+    hashtags: List[str] = []
 
 
 class DetailResponse(BaseModel):
@@ -61,6 +63,9 @@ class VisualClipModel(BaseModel):
     video_description_for_instagram: str
     video_title_for_youtube_short: str
     viral_hook_text: str
+    why: str = ""
+    caption: str = ""
+    hashtags: List[str] = []
 
 
 class VisualResponse(BaseModel):
@@ -340,9 +345,10 @@ HOOK PLAYBOOK — pick the strongest fitting pattern for `viral_hook_text` (max 
   video ("I automated my clips with AI") is wrong. If nothing concrete can be
   named, quote the clip's strongest sentence instead of summarising the topic.
 
-COPY RULES — ALL text fields (descriptions, title, hook) MUST be written in TRANSCRIPT_LANGUAGE ({language}):
-- Descriptions (TikTok + Instagram): 1-2 punchy sentences that tease the payoff
-  without spoiling it, then 3-5 topically relevant hashtags. No generic hashtag spam.
+COPY RULES — ALL text fields (descriptions, title, hook, caption, hashtags) MUST be written in TRANSCRIPT_LANGUAGE ({language}):
+- `caption`: 1-2 punchy, viral sentences teasing the payoff without spoiling it.
+- `hashtags`: 5-10 high-ranking, trending, and topic-specific hashtags (e.g. ["#shorts", "#viral", "#trending", ...]).
+- Descriptions (TikTok + Instagram): 1-2 punchy sentences teasing the payoff, followed by relevant hashtags.
 - `video_title_for_youtube_short`: max 100 chars, curiosity-driven, no fake claims.
 - `predicted_score`: honest 0-100 estimate of viral potential.
 - `why`: one sentence, max 20 words, naming what makes THIS moment worth a
@@ -361,6 +367,8 @@ Return only:
       "end": <number>,
       "source_window_id": "<window id>",
       "predicted_score": <integer 0-100>,
+      "caption": "<engaging punchy caption>",
+      "hashtags": ["#shorts", "#viral", "#trending"],
       "video_description_for_tiktok": "<description + hashtags>",
       "video_description_for_instagram": "<description + hashtags>",
       "video_title_for_youtube_short": "<title max 100 chars>",

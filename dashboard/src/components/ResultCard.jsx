@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, Share2, AlertCircle, Loader2, Copy, Check, Wand2, Type, Calendar, Languages, FileText, Link2, Scissors, Crosshair, TrendingUp, Sparkles, Youtube } from 'lucide-react';
+import { Download, Share2, AlertCircle, Loader2, Copy, Check, Wand2, Type, Calendar, Languages, FileText, Link2, Scissors, Crosshair, TrendingUp, Sparkles, Youtube, Hash } from 'lucide-react';
 import { getApiUrl } from '../config';
 import { apiFetch } from '../lib/api';
 import { platformOptions as buildPlatformOptions, defaultPlatformFlags, flagsFromList } from '../lib/socialPlatforms';
@@ -66,6 +66,31 @@ function getDefaultScheduleTime(idx = 0) {
     d.setHours(d.getHours() + 2 + (idx * 4));
     const tzOffset = d.getTimezoneOffset() * 60000;
     return new Date(d.getTime() - tzOffset).toISOString().slice(0, 16);
+}
+
+function getClipCaption(clip) {
+    if (clip.caption && clip.caption.trim()) return clip.caption.trim();
+    const desc = clip.video_description_for_tiktok || clip.video_description_for_instagram || "";
+    // Remove hashtags from description to isolate the clean caption
+    const clean = desc.replace(/#[a-zA-Z0-9_\u00c0-\u024f]+/g, "").trim();
+    return clean || desc || clip.video_title_for_youtube_short || "Watch till the end! 🔥";
+}
+
+function getClipHashtags(clip) {
+    if (Array.isArray(clip.hashtags) && clip.hashtags.length > 0) {
+        return clip.hashtags.map(t => t.startsWith('#') ? t : `#${t}`);
+    }
+    const combined = [
+        clip.video_description_for_tiktok,
+        clip.video_description_for_instagram,
+        clip.video_title_for_youtube_short,
+        clip.caption,
+    ].filter(Boolean).join(" ");
+    const matches = combined.match(/#[a-zA-Z0-9_\u00c0-\u024f]+/g);
+    if (matches && matches.length > 0) {
+        return Array.from(new Set(matches));
+    }
+    return ["#shorts", "#viral", "#trending", "#fyp", "#foryou"];
 }
 
 export default function ResultCard({ clip, index, jobId, durable, uploadPostKey, uploadUserId, geminiApiKey, elevenLabsKey, isManaged, onPlay, onPause, onBulkSubtitle, clipCount = 1, bulkProgress, initialState = null, onStateChange, connectedPlatforms = null, onConnectSocials, onEditClip = null, onReframeClip = null, onModeChanged = null, onUpgrade = null }) {
@@ -1125,38 +1150,68 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                         {resolution && <span className="readout bg-paper3 px-2 py-0.5 rounded-full shrink-0">{resolution}</span>}
                         {isPro && <span className="readout bg-paper3 px-2 py-0.5 rounded-full shrink-0 text-brass">pro mode</span>}
                         {!isPro && clip.pro_suggested && <span className="readout bg-paper3 px-2 py-0.5 rounded-full shrink-0 text-brass">pro recommended</span>}
-                        <span className="readout bg-paper3 px-2 py-0.5 rounded-full shrink-0">#shorts</span>
-                        <span className="readout bg-paper3 px-2 py-0.5 rounded-full shrink-0">#viral</span>
+                        {getClipHashtags(clip).slice(0, 4).map((tag, tagIdx) => (
+                            <button
+                                key={tagIdx}
+                                type="button"
+                                onClick={() => handleCopy(`tag-${tag}`, tag)}
+                                title={`Click to copy ${tag}`}
+                                className="readout bg-paper3 hover:bg-brass/20 text-ink2 hover:text-brass px-2 py-0.5 rounded-full shrink-0 transition-colors flex items-center gap-1 cursor-pointer"
+                            >
+                                {copied === `tag-${tag}` ? <Check size={10} className="text-ok" /> : <Hash size={10} />}
+                                {tag.replace(/^#/, '')}
+                            </button>
+                        ))}
                     </div>
                 </div>
 
-                {/* Descriptions (compact) — full text lives in the modal */}
+                {/* Caption & Metadata with 1-Click Copy */}
                 <div className="flex-1 min-h-0 space-y-2 mb-4">
+                    {/* Caption Row */}
+                    <div className="bg-paper rounded-input px-3 py-2 border border-rule flex items-start gap-2 min-w-0">
+                        <span className="eyebrow shrink-0 mt-0.5">CAPTION</span>
+                        <p className="text-xs text-ink2 line-clamp-2 flex-1 min-w-0 leading-relaxed">
+                            {getClipCaption(clip)}
+                        </p>
+                        <button
+                            onClick={() => handleCopy('caption', getClipCaption(clip))}
+                            aria-label="copy caption"
+                            className="p-1 rounded-full text-muted hover:text-brass transition-colors shrink-0"
+                            title="Copy clean caption"
+                        >
+                            {copied === 'caption' ? <Check size={14} className="text-ok" /> : <Copy size={14} />}
+                        </button>
+                    </div>
+
+                    {/* Hashtags Row */}
                     <div className="bg-paper rounded-input px-3 py-2 border border-rule flex items-center gap-2 min-w-0 overflow-hidden">
-                        <span className="eyebrow shrink-0">YOUTUBE</span>
+                        <span className="eyebrow shrink-0">HASHTAGS</span>
+                        <p className="text-xs text-brass font-mono truncate flex-1 min-w-0">
+                            {getClipHashtags(clip).join(' ')}
+                        </p>
+                        <button
+                            onClick={() => handleCopy('hashtags', getClipHashtags(clip).join(' '))}
+                            aria-label="copy all hashtags"
+                            className="p-1 rounded-full text-muted hover:text-brass transition-colors shrink-0"
+                            title="Copy all hashtags"
+                        >
+                            {copied === 'hashtags' ? <Check size={14} className="text-ok" /> : <Copy size={14} />}
+                        </button>
+                    </div>
+
+                    {/* YouTube Title Row */}
+                    <div className="bg-paper rounded-input px-3 py-2 border border-rule flex items-center gap-2 min-w-0 overflow-hidden">
+                        <span className="eyebrow shrink-0">TITLE</span>
                         <p className="text-xs text-ink2 truncate flex-1 min-w-0">
                             {clip.video_title_for_youtube_short || "Viral Short Video"}
                         </p>
                         <button
                             onClick={() => handleCopy('youtube', clip.video_title_for_youtube_short || "Viral Short Video")}
-                            aria-label="copy youtube title"
+                            aria-label="copy title"
                             className="p-1 rounded-full text-muted hover:text-brass transition-colors shrink-0"
+                            title="Copy YouTube Short title"
                         >
                             {copied === 'youtube' ? <Check size={14} className="text-ok" /> : <Copy size={14} />}
-                        </button>
-                    </div>
-
-                    <div className="bg-paper rounded-input px-3 py-2 border border-rule flex items-center gap-2 min-w-0 overflow-hidden">
-                        <span className="eyebrow shrink-0">TIKTOK · IG</span>
-                        <p className="text-xs text-ink2 truncate flex-1 min-w-0">
-                            {clip.video_description_for_tiktok || clip.video_description_for_instagram}
-                        </p>
-                        <button
-                            onClick={() => handleCopy('caption', clip.video_description_for_tiktok || clip.video_description_for_instagram)}
-                            aria-label="copy caption"
-                            className="p-1 rounded-full text-muted hover:text-brass transition-colors shrink-0"
-                        >
-                            {copied === 'caption' ? <Check size={14} className="text-ok" /> : <Copy size={14} />}
                         </button>
                     </div>
 
@@ -1164,7 +1219,7 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                         onClick={() => setShowDescModal(true)}
                         className="w-full flex items-center justify-center gap-2 py-2 rounded-input border border-dashed border-rule text-xs lowercase text-muted hover:text-brass hover:border-rule2 transition-colors"
                     >
-                        <FileText size={14} /> view descriptions
+                        <FileText size={14} /> view all copy & hashtags
                     </button>
                 </div>
 
@@ -1318,24 +1373,81 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                 </div>
             </div>
 
-            {/* Descriptions Modal */}
+            {/* Descriptions & Hashtags Studio Modal */}
             <Modal
                 isOpen={showDescModal}
                 onClose={() => setShowDescModal(false)}
-                eyebrow="GENERATED COPY"
-                title="descriptions"
+                eyebrow="CAPTION & HASHTAGS STUDIO"
+                title="copy & tags"
                 size="md"
             >
                 <div className="space-y-4">
+                    {/* Clean Caption */}
                     <div>
                         <div className="flex items-center justify-between gap-2 mb-1.5">
-                            <label className="eyebrow">YOUTUBE TITLE</label>
+                            <label className="eyebrow flex items-center gap-1.5 text-brass">
+                                <Sparkles size={13} /> PUNCHY CAPTION
+                            </label>
+                            <button
+                                onClick={() => handleCopy('caption-clean', getClipCaption(clip))}
+                                aria-label="copy caption"
+                                className="p-1 rounded-full text-muted hover:text-brass transition-colors shrink-0 flex items-center gap-1 text-xs"
+                            >
+                                {copied === 'caption-clean' ? <><Check size={14} className="text-ok" /><span className="text-ok text-[11px]">copied!</span></> : <><Copy size={14} /><span className="text-[11px]">copy</span></>}
+                            </button>
+                        </div>
+                        <p className="text-sm text-ink2 select-all break-words bg-paper rounded-input p-3 border border-rule leading-relaxed">
+                            {getClipCaption(clip)}
+                        </p>
+                    </div>
+
+                    {/* Viral Hashtags */}
+                    <div>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <label className="eyebrow flex items-center gap-1.5 text-brass">
+                                <Hash size={13} /> VIRAL HASHTAGS
+                            </label>
+                            <button
+                                onClick={() => handleCopy('hashtags-all', getClipHashtags(clip).join(' '))}
+                                aria-label="copy all hashtags"
+                                className="p-1 rounded-full text-muted hover:text-brass transition-colors shrink-0 flex items-center gap-1 text-xs"
+                            >
+                                {copied === 'hashtags-all' ? <><Check size={14} className="text-ok" /><span className="text-ok text-[11px]">copied!</span></> : <><Copy size={14} /><span className="text-[11px]">copy all</span></>}
+                            </button>
+                        </div>
+                        <div className="bg-paper rounded-input p-3 border border-rule space-y-2">
+                            <div className="flex flex-wrap gap-1.5">
+                                {getClipHashtags(clip).map((tag, idx) => (
+                                    <button
+                                        key={idx}
+                                        type="button"
+                                        onClick={() => handleCopy(`modal-tag-${tag}`, tag)}
+                                        title={`Click to copy ${tag}`}
+                                        className="text-xs bg-paper3 hover:bg-brass/20 text-brass hover:text-ink px-2.5 py-1 rounded-full font-mono transition-colors flex items-center gap-1 cursor-pointer"
+                                    >
+                                        {copied === `modal-tag-${tag}` ? <Check size={11} className="text-ok" /> : <Hash size={11} />}
+                                        {tag.replace(/^#/, '')}
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="text-[11px] text-muted font-mono select-all pt-1 border-t border-rule/50">
+                                {getClipHashtags(clip).join(' ')}
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* YouTube Shorts Title */}
+                    <div>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <label className="eyebrow flex items-center gap-1.5">
+                                <Youtube size={13} className="text-red-500" /> YOUTUBE TITLE
+                            </label>
                             <button
                                 onClick={() => handleCopy('youtube', clip.video_title_for_youtube_short || "Viral Short Video")}
                                 aria-label="copy youtube title"
-                                className="p-1 rounded-full text-muted hover:text-brass transition-colors shrink-0"
+                                className="p-1 rounded-full text-muted hover:text-brass transition-colors shrink-0 flex items-center gap-1 text-xs"
                             >
-                                {copied === 'youtube' ? <Check size={14} className="text-ok" /> : <Copy size={14} />}
+                                {copied === 'youtube' ? <><Check size={14} className="text-ok" /><span className="text-ok text-[11px]">copied!</span></> : <><Copy size={14} /><span className="text-[11px]">copy</span></>}
                             </button>
                         </div>
                         <p className="text-sm text-ink2 select-all break-words bg-paper rounded-input p-3 border border-rule">
@@ -1343,19 +1455,20 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                         </p>
                     </div>
 
+                    {/* Full All-In-One Copy */}
                     <div>
                         <div className="flex items-center justify-between gap-2 mb-1.5">
-                            <label className="eyebrow">TIKTOK · IG CAPTION</label>
+                            <label className="eyebrow">READY-TO-POST (CAPTION + HASHTAGS)</label>
                             <button
-                                onClick={() => handleCopy('caption', clip.video_description_for_tiktok || clip.video_description_for_instagram)}
-                                aria-label="copy caption"
-                                className="p-1 rounded-full text-muted hover:text-brass transition-colors shrink-0"
+                                onClick={() => handleCopy('caption-full', `${getClipCaption(clip)}\n\n${getClipHashtags(clip).join(' ')}`)}
+                                aria-label="copy full description"
+                                className="p-1 rounded-full text-muted hover:text-brass transition-colors shrink-0 flex items-center gap-1 text-xs"
                             >
-                                {copied === 'caption' ? <Check size={14} className="text-ok" /> : <Copy size={14} />}
+                                {copied === 'caption-full' ? <><Check size={14} className="text-ok" /><span className="text-ok text-[11px]">copied!</span></> : <><Copy size={14} /><span className="text-[11px]">copy all</span></>}
                             </button>
                         </div>
-                        <p className="text-sm text-ink2 select-all break-words bg-paper rounded-input p-3 border border-rule whitespace-pre-wrap">
-                            {clip.video_description_for_tiktok || clip.video_description_for_instagram}
+                        <p className="text-xs text-ink2 select-all break-words bg-paper rounded-input p-3 border border-rule whitespace-pre-wrap leading-relaxed">
+                            {`${getClipCaption(clip)}\n\n${getClipHashtags(clip).join(' ')}`}
                         </p>
                     </div>
                 </div>
