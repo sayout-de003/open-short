@@ -1292,15 +1292,51 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
             import ssrf_guard
             ssrf_guard.assert_public_urls(info)
         sanitized = sanitize_filename(info.get('title', 'youtube_video'))
+        expected = os.path.join(output_dir, f'{sanitized}.mp4')
+        if os.path.exists(expected):
+            os.remove(expected)
+
+        # Real-time live video cutting: do not wait for the stream to end.
+        is_live = bool(info.get('is_live') or info.get('live_status') == 'is_live')
+        if is_live:
+            live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "600"))  # 10 minutes default
+            print(f"🔴 Live video stream detected! Real-time live clipping active (capturing {live_seconds/60:.1f}m window without waiting for stream to finish)...")
+            stream_url = info.get('url')
+            if not stream_url and info.get('formats'):
+                for f in reversed(info['formats']):
+                    if f.get('url') and ('m3u8' in f.get('url') or 'mp4' in f.get('ext', '') or 'live' in str(f.get('format_note', '')).lower()):
+                        stream_url = f['url']
+                        break
+                if not stream_url and info['formats']:
+                    stream_url = info['formats'][-1].get('url')
+
+            if stream_url:
+                try:
+                    cmd = [
+                        'ffmpeg', '-y',
+                        '-reconnect', '1', '-reconnect_at_eof', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '2',
+                        '-i', stream_url,
+                        '-t', str(int(live_seconds)),
+                        '-c', 'copy',
+                        expected
+                    ]
+                    print(f"🎬 Capturing live stream via ffmpeg for {live_seconds}s...")
+                    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=int(live_seconds + 45))
+                    if os.path.exists(expected) and os.path.getsize(expected) > 512 * 1024:
+                        print(f"✅ Real-time live stream captured ({os.path.getsize(expected)} bytes). Cutting clips immediately!")
+                        return sanitized
+                except Exception as e:
+                    print(f"⚠️ Live ffmpeg capture error ({e}), falling back to bounded yt-dlp...")
+
         # Only when the whole source is far bigger than what was paid for: a
         # ranged fetch goes through ffmpeg at ~1-2.5x realtime, while a native
         # download of a source a bit over the cap takes seconds. A 21-min video
         # on a 19-min cap took 8 min ranged against ~30 s whole (prod,
         # 25-sep-2026); a finished 6.7 h livestream is ~13 GB whole.
         ranged = False
-        if _range_cap:
+        if _range_cap or is_live:
             _dur = info.get('duration')
-            ranged = not _dur or float(_dur) > max(3 * _range_cap, _range_cap + 2700)
+            ranged = is_live or not _dur or float(_dur) > max(3 * _range_cap, _range_cap + 2700)
         # Once per download, and not on the per-GB proxy (that is paid bytes,
         # and it is the last resort anyway). Not for a ranged download either:
         # the early audio would be the whole source.

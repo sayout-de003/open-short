@@ -38,6 +38,7 @@ import media_auth
 import remote_worker
 import yt_account
 import youtube_publisher
+import scheduler
 from jsonfile import write_json_atomic
 
 load_dotenv()
@@ -4265,6 +4266,7 @@ async def lifespan(app: FastAPI):
     # The worker starts only now, so the first job it takes off the queue was
     # already ranked by its owner's current plan.
     worker_task = asyncio.create_task(process_queue())
+    scheduler_task = asyncio.create_task(scheduler.run_scheduler_background_loop(sys.modules[__name__]))
     if BILLING_ENABLED:
         # Account erasure lives in cloud/, which can't import app.py; hand it the
         # one thing only this module can do — wipe the local working files.
@@ -8946,7 +8948,7 @@ async def test_youtube_api():
 
 
 @app.get("/api/youtube/auth/login")
-async def youtube_auth_login(request: Request):
+async def youtube_auth_login(request: Request, redirect_uri: Optional[str] = None):
     """Redirect to Google OAuth 2.0 consent screen for YouTube upload permission."""
     client_id = os.environ.get("YOUTUBE_CLIENT_ID")
     if not client_id:
@@ -8954,14 +8956,14 @@ async def youtube_auth_login(request: Request):
             status_code=400,
             detail="YOUTUBE_CLIENT_ID is not configured in .env"
         )
-    redirect_uri = os.environ.get(
+    target_redirect = redirect_uri or os.environ.get(
         "YOUTUBE_REDIRECT_URI",
         f"{str(request.base_url).rstrip('/')}/api/youtube/auth/callback"
     )
     scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube"
     params = {
         "client_id": client_id,
-        "redirect_uri": redirect_uri,
+        "redirect_uri": target_redirect,
         "response_type": "code",
         "scope": scope,
         "access_type": "offline",
@@ -9123,6 +9125,91 @@ async def publish_to_youtube(req: YouTubePublishRequest, request: Request):
     except Exception as e:
         print(f"❌ YouTube Data API Direct Upload Error: {e}")
         raise HTTPException(status_code=500, detail=f"YouTube API Error: {str(e)}")
+
+
+class ScheduleClipRequest(BaseModel):
+    job_id: str
+    clip_index: int
+    scheduled_at: str  # ISO-8601 string
+    platforms: Optional[List[str]] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    privacy_status: Optional[str] = "public"
+
+
+class AutoScheduleProjectRequest(BaseModel):
+    job_id: str
+    start_time: Optional[str] = None
+    interval_hours: Optional[float] = 4.0
+    platforms: Optional[List[str]] = None
+    privacy_status: Optional[str] = "public"
+
+
+@app.post("/api/schedule/clip")
+async def api_schedule_clip(req: ScheduleClipRequest, request: Request):
+    """Schedule a specific clip for automated publishing."""
+    await _ensure_job_files(req.job_id, request)
+    job = jobs.get(req.job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    await _assert_job_owner(request, job)
+
+    clip, file_path, filename = _resolve_clip_video_file(job, req.job_id, req.clip_index)
+    title = req.title or clip.get("video_title_for_youtube_short") or clip.get("title") or "Short"
+    desc = req.description or clip.get("video_description_for_instagram") or clip.get("video_description_for_tiktok") or title
+
+    try:
+        entry = scheduler.schedule_clip_post(
+            job_id=req.job_id,
+            clip_index=req.clip_index,
+            scheduled_at=req.scheduled_at,
+            platforms=req.platforms or ["youtube"],
+            title=title,
+            description=desc,
+            privacy_status=req.privacy_status,
+        )
+        return {"success": True, "schedule": entry}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/schedule/auto")
+async def api_auto_schedule_project(req: AutoScheduleProjectRequest, request: Request):
+    """Automatically schedule all clips in a project spaced out over time."""
+    await _ensure_job_files(req.job_id, request)
+    job = jobs.get(req.job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    await _assert_job_owner(request, job)
+
+    clips = (job.get("result") or {}).get("clips") or []
+    if not clips:
+        raise HTTPException(status_code=400, detail="No clips available in project")
+
+    entries = scheduler.auto_schedule_project(
+        job_id=req.job_id,
+        clips=clips,
+        start_time=req.start_time,
+        interval_hours=req.interval_hours or 4.0,
+        platforms=req.platforms or ["youtube"],
+        privacy_status=req.privacy_status or "public",
+    )
+    return {"success": True, "count": len(entries), "schedules": entries}
+
+
+@app.get("/api/schedule/list")
+async def api_list_schedules(job_id: Optional[str] = None):
+    """List scheduled auto-posts."""
+    return {"schedules": scheduler.list_schedules(job_id=job_id)}
+
+
+@app.delete("/api/schedule/{schedule_id}")
+async def api_cancel_schedule(schedule_id: str):
+    """Cancel a scheduled auto-post."""
+    success = scheduler.cancel_schedule(schedule_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    return {"success": True, "message": f"Cancelled {schedule_id}"}
 
 import httpx
 

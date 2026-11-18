@@ -75,16 +75,31 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
     const [timezone, setTimezone] = useState(detectTimezone);
     const [platforms, setPlatforms] = useState(defaultPlatformFlags);
     const [startOffset, setStartOffset] = useState(1);
+    const [intervalHours, setIntervalHours] = useState(24);
+    const [ytDirectConfigured, setYtDirectConfigured] = useState(false);
+
+    React.useEffect(() => {
+        apiFetch('/api/youtube/config')
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.configured) {
+                    setYtDirectConfigured(true);
+                }
+            })
+            .catch(() => {});
+    }, []);
 
     const schedule = useMemo(() => {
         if (!clips) return [];
         return clips.map((clip, i) => {
             const date = new Date();
-            date.setDate(date.getDate() + startOffset + i);
-            date.setHours(0, 0, 0, 0);
+            date.setDate(date.getDate() + startOffset);
+            const [hours, minutes] = (time || '12:00').split(':').map(Number);
+            date.setHours(isNaN(hours) ? 12 : hours, isNaN(minutes) ? 0 : minutes, 0, 0);
+            date.setTime(date.getTime() + (i * intervalHours * 3600 * 1000));
             return { clip, index: i, date };
         });
-    }, [clips, startOffset]);
+    }, [clips, startOffset, time, intervalHours]);
 
     const [scheduling, setScheduling] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0, results: [] });
@@ -106,7 +121,7 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
     const selectedPlatforms = Object.keys(platforms).filter(k => platforms[k]);
 
     // Managed (cloud plan/trial) users post with the server-side key — no BYOK needed
-    const canPost = isManaged || (uploadPostKey && uploadUserId);
+    const canPost = isManaged || (uploadPostKey && uploadUserId) || (ytDirectConfigured && platforms.youtube);
 
     const handleScheduleAll = async () => {
         if (!canPost) return;
@@ -120,26 +135,20 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
         const results = [];
         for (let i = 0; i < schedule.length; i++) {
             const { clip, index, date } = schedule[i];
-
-            // Build local datetime string: "2026-04-06T12:00:00"
-            // Upload-Post accepts this + timezone IANA parameter
-            const pad = (n) => String(n).padStart(2, '0');
-            const scheduledDate = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${time}:00`;
+            const scheduledIso = date.toISOString();
 
             const payload = {
                 job_id: jobId,
                 clip_index: index,
-                api_key: uploadPostKey,
-                user_id: uploadUserId,
+                scheduled_at: scheduledIso,
                 platforms: selectedPlatforms,
                 title: clip.video_title_for_youtube_short || 'Viral Short',
                 description: clip.video_description_for_instagram || clip.video_description_for_tiktok || '',
-                scheduled_date: scheduledDate,
-                timezone
+                privacy_status: 'public'
             };
 
             try {
-                const res = await apiFetch('/api/social/post', {
+                const res = await apiFetch('/api/schedule/clip', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -212,19 +221,41 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
         <Modal
             isOpen={isOpen}
             onClose={scheduling ? undefined : onClose}
-            eyebrow="PUBLISH · WEEK"
-            title="schedule week"
+            eyebrow="AUTO-SCHEDULE"
+            title="schedule project clips"
             size="md"
             footer={footer}
         >
-            <p className="readout mb-4">{clips?.length || 0} CLIPS · 1/DAY</p>
+            <p className="readout mb-4">{clips?.length || 0} CLIPS · {intervalHours >= 24 ? `${Math.round(intervalHours / 24)} DAY(S) APART` : `EVERY ${intervalHours} HOURS`}</p>
 
             {!canPost && (
                 <div className="mb-4 p-3 bg-warn/10 text-warn text-xs rounded-input flex items-start gap-2">
                     <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                    <div>Set your Upload-Post API key in Settings first.</div>
+                    <div>Connect your YouTube channel in clip post modal or set Upload-Post API key in Settings.</div>
                 </div>
             )}
+
+            {/* Interval Spacing */}
+            <div className="mb-5">
+                <label className="eyebrow block mb-2">post interval</label>
+                <div className="grid grid-cols-4 gap-2">
+                    {[
+                        { label: 'Every 4h', hours: 4 },
+                        { label: 'Every 8h', hours: 8 },
+                        { label: 'Every 12h', hours: 12 },
+                        { label: 'Daily (24h)', hours: 24 }
+                    ].map(opt => (
+                        <button
+                            key={opt.hours}
+                            type="button"
+                            onClick={() => setIntervalHours(opt.hours)}
+                            className={`py-1.5 px-2 text-xs rounded-input transition-colors ${intervalHours === opt.hours ? 'bg-brass text-paper font-semibold' : 'bg-paper3 text-ink2 hover:text-ink'}`}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
 
             {/* Time + Timezone */}
             <div className="mb-5 grid grid-cols-2 gap-3">

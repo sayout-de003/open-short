@@ -60,6 +60,14 @@ function formatDuration(clip) {
     return `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
 }
 
+function getDefaultScheduleTime(idx = 0) {
+    const d = new Date();
+    d.setMinutes(0, 0, 0);
+    d.setHours(d.getHours() + 2 + (idx * 4));
+    const tzOffset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - tzOffset).toISOString().slice(0, 16);
+}
+
 export default function ResultCard({ clip, index, jobId, durable, uploadPostKey, uploadUserId, geminiApiKey, elevenLabsKey, isManaged, onPlay, onPause, onBulkSubtitle, clipCount = 1, bulkProgress, initialState = null, onStateChange, connectedPlatforms = null, onConnectSocials, onEditClip = null, onReframeClip = null, onModeChanged = null, onUpgrade = null }) {
     const [showModal, setShowModal] = useState(false);
     // The "why" line is clamped to two lines so cards in a row stay level;
@@ -210,8 +218,12 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
     const [platforms, setPlatforms] = useState(defaultPlatformFlags);
     const [postTitle, setPostTitle] = useState("");
     const [postDescription, setPostDescription] = useState("");
-    const [isScheduling, setIsScheduling] = useState(false);
-    const [scheduleDate, setScheduleDate] = useState("");
+    const [isScheduling, setIsScheduling] = useState(true); // Default ON per user requirement
+    const [scheduleDate, setScheduleDate] = useState(() => getDefaultScheduleTime(index));
+    const [scheduledInfo, setScheduledInfo] = useState(null);
+    const [showManualAuth, setShowManualAuth] = useState(false);
+    const [manualCode, setManualCode] = useState("");
+    const [exchangingAuth, setExchangingAuth] = useState(false);
     const [ytDirectConfigured, setYtDirectConfigured] = useState(false);
     const [ytPrivacy, setYtPrivacy] = useState("public");
 
@@ -226,6 +238,55 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
             })
             .catch(() => {});
     }, []);
+
+    useEffect(() => {
+        if (!jobId) return;
+        apiFetch(`/api/schedule/list?job_id=${encodeURIComponent(jobId)}`)
+            .then(r => r.json())
+            .then(data => {
+                const existing = (data?.schedules || []).find(s => s.clip_index === index && s.status === 'pending');
+                if (existing) setScheduledInfo(existing);
+            })
+            .catch(() => {});
+    }, [jobId, index]);
+
+    const handleCancelSchedule = async () => {
+        if (!scheduledInfo?.id) return;
+        try {
+            await apiFetch(`/api/schedule/${scheduledInfo.id}`, { method: 'DELETE' });
+            setScheduledInfo(null);
+        } catch (e) {
+            alert('Failed to cancel schedule: ' + e.message);
+        }
+    };
+
+    const handleManualExchange = async () => {
+        if (!manualCode.trim()) return;
+        setExchangingAuth(true);
+        try {
+            const isRefreshToken = manualCode.trim().startsWith('1//') || manualCode.trim().length > 60;
+            const payload = isRefreshToken
+                ? { refresh_token: manualCode.trim() }
+                : { code: manualCode.trim() };
+            const res = await apiFetch('/api/youtube/auth/exchange', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) {
+                const err = await res.text();
+                throw new Error(err);
+            }
+            setYtDirectConfigured(true);
+            setShowManualAuth(false);
+            setManualCode("");
+            setPostResult({ success: true, msg: "YouTube channel connected successfully!" });
+        } catch (e) {
+            alert('Connection failed: ' + e.message);
+        } finally {
+            setExchangingAuth(false);
+        }
+    };
 
     const [posting, setPosting] = useState(false);
     const [postResult, setPostResult] = useState(null);
@@ -351,8 +412,8 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
         if (showModal) {
             setPostTitle(clip.video_title_for_youtube_short || "Viral Short");
             setPostDescription(clip.video_description_for_instagram || clip.video_description_for_tiktok || "");
-            setIsScheduling(false);
-            setScheduleDate("");
+            setIsScheduling(true);
+            setScheduleDate(getDefaultScheduleTime(index));
             setPostResult(null);
             // Only preselect platforms the profile can actually publish to.
             if (knownConnections) {
@@ -768,6 +829,47 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
         setPosting(true);
         setPostResult(null);
 
+        // If scheduling is enabled, route to our persistent auto-post scheduler
+        if (isScheduling && scheduleDate) {
+            try {
+                const schedRes = await apiFetch('/api/schedule/clip', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        job_id: jobId,
+                        clip_index: index,
+                        scheduled_at: new Date(scheduleDate).toISOString(),
+                        platforms: selectedPlatforms,
+                        title: postTitle,
+                        description: postDescription,
+                        privacy_status: ytPrivacy,
+                    })
+                });
+                if (!schedRes.ok) {
+                    const errText = await schedRes.text();
+                    let detail = errText;
+                    try { detail = JSON.parse(errText).detail || errText; } catch {}
+                    throw new Error(detail);
+                }
+                const schedData = await schedRes.json();
+                setScheduledInfo(schedData.schedule);
+                setPostResult({
+                    success: true,
+                    msg: `Auto-Post scheduled for ${new Date(scheduleDate).toLocaleString()}!`,
+                });
+                setTimeout(() => {
+                    setShowModal(false);
+                    setPostResult(null);
+                }, 3000);
+                return;
+            } catch (e) {
+                setPostResult({ success: false, msg: `Scheduling Failed: ${e.message}` });
+                return;
+            } finally {
+                setPosting(false);
+            }
+        }
+
         // Check if direct YouTube upload should handle YouTube directly
         const isDirectYt = ytDirectConfigured && selectedPlatforms.includes('youtube') && (!uploadPostKey || selectedPlatforms.length === 1);
         if (isDirectYt && selectedPlatforms.length === 1 && !isScheduling) {
@@ -1084,6 +1186,22 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                     </p>
                 )}
 
+                {scheduledInfo && (
+                    <div className="mb-3 px-3 py-2 rounded-input bg-brass/10 border border-brass/40 flex items-center justify-between gap-2 text-xs animate-fade">
+                        <span className="flex items-center gap-1.5 text-ink font-medium">
+                            <Calendar size={14} className="text-brass shrink-0" />
+                            <span>Auto-Post: {new Date(scheduledInfo.scheduled_at).toLocaleDateString()} at {new Date(scheduledInfo.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </span>
+                        <button
+                            type="button"
+                            onClick={handleCancelSchedule}
+                            className="text-[11px] text-danger hover:underline font-semibold shrink-0"
+                        >
+                            cancel
+                        </button>
+                    </div>
+                )}
+
                 {/* Actions Footer */}
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2 mt-auto pt-4 border-t border-rule">
                     {onEditClip && (
@@ -1257,7 +1375,7 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                 }
             >
                 {platforms.youtube && !ytDirectConfigured && (
-                    <div className="mb-4 p-3 rounded-input text-xs bg-paper border border-brass/50 space-y-2 animate-fade">
+                    <div className="mb-4 p-3 rounded-input text-xs bg-paper border border-brass/50 space-y-2.5 animate-fade">
                         <div className="flex items-center justify-between">
                             <span className="font-semibold text-ink flex items-center gap-1.5">
                                 <Youtube size={16} className="text-red-500" /> YouTube Direct Publishing
@@ -1265,7 +1383,7 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                             <span className="badge-quiet text-[10px] text-warn">1-Click OAuth</span>
                         </div>
                         <p className="text-xs text-muted leading-relaxed">
-                            Authorize your YouTube channel in 1 click to upload this clip directly to YouTube Shorts.
+                            Authorize your YouTube channel in 1 click to upload and auto-schedule this clip directly to YouTube Shorts.
                         </p>
                         <a
                             href="/api/youtube/auth/login"
@@ -1273,6 +1391,40 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                         >
                             <Youtube size={14} /> 1-Click Connect YouTube Channel
                         </a>
+
+                        <div className="pt-1 border-t border-rule/50">
+                            <button
+                                type="button"
+                                onClick={() => setShowManualAuth(!showManualAuth)}
+                                className="text-[11px] text-brass hover:underline flex items-center gap-1 font-medium"
+                            >
+                                {showManualAuth ? '▾ Hide manual code entry' : '▸ OAuth blocked or redirect error? Enter Auth Code / Token'}
+                            </button>
+                            {showManualAuth && (
+                                <div className="mt-2 space-y-2 animate-fade">
+                                    <p className="text-[10px] text-muted">
+                                        Paste authorization code or refresh token to connect without redirect issues:
+                                    </p>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={manualCode}
+                                            onChange={(e) => setManualCode(e.target.value)}
+                                            placeholder="Paste code (4/...) or token (1//...)"
+                                            className="input-field text-xs py-1.5 flex-1"
+                                        />
+                                        <button
+                                            type="button"
+                                            disabled={exchangingAuth || !manualCode.trim()}
+                                            onClick={handleManualExchange}
+                                            className="btn-primary px-3 py-1.5 text-xs shrink-0"
+                                        >
+                                            {exchangingAuth ? 'saving…' : 'connect'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
 

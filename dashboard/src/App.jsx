@@ -2410,13 +2410,14 @@ function App() {
                           ? <><Loader2 size={14} className="animate-spin" />zipping…</>
                           : <><Download size={14} />download all</>}
                       </button>
-                      {results.clips.length > 1 && (
+                      {results.clips.length > 0 && (
                         <button
                           onClick={() => setShowScheduleWeek(true)}
                           className="btn-primary px-4 py-2 text-xs"
+                          title="Auto-schedule all clips to post automatically"
                         >
                           <Calendar size={14} />
-                          schedule week
+                          auto-schedule clips
                         </button>
                       )}
                     </div>
