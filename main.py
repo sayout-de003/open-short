@@ -2846,7 +2846,7 @@ def get_visual_clips(video_path, video_duration, language="en", viewer_clips=Non
 
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        print("🎮 No Gemini API key detected — switching to 100% Local Intelligence Pipeline...")
+        print("🎮 Activating 100% Local Intelligence Pipeline...")
         from gaming_intelligence.pipeline import LocalIntelligencePipeline
         pipeline = LocalIntelligencePipeline(
             profile_name=os.getenv("CLIPPING_PROFILE", "gaming"),

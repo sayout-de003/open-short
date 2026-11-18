@@ -47,15 +47,14 @@ class FrameSampler:
                 current_frame_idx = int(start_sec * native_fps)
 
             while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
-
                 pts_sec = current_frame_idx / native_fps
                 if end_sec and pts_sec > end_sec:
                     break
 
                 if current_frame_idx % frame_interval == 0:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
                     h, w = frame.shape[:2]
                     if max(h, w) > self.max_dimension:
                         scale = self.max_dimension / float(max(h, w))
@@ -65,6 +64,9 @@ class FrameSampler:
                         frame_resized = frame
 
                     yield (pts_sec, frame_resized)
+                else:
+                    if not cap.grab():
+                        break
 
                 current_frame_idx += 1
         finally:
