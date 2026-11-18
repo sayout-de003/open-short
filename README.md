@@ -18,7 +18,7 @@
 
 **Open source AI video platform** with 3 tools in one: **Clip Generator**, **AI Shorts (UGC videos with AI actors)**, and **YouTube Studio**.
 
-![Your podcast, and the vertical clip OpenShorts makes of it: both speakers stacked, captions on the seam](screenshots/split-before-after.gif)
+> **Auto-Split & Stack:** Two speakers detected? OpenShorts automatically stacks them vertically with captions placed cleanly on the seam.
 
 <sub>Real OpenShorts output, not a mock-up. Source: [Turn the Tables with Dan and Shoshana Jordan](https://www.youtube.com/watch?v=-KbQj_vboOU), Heritage of Faith, licensed CC BY.</sub>
 

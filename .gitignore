@@ -3,6 +3,7 @@
 *.webm
 *.mov
 *.mkv
+*.gif
 
 # YOLO model
 *.pt
