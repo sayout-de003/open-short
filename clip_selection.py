@@ -210,7 +210,7 @@ def clip_duration_bounds():
         except ValueError:
             return default
 
-    lo = _read("CLIP_MIN_SECONDS", 15.0)
+    lo = _read("CLIP_MIN_SECONDS", 30.0)
     hi = _read("CLIP_MAX_SECONDS", 60.0)
     lo = min(max(lo, 5.0), 175.0)
     hi = min(max(hi, 10.0), 180.0)

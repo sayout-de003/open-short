@@ -24,8 +24,8 @@ class LocalIntelligencePipeline:
         self,
         profile_name: str = "gaming",
         target_fps: float = 1.0,
-        min_clip_sec: float = 15.0,
-        max_clip_sec: float = 59.0,
+        min_clip_sec: float = 30.0,
+        max_clip_sec: float = 60.0,
         max_clips: int = 5,
         llm_base_url: Optional[str] = None,
     ):

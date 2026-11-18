@@ -2685,7 +2685,8 @@ def get_viral_clips(transcript_result, video_duration, viewer_clips=None):
         print(f"🚫 {e}")
         raise
     except Exception as e:
-        print(f"❌ Gemini Error: {e}")
+        provider_name = "Local LLM" if llm_backend.active() else "Gemini"
+        print(f"❌ {provider_name} Error: {e}")
         return None
 
 

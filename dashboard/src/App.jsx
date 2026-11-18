@@ -2293,14 +2293,22 @@ function App() {
 
                   // If project from HistoryTab already has clips, display them IMMEDIATELY!
                   if (proj && proj.clips && proj.clips.length > 0) {
-                    const shorts = (proj.shorts && proj.shorts.length > 0) ? proj.shorts : proj.clips.map((c, i) => ({
-                      title: `${proj.title || 'Clip'} #${i + 1}`,
-                      video_title_for_youtube_short: `${proj.title || 'Clip'} #${i + 1}`,
-                      video_url: c.url,
-                      start: 0,
-                      end: 0,
-                      virality_score: 5,
-                    }));
+                    const shorts = proj.clips.map((c, i) => {
+                      const meta = (proj.shorts && proj.shorts[i]) || {};
+                      return {
+                        ...meta,
+                        title: meta.title || `${proj.title || 'Clip'} #${i + 1}`,
+                        video_title_for_youtube_short: meta.video_title_for_youtube_short || meta.title || `${proj.title || 'Clip'} #${i + 1}`,
+                        video_url: c.url,
+                        start: meta.start || 0,
+                        end: meta.end || 0,
+                        virality_score: meta.virality_score || 5,
+                        hook: meta.hook || '',
+                        viral_hook_text: meta.viral_hook_text || meta.hook || '',
+                        video_description_for_tiktok: meta.video_description_for_tiktok || '',
+                        video_description_for_instagram: meta.video_description_for_instagram || '',
+                      };
+                    });
                     setResults({ clips: shorts });
                     setStatus('complete');
                     setLogs(['♻️ Project loaded from your local library.']);
@@ -2310,9 +2318,16 @@ function App() {
 
                   // Also poll backend to sync freshest state
                   pollJob(jid).then((d) => {
-                    if (d?.result) setResults(d.result);
+                    if (d?.result?.clips?.length) {
+                      setResults(d.result);
+                    }
                     if (d?.status) {
-                      setStatus(normalizeStatus(d.status));
+                      const norm = normalizeStatus(d.status);
+                      if (proj?.clips?.length && norm !== 'error') {
+                        setStatus('complete');
+                      } else {
+                        setStatus(norm);
+                      }
                     }
                     setNoSource(true);
                     setProcessingMedia(null);
@@ -2322,6 +2337,8 @@ function App() {
                     if (!proj || !proj.clips || proj.clips.length === 0) {
                       setStatus('error');
                       setJobError("Could not retrieve project clips from server.");
+                    } else {
+                      setStatus('complete');
                     }
                     setActiveTab('dashboard');
                   });

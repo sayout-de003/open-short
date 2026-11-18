@@ -47,6 +47,8 @@ def detect_scenes(video_path):
     if engine != "pyscenedetect":
         try:
             return _detect_transnetv2(video_path)
+        except (ModuleNotFoundError, ImportError):
+            pass
         except Exception as e:
             print(f"   ⚠️ TransNetV2 scene detection failed "
                   f"({type(e).__name__}: {e}) — falling back to PySceneDetect")

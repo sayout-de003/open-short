@@ -6655,12 +6655,15 @@ async def list_projects_endpoint():
                         size_mb = round(os.path.getsize(canon_path) / (1024 * 1024), 2)
                     except Exception:
                         size_mb = 0
+                    clip_url = f"/videos/{entry}/{canon_file}"
+                    shorts[idx]["video_url"] = clip_url
                     clip_list.append({
                         "filename": canon_file,
-                        "url": f"/videos/{entry}/{canon_file}",
+                        "url": clip_url,
                         "size_mb": size_mb
                     })
         if not clip_list:
+            clip_idx = 0
             for f in sorted(glob.glob(os.path.join(job_dir, "*.mp4"))):
                 fname = os.path.basename(f)
                 if fname.startswith("temp_") or fname.endswith(".temp.mp4"):
@@ -6671,11 +6674,15 @@ async def list_projects_endpoint():
                         size_mb = round(os.path.getsize(f) / (1024 * 1024), 2)
                     except Exception:
                         size_mb = 0
+                    clip_url = f"/videos/{entry}/{fname}"
+                    if shorts and clip_idx < len(shorts):
+                        shorts[clip_idx]["video_url"] = clip_url
                     clip_list.append({
                         "filename": fname,
-                        "url": f"/videos/{entry}/{fname}",
+                        "url": clip_url,
                         "size_mb": size_mb
                     })
+                    clip_idx += 1
 
         if entry in jobs:
             status = jobs[entry].get("status", "unknown")
