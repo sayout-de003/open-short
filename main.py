@@ -583,7 +583,7 @@ def detect_face_candidates(frame):
                             'score': float(f[-1]) * (bw * bh)
                         })
                 if candidates:
-                    return candidates
+                    return _filter_face_candidates(candidates, orig_h)
         except Exception:
             pass
 
@@ -598,7 +598,7 @@ def detect_face_candidates(frame):
                         'box': [int(x), int(y), int(w), int(h)],
                         'score': int(w * h)
                     })
-                return candidates
+                return _filter_face_candidates(candidates, orig_h)
         except Exception:
             pass
 
@@ -622,9 +622,22 @@ def detect_face_candidates(frame):
                     'box': [max(0, x), max(0, y), min(orig_w - x, w), min(orig_h - y, h)],
                     'score': w * h
                 })
-            return candidates
+            return _filter_face_candidates(candidates, orig_h)
 
-    return candidates
+    return _filter_face_candidates(candidates, orig_h)
+
+
+def _filter_face_candidates(candidates, orig_h):
+    """Drop tiny background icons or corner logos that compete with real faces."""
+    if not candidates:
+        return []
+    min_h = max(28, int(orig_h * 0.05))
+    valid = [c for c in candidates if c['box'][3] >= min_h]
+    if valid:
+        max_area = max(c['box'][2] * c['box'][3] for c in valid)
+        return [c for c in valid if (c['box'][2] * c['box'][3]) >= 0.14 * max_area]
+    return sorted(candidates, key=lambda c: c['score'], reverse=True)[:1]
+
 
 def detect_person_yolo(frame):
     """

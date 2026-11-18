@@ -38,13 +38,26 @@ class ClipSelector:
         if not timeline or len(timeline) < int(self.min_duration):
             # Fallback if video is extremely short: take full duration
             dur = timeline[-1]["timestamp"] if timeline else self.min_duration
+            title = f"Epic {profile_name.capitalize()} Moment"
+            hook = "Wait until you see this!"
+            tags = {
+                "gaming": "#gaming #gameplay #twitch #gamingclips #fyp #viralshorts",
+                "podcast": "#podcast #interview #insights #wisdom #trending #shorts",
+                "educational": "#education #learning #career #jobs #tips #knowledge",
+                "commentary": "#commentary #opinion #reaction #trends #viral #shorts"
+            }.get(profile_name.lower(), "#shorts #viral #trending #reels #fyp")
             return [{
                 "start": 0.0,
                 "end": max(self.min_duration, dur),
                 "virality_score": 8,
-                "title": f"Epic {profile_name.capitalize()} Moment",
-                "hook": "Wait until you see this!",
-                "reason": "High density moment across available timeline"
+                "title": title,
+                "video_title_for_youtube_short": title,
+                "hook": hook,
+                "viral_hook_text": hook,
+                "video_description_for_tiktok": f"{hook} 🔥 Watch till the end! {tags}",
+                "video_description_for_instagram": f"{hook}\n\nWhat are your thoughts on this? Drop a comment below! 👇\n\n{tags}",
+                "reason": "High density moment across available timeline",
+                "reason_for_virality": "High density moment across available timeline"
             }]
 
         step_sec = timeline[1]["timestamp"] - timeline[0]["timestamp"] if len(timeline) > 1 else 1.0
