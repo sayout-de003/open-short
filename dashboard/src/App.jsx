@@ -2151,10 +2151,10 @@ function App() {
                 {/* Header */}
                 <div className="space-y-3">
                   <p className="eyebrow flex items-center gap-2">
-                    <Bot size={12} /> 03 · AI AGENT · AUTONOMOUS SKILL
+                    <Bot size={12} /> 03 · AI AGENT · AUTONOMOUS EDITING CREW
                   </p>
                   <h1 className="font-display lowercase text-3xl md:text-4xl text-ink">
-                    Your Personal Clipping Team
+                    Editing Crew on Autopilot
                   </h1>
                   <p className="text-muted text-base md:text-lg leading-relaxed max-w-2xl">
                     Drop your videos in a folder and a team of AI clippers picks the viral moments, edits them, and queues them for your approval — like having a 24/7 short-form editing crew on autopilot.
@@ -2205,29 +2205,95 @@ function App() {
                   </div>
                 </div>
 
-                {/* Agent MCP Integration */}
+                {/* Gemini API Key / AI Engine Status (BYOK Preserved) */}
+                <div className="card p-5 sm:p-6 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-input bg-paper3 flex items-center justify-center shrink-0">
+                        <KeyRound size={16} className="text-brass" />
+                      </div>
+                      <div>
+                        <h2 className="text-base font-medium text-ink lowercase">AI Engine &amp; API Key Configuration</h2>
+                        <p className="text-xs text-muted">Bring Your Own Key (BYOK) — stored locally in your browser, no platform charges</p>
+                      </div>
+                    </div>
+                    {localLlm ? (
+                      <span className="badge-ok">Local AI Active ({localLlm.model || 'qwen3:1.7b'})</span>
+                    ) : apiKey ? (
+                      <span className="badge-ok">Gemini Key Configured</span>
+                    ) : (
+                      <span className="badge-quiet">Key Required</span>
+                    )}
+                  </div>
+
+                  {localLlm && (
+                    <div className="p-3 bg-paper3 rounded-input border border-rule text-xs text-ink2">
+                      Local LLM backend is active via <strong>Ollama ({localLlm.model || 'qwen3:1.7b'})</strong>. Video clipping works 100% locally and offline without requiring a Gemini key. You can still paste a Gemini key below as an optional override.
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="password"
+                        value={apiKey}
+                        onChange={(e) => {
+                          const val = e.target.value.trim();
+                          setApiKey(val);
+                          if (val) localStorage.setItem('gemini_key', val);
+                          else localStorage.removeItem('gemini_key');
+                        }}
+                        className="input-field text-xs font-mono"
+                        placeholder={localLlm ? "Optional: Paste Gemini API key override (AIzaSy...)" : "Paste your Gemini API key (AIzaSy...)"}
+                      />
+                      {apiKey && (
+                        <button
+                          onClick={() => {
+                            setApiKey('');
+                            localStorage.removeItem('gemini_key');
+                          }}
+                          className="btn-quiet py-2 px-3 text-xs shrink-0"
+                          title="Clear Key"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-muted">
+                      <span>
+                        Get your free key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-brass underline">Google AI Studio</a>.
+                      </span>
+                      <span>Multimodal: Gemini 3 Flash / 3.1 Flash-Lite</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Built-in Skill Section */}
                 <div className="card p-6 md:p-8 space-y-5">
                   <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div>
-                      <h2 className="font-display lowercase text-xl text-ink mb-1">AI Agent Automation</h2>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Terminal size={18} className="text-brass" />
+                        <h2 className="font-display lowercase text-xl text-ink">Built-in Skill: skill-autoshorts</h2>
+                        <span className="badge-ok text-xs">Direct Access</span>
+                      </div>
                       <p className="text-sm text-muted">
-                        Connect Claude, ChatGPT, or custom agent pipelines via MCP or REST API to automate clip generation on schedule.
+                        Integrated directly in our repository. Runs daily batch processing, Whisper transcription, Gemini moment detection, and automated shipping.
                       </p>
                     </div>
-                    <button
-                      onClick={() => (billingEnabled ? (window.location.hash = '#/account') : goToTab('settings'))}
-                      className="btn-primary py-2 px-4 text-sm shrink-0"
-                    >
-                      Connect Agent <ExternalLink size={14} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono bg-paper3 px-2.5 py-1 rounded-input border border-rule text-muted">
+                        skills/autoshorts/
+                      </span>
+                    </div>
                   </div>
 
                   <div className="bg-paper border border-rule rounded-card p-4 font-mono text-xs text-ink2 flex items-center justify-between gap-3">
-                    <span className="truncate">Endpoint: https://mcp.openshorts.app/mcp</span>
+                    <span className="truncate">python skills/autoshorts/autoshorts.py pick</span>
                     <button
-                      onClick={() => navigator.clipboard.writeText('https://mcp.openshorts.app/mcp')}
+                      onClick={() => navigator.clipboard.writeText('python skills/autoshorts/autoshorts.py pick')}
                       className="text-muted hover:text-ink transition-colors shrink-0"
-                      title="Copy Endpoint"
+                      title="Copy"
                     >
                       <Copy size={14} />
                     </button>
@@ -2248,10 +2314,13 @@ function App() {
                     </div>
                     <div className="flex items-start gap-2 text-ink2">
                       <Check size={16} className="text-brass shrink-0 mt-0.5" />
-                      <span>Auto-publish to TikTok, Reels & YouTube Shorts</span>
+                      <span>Auto-publish to TikTok, Reels &amp; YouTube Shorts</span>
                     </div>
                   </div>
                 </div>
+
+                {/* Connect Agent: Our Own MCP Server */}
+                <McpConnectCard cloud={false} />
 
               </div>
             </div>

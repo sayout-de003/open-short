@@ -46,6 +46,15 @@ function buildClients({ cloud, url }) {
       ],
       snippet: url,
     },
+    !cloud && {
+      id: 'agent-url', label: 'Agent Endpoint', kind: 'steps',
+      steps: [
+        `Direct MCP Server URL: ${url}`,
+        'Supports Streamable HTTP transport and JSON-RPC 2.0 (tools/list, tools/call).',
+        'BYOK: Send X-Gemini-Key header or gemini_api_key in tool arguments, or set GEMINI_API_KEY in the server environment.',
+      ],
+      snippet: url,
+    },
     {
       id: 'claude-code', label: 'Claude Code', kind: 'code', lang: 'bash',
       snippet: `claude mcp add --transport http openshorts ${url}${header}`,

@@ -31,7 +31,10 @@ import pytest  # noqa: E402
 def _fresh_owner_cache():
     """The owner check remembers callers per credential (cloud/owner_cache.py);
     a caller one test remembered must not answer for the next."""
-    from cloud import owner_cache
-    owner_cache.clear()
-    yield
-    owner_cache.clear()
+    try:
+        from cloud import owner_cache
+        owner_cache.clear()
+        yield
+        owner_cache.clear()
+    except ImportError:
+        yield

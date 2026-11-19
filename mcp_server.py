@@ -155,6 +155,10 @@ TOOLS = [
                     "type": "number", "minimum": 10, "maximum": 180,
                     "description": "Maximum clip length in seconds (default 60). Must be ≥ 5s above the minimum.",
                 },
+                "gemini_api_key": {
+                    "type": "string",
+                    "description": "Optional Gemini API key for this job (BYOK). If omitted, falls back to the server environment (GEMINI_API_KEY) or X-Gemini-Key request header.",
+                },
             },
             "required": ["confirm_rights"],
         },
@@ -410,7 +414,10 @@ async def _tool_process_video(client, args):
         body["auto_hook"] = True
         if args.get("hook_style"):
             body["auto_hook_style"] = args["hook_style"]
-    resp = await client.post("/api/process", json=body)
+    extra_headers = {}
+    if args.get("gemini_api_key"):
+        extra_headers["X-Gemini-Key"] = args["gemini_api_key"]
+    resp = await client.post("/api/process", json=body, headers=extra_headers or None)
     if resp.status_code >= 400:
         return _api_error(resp), True
     data = resp.json()
