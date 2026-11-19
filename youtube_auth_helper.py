@@ -15,7 +15,10 @@ import json
 import os
 import re
 import sys
-from google_auth_oauthlib.flow import InstalledAppFlow
+try:
+    from google_auth_oauthlib.flow import InstalledAppFlow
+except ImportError:
+    InstalledAppFlow = None
 
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",

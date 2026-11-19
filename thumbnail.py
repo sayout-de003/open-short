@@ -4,8 +4,12 @@ import uuid
 import json
 from concurrent.futures import ThreadPoolExecutor
 
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None
+    types = None
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 # Text/analysis model (titles, concepts, description). Deliberately NOT tied to

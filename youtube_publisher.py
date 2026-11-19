@@ -18,11 +18,20 @@ import sys
 import time
 from typing import Dict, Any, List, Optional
 
-import google.oauth2.credentials
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from googleapiclient.errors import HttpError
+try:
+    import google.oauth2.credentials
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload
+    from googleapiclient.errors import HttpError
+    GOOGLE_AUTH_AVAILABLE = True
+except ImportError:
+    google = None
+    Request = None
+    build = None
+    MediaFileUpload = None
+    HttpError = Exception  # type: ignore
+    GOOGLE_AUTH_AVAILABLE = False
 
 import social_platforms
 
@@ -93,8 +102,10 @@ def exchange_code_for_tokens(code: str, redirect_uri: str) -> Dict[str, Any]:
     return resp.json()
 
 
-def get_youtube_credentials() -> google.oauth2.credentials.Credentials:
+def get_youtube_credentials() -> Any:
     """Build and refresh Google OAuth2 Credentials object from environment variables."""
+    if not GOOGLE_AUTH_AVAILABLE:
+        raise RuntimeError("google-auth-oauthlib is not installed.")
     access_token = os.environ.get("YOUTUBE_ACCESS_TOKEN")
     client_id = os.environ.get("YOUTUBE_CLIENT_ID")
     client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET")

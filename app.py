@@ -5415,7 +5415,7 @@ async def get_config():
         # because the moment picker runs on an OpenAI-compatible server.
         "localLlm": None if BILLING_ENABLED else llm_backend.describe(),
         "localIntelligence": True,
-        "profiles": ["gaming", "podcast", "commentary", "generic"],
+        "profiles": ["auto", "gaming", "podcast", "educational", "commentary", "generic"],
     }
 
 
@@ -5434,6 +5434,65 @@ async def get_intelligence_profiles():
                 except Exception:
                     pass
     return {"profiles": out}
+
+
+@app.get("/api/templates")
+async def list_templates_endpoint(category: Optional[str] = None):
+    from template_library.models import get_template_store
+    store = get_template_store()
+    return {"templates": store.list_templates(category=category)}
+
+
+@app.get("/api/templates/{template_id}")
+async def get_template_endpoint(template_id: str):
+    from template_library.models import get_template_store
+    store = get_template_store()
+    tmpl = store.get_template(template_id)
+    if not tmpl:
+        raise HTTPException(status_code=404, detail=f"Template preset '{template_id}' not found")
+    return tmpl
+
+
+@app.post("/api/templates")
+async def save_template_endpoint(request: Request):
+    data = await request.json()
+    from template_library.models import get_template_store
+    store = get_template_store()
+    try:
+        saved = store.save_template(data)
+        return {"success": True, "template": saved}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/templates/{template_id}")
+async def delete_template_endpoint(template_id: str):
+    from template_library.models import get_template_store
+    store = get_template_store()
+    try:
+        deleted = store.delete_template(template_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Template preset '{template_id}' not found")
+        return {"success": True}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/content/classify")
+async def classify_content_endpoint(request: Request):
+    data = await request.json()
+    from content_classifier import detect_content_type
+    res = detect_content_type(
+        title=data.get("title"),
+        tags=data.get("tags"),
+        category=data.get("category"),
+        description=data.get("description"),
+        duration=float(data.get("duration", 0.0)),
+        words_per_minute=data.get("words_per_minute"),
+        visual_motion_intensity=data.get("visual_motion_intensity"),
+        audio_energy_spikes=data.get("audio_energy_spikes"),
+    )
+    return res
 
 
 class StreamCaptureRequest(BaseModel):
@@ -5983,15 +6042,30 @@ async def process_endpoint(
     env = child_env()
 
     # Content profile (Gaming, Podcast, Educational, Commentary, Generic, or Auto-detect)
-    effective_profile = str(clipping_profile or "auto").strip().lower()
-    if effective_profile == "auto":
-        from content_classifier import detect_content_type
+    from intelligence.job_context import JobContext, ContentProfile
+    from content_classifier import detect_content_type
+
+    effective_profile = ContentProfile.normalize(clipping_profile)
+    profile_confidence = 1.0
+    profile_reason = "User specified"
+
+    if effective_profile == ContentProfile.AUTO:
         sample_title = (thumb_session.get("title") if thumb_session else None) or (os.path.basename(file.filename) if file and file.filename else None) or url
         detected_info = detect_content_type(title=sample_title)
-        effective_profile = detected_info["profile"]
-        print(f"🎮 [Auto AI Classifier] Detected profile: {effective_profile} (confidence: {detected_info['confidence']}) - {detected_info['reason']}")
+        effective_profile = detected_info["primary_profile"]
+        profile_confidence = detected_info["confidence"]
+        profile_reason = detected_info["reason"]
+        print(f"🎮 [Auto AI Classifier] Detected profile: {effective_profile} (confidence: {profile_confidence}) - {profile_reason}")
 
-    env["CLIPPING_PROFILE"] = effective_profile
+    job_ctx = JobContext(
+        job_id=job_id,
+        content_type=clipping_profile or ContentProfile.AUTO,
+        resolved_profile=effective_profile,
+        profile_confidence=profile_confidence,
+        profile_reason=profile_reason,
+        aspect_ratio=aspect_ratio or "9:16",
+    )
+    env = job_ctx.to_subprocess_env(env)
     if api_key:
         env["GEMINI_API_KEY"] = api_key # Override with key from request
     else:
@@ -6218,7 +6292,10 @@ async def process_endpoint(
         'reservation_id': reservation_id,
         'watermark': env.get("WATERMARK") == "1",
         'partial': partial,
-        'clipping_profile': env.get("CLIPPING_PROFILE"),
+        'clipping_profile': effective_profile,
+        'profile_confidence': profile_confidence,
+        'profile_reason': profile_reason,
+        'job_context': job_ctx.to_dict(),
         'webhook_url': webhook_url,
         'webhook_secret': webhook_secret,
         'base_url': api_base,
@@ -6362,6 +6439,9 @@ async def get_status(job_id: str, request: Request):
         # offer), so the dashboard can say so next to the clips.
         "partial": job.get('partial'),
         "clipping_profile": job.get('clipping_profile'),
+        "profile_confidence": job.get('profile_confidence', 1.0),
+        "profile_reason": job.get('profile_reason'),
+        "job_context": job.get('job_context'),
     }
 
 

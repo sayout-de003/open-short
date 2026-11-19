@@ -4,8 +4,12 @@ import re
 import subprocess
 import time
 from typing import List
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None
+    types = None
 from pydantic import BaseModel
 
 import gemini_worker
