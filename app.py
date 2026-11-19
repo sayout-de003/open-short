@@ -6093,7 +6093,6 @@ async def process_endpoint(
     buffer_platforms: Optional[str] = Form(None),
     scheduling_mode: Optional[str] = Form(None),
     posts_per_day: Optional[str] = Form(None),
-    template_id: Optional[str] = Form(None),
 ):
     api_key = await resolve_gemini(request)
     if not api_key and not (llm_backend.active() and not BILLING_ENABLED):
