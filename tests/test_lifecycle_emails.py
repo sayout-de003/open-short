@@ -38,7 +38,7 @@ class TestCartLabel:
         assert lifecycle.cart_label(obj) == "60 extra minutes ($9.00)"
 
     def test_old_session_without_plan(self):
-        assert lifecycle.cart_label({"amount_total": 1200, "currency": "usd"}) == "your OpenShorts plan ($12.00)"
+        assert lifecycle.cart_label({"amount_total": 1200, "currency": "usd"}) == "your CREOVIS plan ($12.00)"
         assert lifecycle.cart_label({}) == ""
 
 
@@ -86,7 +86,7 @@ def recovery(monkeypatch):
 class TestCheckoutRecovery:
     def test_sends_the_recovery_url_once(self, recovery):
         assert run(lifecycle.on_checkout_expired(_expired())) is True
-        assert recovery["sent"] == [("a@b.co", "https://checkout.stripe.com/r/x", "your OpenShorts plan ($12.00)")]
+        assert recovery["sent"] == [("a@b.co", "https://checkout.stripe.com/r/x", "your CREOVIS plan ($12.00)")]
         # A second abandoned session does not mail again.
         assert run(lifecycle.on_checkout_expired(_expired())) is False
         assert len(recovery["sent"]) == 1

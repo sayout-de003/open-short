@@ -109,12 +109,12 @@ const llmsTxt = (pages) => {
   const keySet = new Set(key.map((p) => p.path))
   const rest = listed.filter((p) => !keySet.has(p.path))
 
-  return `# OpenShorts
+  return `# CREOVIS
 
 > ${SITE.name} is an AI clip generator and video repurposing platform that turns long videos into
 > vertical 9:16 clips for TikTok, Instagram Reels and YouTube Shorts.
 
-- **OpenShorts Cloud**: Free plan includes 20 minutes a month. Paid plans from ${PAID_LINE}.
+- **CREOVIS Cloud**: Free plan includes 20 minutes a month. Paid plans from ${PAID_LINE}.
 
 Pricing page: ${SITE.url}/pricing
 
@@ -124,7 +124,7 @@ ${CANONICAL_ANSWERS.justPosting}
 
 ## Key pages
 
-- [OpenShorts home](${SITE.url}/): ${CANONICAL_ANSWERS.whatIsIt}
+- [CREOVIS home](${SITE.url}/): ${CANONICAL_ANSWERS.whatIsIt}
 ${key.map(llmsLine).join('\n')}
 
 ## More pages
@@ -162,7 +162,7 @@ const llmsFullTxt = (pages) => {
   const key = LLMS_KEY_PATHS.map((path) => byPath.get(path)).filter(Boolean)
   const keySet = new Set(key.map((p) => p.path))
   const rest = listed.filter((p) => !keySet.has(p.path) && /^\/(alternatives|opus-|vizard-|submagic-|platforms|use-cases)/.test(p.path))
-  return `# OpenShorts (full text)
+  return `# CREOVIS (full text)
 
 > ${CANONICAL_ANSWERS.whatIsIt}
 
@@ -193,21 +193,21 @@ ${[...key, ...rest].map(fullSection).join('\n\n')}
 const notFoundPage = () => ({
   path: '/404',
   noindex: true,
-  title: 'Page not found | OpenShorts',
-  description: 'That page does not exist on openshorts.app.',
+  title: 'Page not found | CREOVIS',
+  description: 'That page does not exist on creovis.app.',
   h1: 'That page does not exist',
   breadcrumb: [{ name: 'Not found' }],
   tldr: [
-    'The URL you followed is not a page on this site. It may have been a link to the app, which lives at the site root, or to the public gallery, which is served from api.openshorts.app.',
-    'The links below cover everything openshorts.app actually publishes.',
+    'The URL you followed is not a page on this site. It may have been a link to the app, which lives at the site root, or to the public gallery, which is served from api.creovis.app.',
+    'The links below cover everything creovis.app actually publishes.',
   ],
   body: `
 <h2>Where you probably wanted to go</h2>
 <ul>
   <li><a href="${SITE.url}/">The app and the landing page</a>, where you can paste a video link and get clips.</li>
-  <li><a href="/how-openshorts-works">How OpenShorts works</a>, the pipeline stage by stage.</li>
+  <li><a href="/how-openshorts-works">How CREOVIS works</a>, the pipeline stage by stage.</li>
   <li><a href="/alternatives">Comparisons</a> against Opus Clip, Klap, Vizard and Submagic.</li>
-  <li><a href="https://api.openshorts.app/gallery" rel="noopener">The public video gallery</a>, which is served from the API host.</li>
+  <li><a href="https://api.creovis.app/gallery" rel="noopener">The public video gallery</a>, which is served from the API host.</li>
 </ul>`,
   faq: [],
 })

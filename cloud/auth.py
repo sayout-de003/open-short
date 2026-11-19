@@ -80,7 +80,7 @@ class CurrentUser:
         self.upload_post_profile = upload_post_profile
 
 
-SUSPENDED_DETAIL = "This account is suspended. Contact info@openshorts.app."
+SUSPENDED_DETAIL = "This account is suspended. Contact info@creovis.app."
 
 
 def is_banned(user) -> bool:

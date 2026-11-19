@@ -7,7 +7,7 @@ import { ArrowLeft, FileText, Shield, Landmark, Flag, RotateCcw } from 'lucide-r
 // links, so the SPA route (#legal) and the crawlable pages never drift: the
 // full text lives in exactly one place.
 const LAST_UPDATED = '2026-09-04';
-const SUPPORT_EMAIL = 'info@openshorts.app';
+const SUPPORT_EMAIL = 'info@creovis.app';
 
 const DOCS = [
     {
@@ -27,7 +27,7 @@ const DOCS = [
     {
         icon: Landmark,
         title: 'Legal Notice',
-        desc: 'Who operates openshorts.app: TONVI TECH SL, Málaga, Spain (LSSI-CE art. 10).',
+        desc: 'Who operates creovis.app: TONVI TECH SL, Málaga, Spain (LSSI-CE art. 10).',
         href: '/legal-notice',
         es: '/aviso-legal',
     },
@@ -100,7 +100,7 @@ export default function Legal() {
                 </div>
 
                 <p className="text-sm text-muted">
-                    openshorts.app is operated by TONVI TECH SL (CIF B-19780394), Calle Puerta del Mar 18,
+                    creovis.app is operated by TONVI TECH SL (CIF B-19780394), Calle Puerta del Mar 18,
                     29005 Málaga, Spain. Questions:{' '}
                     <a className="underline underline-offset-2 hover:text-brass transition-colors" href={`mailto:${SUPPORT_EMAIL}`}>
                         {SUPPORT_EMAIL}

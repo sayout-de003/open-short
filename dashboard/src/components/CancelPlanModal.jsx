@@ -94,7 +94,7 @@ export default function CancelPlanModal({ plan, periodEnd, onClose, onCanceled }
       track('RetentionOfferAccepted', { props: { plan, reason } });
       setSaved(out);
     } catch (e) {
-      setError(e?.detail || 'Could not apply the discount. Please try again or email info@openshorts.app.');
+      setError(e?.detail || 'Could not apply the discount. Please try again or email info@creovis.app.');
     }
     sending.current = false;
     setBusy(false);
@@ -114,7 +114,7 @@ export default function CancelPlanModal({ plan, periodEnd, onClose, onCanceled }
       track('PauseOfferAccepted', { props: { plan, reason } });
       setPaused(out);
     } catch (e) {
-      setError(e?.detail || 'Could not pause your plan. Please try again or email info@openshorts.app.');
+      setError(e?.detail || 'Could not pause your plan. Please try again or email info@creovis.app.');
     }
     sending.current = false;
     setBusy(false);
@@ -139,7 +139,7 @@ export default function CancelPlanModal({ plan, periodEnd, onClose, onCanceled }
       track('SubscriptionCanceled', { props: { plan, reason, rating: rating || undefined, offered: !!offer } });
       onCanceled();
     } catch (e) {
-      setError(e?.detail || 'Could not cancel. Please try again or email info@openshorts.app.');
+      setError(e?.detail || 'Could not cancel. Please try again or email info@creovis.app.');
       sending.current = false;
       setBusy(false);
     }
@@ -186,11 +186,11 @@ export default function CancelPlanModal({ plan, periodEnd, onClose, onCanceled }
 
   return (
     <Modal isOpen onClose={busy ? undefined : keep} eyebrow={`CANCEL PLAN · ${step + 1}/3`}
-           title={['Why are you cancelling?', 'How was OpenShorts?',
+           title={['Why are you cancelling?', 'How was CREOVIS?',
                    offer || pause ? 'Before you go' : 'Confirm cancellation'][step]}>
       {step === 0 && (
         <div className="space-y-4">
-          <p className="text-sm text-muted">Your answer goes straight to the people building OpenShorts.</p>
+          <p className="text-sm text-muted">Your answer goes straight to the people building CREOVIS.</p>
           <div className="space-y-1.5">
             {REASONS.map(([value, label]) => (
               <label key={value}
@@ -236,7 +236,7 @@ export default function CancelPlanModal({ plan, periodEnd, onClose, onCanceled }
           {review.trim() && (
             <label className="flex items-start gap-2 text-sm text-ink2 cursor-pointer">
               <input type="checkbox" checked={publicOk} onChange={(e) => setPublicOk(e.target.checked)} className="mt-0.5" />
-              OpenShorts may quote this review publicly (first name only).
+              CREOVIS may quote this review publicly (first name only).
             </label>
           )}
           <div className="flex items-center justify-between gap-2 pt-1">

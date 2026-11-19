@@ -14,8 +14,9 @@ the whole API, as before.
 import re
 from typing import Optional
 
-MCP_SCOPE = "openshorts"
-SUPPORTED_SCOPES = (MCP_SCOPE,)
+MCP_SCOPE = "creovis"
+LEGACY_MCP_SCOPE = "openshorts"
+SUPPORTED_SCOPES = (MCP_SCOPE, LEGACY_MCP_SCOPE)
 
 # Keys minted by the OAuth flow before the scope column existed. Their name is
 # set by the token endpoint and cannot be renamed afterwards; a hand-made key
@@ -69,7 +70,7 @@ def allows(scope: Optional[str], method: str, path: str) -> bool:
     if not scope:
         return True
     granted = set(scope.split())
-    if MCP_SCOPE in granted:
+    if (MCP_SCOPE in granted) or (LEGACY_MCP_SCOPE in granted):
         method = "GET" if method == "HEAD" else method
         return any(m == method and rx.fullmatch(path or "") for m, rx in _MCP_ROUTES)
     return False

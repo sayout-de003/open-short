@@ -11,7 +11,7 @@ metadata:
 
 # AutoShorts — Daily Viral Clip Pipeline
 
-Pipeline tooling lives at `open-short/skills/autoshorts/` inside the OpenShort repository. Each day this skill picks ONE long video from `INPUT_FOLDER`, extracts every viable short-form clip (Gemini 3 Flash decides), shows them to the user for approval, and publishes the approved ones via Upload-Post.
+Pipeline tooling lives at `open-short/skills/autoshorts/` inside the CREOVIS repository. Each day this skill picks ONE long video from `INPUT_FOLDER`, extracts every viable short-form clip (Gemini 3 Flash decides), shows them to the user for approval, and publishes the approved ones via Upload-Post.
 
 ## Setup (only if not yet configured)
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link2, Upload, FileVideo, X, Info, Loader2, ChevronDown, ClipboardPaste, Check, Sparkles, Gamepad2, Mic, GraduationCap, MessageSquare } from 'lucide-react';
+import { Link2, Upload, FileVideo, X, Info, Loader2, ChevronDown, ClipboardPaste, Check, Sparkles, Gamepad2, Mic, GraduationCap, MessageSquare, LayoutTemplate } from 'lucide-react';
 import { track } from '../lib/analytics';
 import { getApiUrl } from '../config';
 import SourceCost from './SourceCost';
@@ -38,7 +38,62 @@ const CONTENT_PROFILES = [
     { value: 'commentary', label: 'Vlog / Show', hint: 'Reactions & review', Icon: MessageSquare },
 ];
 
-export default function MediaInput({ onProcess, isProcessing }) {
+export const TEMPLATE_CATEGORIES = [
+    { id: 'gaming', label: 'Gaming & Action' },
+    { id: 'podcast', label: 'Podcasts & Talks' },
+    { id: 'educational', label: 'Education & Code' },
+    { id: 'commentary', label: 'Vlogs & Commentary' },
+    { id: 'business', label: 'Business & Finance' },
+    { id: 'fitness', label: 'Fitness & Sports' },
+    { id: 'storytelling', label: 'Story & Cinema' },
+    { id: 'travel_food', label: 'Travel & Food' },
+    { id: 'music_dance', label: 'Music & Dance' },
+    { id: 'news_documentary', label: 'News & Docs' },
+];
+
+export const DEFAULT_TEMPLATES = [
+    { id: 'streamer_stacked_top', name: 'Streamer Top Cam (Stacked)', category: 'gaming', layout: 'stacked_top_cam', caption_preset: 'impact', duration_range: [15, 60] },
+    { id: 'gaming_cinematic', name: 'Gaming Cinematic', category: 'gaming', layout: 'gameplay_center', caption_preset: 'impact', duration_range: [15, 60] },
+    { id: 'streamer_reaction', name: 'Streamer Reaction', category: 'gaming', layout: 'gameplay_with_facecam', caption_preset: 'highlight', duration_range: [15, 60] },
+    { id: 'gta_story', name: 'GTA Story', category: 'gaming', layout: 'gameplay_center', caption_preset: 'comic', duration_range: [20, 60] },
+    { id: 'esports_highlights', name: 'Esports Highlights', category: 'gaming', layout: 'gameplay_center', caption_preset: 'impact', duration_range: [15, 45] },
+    { id: 'gaming_fails', name: 'Gaming Fails', category: 'gaming', layout: 'gameplay_center', caption_preset: 'comic', duration_range: [10, 35] },
+    { id: 'gaming_meme', name: 'Gaming Meme', category: 'gaming', layout: 'gameplay_center', caption_preset: 'impact', duration_range: [10, 30] },
+    { id: 'podcast_split', name: 'Podcast Split Screen', category: 'podcast', layout: 'split_two_speaker', caption_preset: 'highlight', duration_range: [20, 60] },
+    { id: 'podcast_cinematic', name: 'Podcast Cinematic', category: 'podcast', layout: 'talking_head_center', caption_preset: 'minimal_serif', duration_range: [30, 90] },
+    { id: 'podcast_kinetic', name: 'Podcast Kinetic', category: 'podcast', layout: 'talking_head_center', caption_preset: 'karaoke', duration_range: [15, 45] },
+    { id: 'podcast_reaction', name: 'Podcast Reaction', category: 'podcast', layout: 'split_two_speaker', caption_preset: 'highlight', duration_range: [15, 50] },
+    { id: 'controversial_opinion', name: 'Controversial Opinion', category: 'podcast', layout: 'talking_head_center', caption_preset: 'impact', duration_range: [15, 45] },
+    { id: 'educational_insight', name: 'Educational Insight', category: 'podcast', layout: 'talking_head_center', caption_preset: 'highlight', duration_range: [25, 75] },
+    { id: 'edu_explainer', name: 'Explainer', category: 'educational', layout: 'screencast', caption_preset: 'bullet_points', duration_range: [20, 60] },
+    { id: 'code_tutorial', name: 'Code Tutorial', category: 'educational', layout: 'screencast', caption_preset: 'highlight', duration_range: [30, 90] },
+    { id: 'step_by_step', name: 'Step by Step', category: 'educational', layout: 'screencast', caption_preset: 'bullet_points', duration_range: [25, 75] },
+    { id: 'whiteboard', name: 'Whiteboard', category: 'educational', layout: 'screencast', caption_preset: 'minimal_serif', duration_range: [20, 60] },
+    { id: 'reaction_punch', name: 'Reaction Punch', category: 'commentary', layout: 'gameplay_with_facecam', caption_preset: 'highlight', duration_range: [15, 45] },
+    { id: 'commentary_news', name: 'Commentary News', category: 'commentary', layout: 'talking_head_center', caption_preset: 'impact', duration_range: [20, 60] },
+    { id: 'story_vlog', name: 'Story Vlog', category: 'commentary', layout: 'talking_head_center', caption_preset: 'minimal_serif', duration_range: [20, 60] },
+    { id: 'lifestyle_minimal', name: 'Lifestyle Minimal', category: 'commentary', layout: 'talking_head_center', caption_preset: 'minimal_serif', duration_range: [15, 50] },
+    { id: 'business_explainer', name: 'Business Explainer', category: 'business', layout: 'screencast', caption_preset: 'bullet_points', duration_range: [25, 60] },
+    { id: 'business_premium', name: 'Business Premium', category: 'business', layout: 'talking_head_center', caption_preset: 'minimal_serif', duration_range: [20, 60] },
+    { id: 'fitness_intense', name: 'Fitness Intense', category: 'fitness', layout: 'talking_head_center', caption_preset: 'impact', duration_range: [15, 45] },
+    { id: 'sports_highlight', name: 'Sports Highlight', category: 'fitness', layout: 'gameplay_center', caption_preset: 'impact', duration_range: [15, 45] },
+    { id: 'cinematic_story', name: 'Cinematic Story', category: 'storytelling', layout: 'talking_head_center', caption_preset: 'minimal_serif', duration_range: [25, 90] },
+    { id: 'mystery_suspense', name: 'Mystery Suspense', category: 'storytelling', layout: 'talking_head_center', caption_preset: 'minimal_serif', duration_range: [20, 60] },
+    { id: 'travel_cinematic', name: 'Travel Cinematic', category: 'travel_food', layout: 'gameplay_center', caption_preset: 'minimal_serif', duration_range: [20, 60] },
+    { id: 'food_recipe', name: 'Food Recipe', category: 'travel_food', layout: 'gameplay_center', caption_preset: 'highlight', duration_range: [15, 50] },
+    { id: 'dance_beat_sync', name: 'Dance Beat Sync', category: 'music_dance', layout: 'gameplay_center', caption_preset: 'karaoke', duration_range: [15, 45] },
+    { id: 'music_visualizer', name: 'Music Visualizer', category: 'music_dance', layout: 'gameplay_center', caption_preset: 'karaoke', duration_range: [20, 60] },
+    { id: 'mini_documentary', name: 'Mini Documentary', category: 'news_documentary', layout: 'talking_head_center', caption_preset: 'minimal_serif', duration_range: [30, 90] },
+    { id: 'news_bulletin', name: 'News Bulletin', category: 'news_documentary', layout: 'talking_head_center', caption_preset: 'impact', duration_range: [15, 45] },
+];
+
+export default function MediaInput({
+    onProcess,
+    isProcessing,
+    selectedTemplate = '',
+    onSelectTemplate = null,
+    onOpenTemplates = null,
+}) {
     const [youtubeUrlEnabled, setYoutubeUrlEnabled] = useState(true);
     // File upload is the primary path; the link is secondary.
     const [mode, setMode] = useState('file'); // 'file' | 'url'
@@ -75,6 +130,65 @@ export default function MediaInput({ onProcess, isProcessing }) {
     const [clippingProfile, setClippingProfile] = useState(() => {
         try { return localStorage.getItem('os_clipping_profile') || 'auto'; } catch { return 'auto'; }
     });
+    const [templateId, setTemplateId] = useState(() => {
+        return selectedTemplate || (() => {
+            try { return localStorage.getItem('os_template_id') || ''; } catch { return ''; }
+        })();
+    });
+    const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
+
+    // Sync when prop changes
+    useEffect(() => {
+        if (selectedTemplate !== undefined && selectedTemplate !== null) {
+            setTemplateId(selectedTemplate);
+        }
+    }, [selectedTemplate]);
+
+    // Fetch live templates from backend database to include custom ones
+    useEffect(() => {
+        let active = true;
+        fetch(`${getApiUrl()}/api/templates`)
+            .then((r) => r.ok ? r.json() : null)
+            .then((data) => {
+                if (active && Array.isArray(data?.templates) && data.templates.length > 0) {
+                    setTemplates(data.templates);
+                }
+            })
+            .catch(() => {});
+        return () => { active = false; };
+    }, []);
+
+    const currentTemplate = templates.find((t) => t.id === templateId) || null;
+
+    const handleTemplateChange = (newId) => {
+        setTemplateId(newId);
+        if (onSelectTemplate) onSelectTemplate(newId);
+        try { localStorage.setItem('os_template_id', newId); } catch {}
+        if (!newId) return;
+        const tmpl = templates.find((t) => t.id === newId);
+        if (tmpl) {
+            if (tmpl.category) {
+                const profileMatch = CONTENT_PROFILES.find((p) => p.value === tmpl.category);
+                if (profileMatch) {
+                    setClippingProfile(tmpl.category);
+                }
+            }
+            if (tmpl.layout === 'stacked_top_cam') {
+                setLayout('stacked_top_cam');
+            } else if (tmpl.layout === 'split_two_speaker' || tmpl.layout === 'split') {
+                setLayout('split');
+            } else if (tmpl.layout === 'screencast') {
+                setLayout('screencast');
+            }
+            if (tmpl.duration_range && Array.isArray(tmpl.duration_range)) {
+                if (!clipMinSeconds && !clipMaxSeconds) {
+                    setClipMinSeconds(tmpl.duration_range[0]);
+                    setClipMaxSeconds(tmpl.duration_range[1]);
+                }
+            }
+        }
+    };
+
     const [pasteFeedback, setPasteFeedback] = useState(false);
     const infoRef = useRef(null);
 
@@ -152,6 +266,7 @@ export default function MediaInput({ onProcess, isProcessing }) {
             autoHook,
             autoHookStyle,
             layout,
+            templateId: templateId || null,
             clipping_profile: clippingProfile,
             sourceStart: range ? Math.round(range.start) : null,
             sourceEnd: range ? Math.round(range.end) : null,
@@ -161,6 +276,7 @@ export default function MediaInput({ onProcess, isProcessing }) {
             localStorage.setItem('os_auto_hook_style_v2', autoHookStyle);
             localStorage.setItem('os_layout', layout);
             localStorage.setItem('os_clipping_profile', clippingProfile);
+            localStorage.setItem('os_template_id', templateId || '');
         } catch { /* ignore */ }
         if (mode === 'url' && url) {
             onProcess({ type: 'url', payload: url, acknowledged: true, outputFormat, ...advanced });
@@ -406,7 +522,7 @@ export default function MediaInput({ onProcess, isProcessing }) {
                     >
                         <ChevronDown size={14} className={`transition-transform duration-200 ${showAdvanced ? 'rotate-180' : ''}`} />
                         <span>advanced options</span>
-                        {(targetClips || clipMinSeconds || clipMaxSeconds || !autoHook) && (
+                        {(targetClips || clipMinSeconds || clipMaxSeconds || !autoHook || templateId) && (
                             <span className="text-brass font-bold">· modified</span>
                         )}
                     </button>
@@ -447,6 +563,62 @@ export default function MediaInput({ onProcess, isProcessing }) {
                                 material doesn&apos;t hold them. Leave blank to let it decide.
                             </p>
                             <div className="col-span-1 sm:col-span-3 flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-rule">
+                                <div className="flex items-center gap-1.5">
+                                    <LayoutTemplate size={14} className="text-brass" />
+                                    <span className="text-xs text-ink2">template preset</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        value={templateId}
+                                        onChange={(e) => handleTemplateChange(e.target.value)}
+                                        className="input-field !w-auto text-xs py-1.5 max-w-[260px] sm:max-w-xs font-sans"
+                                        aria-label="template preset"
+                                    >
+                                        <option value="">Auto AI (Smart Match)</option>
+                                        {TEMPLATE_CATEGORIES.map((cat) => {
+                                            const catTemplates = templates.filter((t) => t.category === cat.id);
+                                            if (!catTemplates.length) return null;
+                                            return (
+                                                <optgroup key={cat.id} label={cat.label}>
+                                                    {catTemplates.map((t) => (
+                                                        <option key={t.id} value={t.id}>
+                                                            {t.name}
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                            );
+                                        })}
+                                    </select>
+                                    {onOpenTemplates && (
+                                        <button
+                                            type="button"
+                                            onClick={onOpenTemplates}
+                                            className="text-xs text-muted hover:text-brass transition-colors underline whitespace-nowrap"
+                                            title="Browse templates in Template Studio"
+                                        >
+                                            studio →
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                            {currentTemplate && (
+                                <div className="col-span-1 sm:col-span-3 bg-paper3/60 rounded px-3 py-2 text-[11px] text-muted flex items-center justify-between gap-2 border border-rule/50 animate-fade">
+                                    <div className="flex items-center gap-2 truncate">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-brass shrink-0" />
+                                        <span className="truncate">
+                                            <strong className="text-ink">{currentTemplate.name}</strong> · Layout: <span className="font-mono text-ink2">{currentTemplate.layout}</span> · Captions: <span className="font-mono text-ink2">{currentTemplate.caption_preset}</span> · Range: <span className="font-mono text-ink2">{currentTemplate.duration_range?.[0]}–{currentTemplate.duration_range?.[1]}s</span>
+                                        </span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleTemplateChange('')}
+                                        className="text-[10px] text-muted hover:text-ink shrink-0 underline"
+                                    >
+                                        clear
+                                    </button>
+                                </div>
+                            )}
+                            <div className="col-span-1 sm:col-span-3 flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-rule">
                                 <span className="text-xs text-ink2">clipping mode</span>
                                 <select
                                     value={clippingProfile}
@@ -470,6 +642,7 @@ export default function MediaInput({ onProcess, isProcessing }) {
                                     aria-label="vertical layout"
                                 >
                                     <option value="auto">Auto (AI picks per video)</option>
+                                    <option value="stacked_top_cam">Streamer cam on top (stacked)</option>
                                     <option value="split">Two speakers stacked</option>
                                     <option value="screencast">Screen over presenter</option>
                                     <option value="none">Single crop only</option>

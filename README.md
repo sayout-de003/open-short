@@ -1,14 +1,14 @@
-# OpenShorts
+# CREOVIS
 
 **AI Video Repurposing & Viral Shorts Platform**
 
-OpenShorts transforms long-form videos (podcasts, webinars, livestreams, interviews) into high-performing 9:16 vertical shorts for TikTok, Instagram Reels, and YouTube Shorts. Powered by AI moment detection, face-tracking reframing, active speaker splitting, dynamic animated subtitles, and direct multi-platform scheduling.
+CREOVIS transforms long-form videos (podcasts, webinars, livestreams, interviews) into high-performing 9:16 vertical shorts for TikTok, Instagram Reels, and YouTube Shorts. Powered by AI moment detection, face-tracking reframing, active speaker splitting, dynamic animated subtitles, and direct multi-platform scheduling.
 
 ---
 
 ## Overview
 
-OpenShorts provides a complete video intelligence and repurposing suite:
+CREOVIS provides a complete video intelligence and repurposing suite:
 
 1. **Clip Generator**
    - **Viral Moment Detection**: Leverages advanced LLM transcription scoring and scene boundary analysis to extract the most engaging moments (15–60s) with virality rankings.
@@ -126,6 +126,6 @@ docker compose up -d --build
 
 ## License
 
-Copyright (c) 2026 OpenShorts. All rights reserved.
+Copyright (c) 2026 CREOVIS. All rights reserved.
 
 This software and its documentation are proprietary and confidential. Unauthorized copying, distribution, modification, reverse engineering, or commercial exploitation is strictly prohibited. See [`LICENSE`](LICENSE) for details.

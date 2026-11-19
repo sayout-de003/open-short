@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "openshorts",
+  "name": "creovis",
   "description": "Turn long videos into viral vertical shorts and publish them to TikTok, Instagram and YouTube.",
   "version": "1.0.0",
-  "websiteUrl": "https://www.openshorts.app/mcp",
+  "websiteUrl": "https://www.creovis.app/mcp",
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://mcp.openshorts.app/mcp",
+      "url": "https://mcp.creovis.app/mcp",
       "headers": [
         {
           "name": "Authorization",
-          "description": "Bearer <API key>. Create the osk_ key in your account page at openshorts.app.",
+          "description": "Bearer <API key>. Create the osk_ key in your account page at creovis.app.",
           "isRequired": true,
           "isSecret": true,
           "format": "string"

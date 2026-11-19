@@ -102,7 +102,7 @@ def cart_label(session_obj: dict) -> str:
         return f"{md['minutes']} extra minutes{suffix}"
     if md.get("plan"):
         return f"the {md['plan'].capitalize()} plan{suffix}"
-    return f"your OpenShorts plan{suffix}" if price else ""
+    return f"your CREOVIS plan{suffix}" if price else ""
 
 
 async def claim(user_id, kind: str) -> bool:

@@ -77,7 +77,7 @@ export default function KeyInput({ onKeySet, savedKey, localLlm }) {
             </div>
             <p className="mt-2 text-xs text-muted">
                 {localLlm
-                    ? 'Leave empty to use 100% local processing. If provided, OpenShorts can route cloud tasks through Google Cloud AI Studio.'
+                    ? 'Leave empty to use 100% local processing. If provided, CREOVIS can route cloud tasks through Google Cloud AI Studio.'
                     : 'Your key is stored locally in your browser for convenience.'}
                 <br />
                 <a

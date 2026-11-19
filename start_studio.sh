@@ -22,8 +22,8 @@ if ! docker ps | grep -q "ollama"; then
 fi
 
 # 2. Start services via systemd
-echo "Starting OpenShorts services via systemd..."
-systemctl start openshort-backend openshort-frontend
+echo "Starting CREOVIS services via systemd..."
+systemctl start creovis-backend creovis-frontend 2>/dev/null || systemctl start openshort-backend openshort-frontend
 sleep 2
 
 echo "=================================================="

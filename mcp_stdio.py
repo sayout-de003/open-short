@@ -9,8 +9,8 @@ this app), so stdio and HTTP can never answer differently.
 Why it exists: some hosts only launch MCP servers as a subprocess (Glama's
 Dockerfile deployments wrap a stdio command, and a local client that would
 rather not run a web server can do
-``claude mcp add openshorts -- python mcp_stdio.py``). The hosted endpoint at
-mcp.openshorts.app stays the HTTP one.
+``claude mcp add creovis -- python mcp_stdio.py``). The hosted endpoint at
+mcp.creovis.app stays the HTTP one.
 
 Two things this transport has to get right:
 
@@ -39,8 +39,8 @@ import mcp_server  # noqa: E402
 # as forwarded headers (mcp_server._FORWARD_HEADERS), not as a second code path.
 _ENV_HEADERS = {
     "authorization": lambda: (
-        f"Bearer {os.environ['OPENSHORTS_API_KEY']}"
-        if os.environ.get("OPENSHORTS_API_KEY") else None
+        f"Bearer {os.environ.get('CREOVIS_API_KEY') or os.environ.get('OPENSHORTS_API_KEY')}"
+        if (os.environ.get("CREOVIS_API_KEY") or os.environ.get("OPENSHORTS_API_KEY")) else None
     ),
     "x-gemini-key": lambda: os.environ.get("GEMINI_API_KEY"),
     "x-upload-post-key": lambda: os.environ.get("UPLOAD_POST_API_KEY"),
@@ -68,7 +68,7 @@ def _request() -> Request:
         "root_path": "",
         "headers": headers,
         "client": ("127.0.0.1", 0),
-        "server": ("openshorts.internal", 80),
+        "server": ("creovis.internal", 80),
         "app": app_module.app,
     })
 

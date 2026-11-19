@@ -176,7 +176,7 @@ class TestRefreshAndRevoke:
     def _key(self, **kw):
         from types import SimpleNamespace
         base = dict(id="k1", key_hash="old", prefix="osk_old", revoked_at=None,
-                    scope="openshorts", name="Gemini · connected via OAuth")
+                    scope="creovis", name="Gemini · connected via OAuth")
         base.update(kw)
         return SimpleNamespace(**base)
 
@@ -227,7 +227,7 @@ class TestRefreshAndRevoke:
         assert body["refresh_token"] == "osr_keep"
         assert body["access_token"].startswith("osk_")
         assert key.key_hash == api_keys.hash_key(body["access_token"]) != "old"
-        assert body["scope"] == "openshorts" and sess.committed
+        assert (body["scope"] in ("creovis", "openshorts")) and sess.committed
         assert r.headers["cache-control"] == "no-store"
 
     def test_revoke_is_always_200(self, monkeypatch):

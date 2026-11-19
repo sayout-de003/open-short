@@ -75,8 +75,8 @@ def resource_metadata(base: str) -> dict:
         "authorization_servers": [base],
         "bearer_methods_supported": ["header"],
         "scopes_supported": [SCOPE],
-        "resource_name": "OpenShorts",
-        "resource_documentation": "https://www.openshorts.app/mcp",
+        "resource_name": "CREOVIS",
+        "resource_documentation": "https://www.creovis.app/mcp",
     }
 
 
@@ -94,7 +94,7 @@ def server_metadata(base: str) -> dict:
         "token_endpoint_auth_methods_supported": ["none"],
         "scopes_supported": [SCOPE],
         "revocation_endpoint_auth_methods_supported": ["none"],
-        "service_documentation": "https://www.openshorts.app/mcp",
+        "service_documentation": "https://www.creovis.app/mcp",
     }
 
 

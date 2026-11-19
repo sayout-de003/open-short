@@ -18,12 +18,12 @@ ROOT = Path(__file__).resolve().parent.parent
 
 class TestNormalise:
     def test_default_when_nothing_or_unknown_is_asked(self):
-        assert scopes.normalise(None) == "openshorts"
-        assert scopes.normalise("") == "openshorts"
-        assert scopes.normalise("admin offline_access") == "openshorts"
+        assert scopes.normalise(None) == "creovis"
+        assert scopes.normalise("") == "creovis"
+        assert scopes.normalise("admin offline_access") == "creovis"
 
     def test_keeps_the_supported_scope_once(self):
-        assert scopes.normalise("openshorts openshorts profile") == "openshorts"
+        assert scopes.normalise("creovis creovis profile") == "creovis"
 
 
 class TestEffective:
@@ -31,10 +31,10 @@ class TestEffective:
         assert scopes.effective(None, "my laptop") is None
 
     def test_oauth_key_from_before_the_column(self):
-        assert scopes.effective(None, f"Claude {scopes.OAUTH_KEY_NAME_SUFFIX}") == "openshorts"
+        assert scopes.effective(None, f"Claude {scopes.OAUTH_KEY_NAME_SUFFIX}") == "creovis"
 
     def test_stored_scope_wins(self):
-        assert scopes.effective("openshorts", "anything") == "openshorts"
+        assert scopes.effective("creovis", "anything") == "creovis"
 
 
 class TestAllows:
@@ -48,20 +48,20 @@ class TestAllows:
         assert len(calls) >= 8
         for method, path in calls:
             concrete = re.sub(r"\{[^}]+\}", "3f0c2b1e-0000-4000-8000-000000000000", path)
-            assert scopes.allows("openshorts", method.upper(), concrete), (method, path)
+            assert scopes.allows("creovis", method.upper(), concrete), (method, path)
 
     def test_mcp_endpoint_and_downloads(self):
         for method, path in [("POST", "/mcp"), ("GET", "/videos/j/clip.mp4"),
                              ("HEAD", "/videos/j/clip.mp4"), ("GET", "/thumbnails/s/t.png"),
                              ("PUT", "/api/uploads/abc-123"), ("GET", "/api/jobs/abc/download-all")]:
-            assert scopes.allows("openshorts", method, path), (method, path)
+            assert scopes.allows("creovis", method, path), (method, path)
 
     def test_the_rest_of_the_api_is_out_of_scope(self):
         for method, path in [("DELETE", "/api/projects/abc"), ("PUT", "/api/autopilot"),
                              ("POST", "/api/social/connect"), ("GET", "/api/history"),
                              ("POST", "/api/keys"), ("GET", "/api/status/../keys"),
                              ("POST", "/api/edit"), ("GET", "/api/process")]:
-            assert not scopes.allows("openshorts", method, path), (method, path)
+            assert not scopes.allows("creovis", method, path), (method, path)
 
     def test_unscoped_key_reaches_everything(self):
         assert scopes.allows(None, "DELETE", "/api/projects/abc")

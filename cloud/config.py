@@ -291,7 +291,7 @@ class Settings:
 
     @property
     def frontend_url(self) -> str:
-        return os.environ.get("FRONTEND_URL", "https://openshorts.app").rstrip("/")
+        return os.environ.get("FRONTEND_URL", "https://creovis.app").rstrip("/")
 
     @property
     def public_api_url(self) -> str:
@@ -333,7 +333,7 @@ class Settings:
     @property
     def email_from(self) -> str:
         # Namecheap requires the From to be the authenticated mailbox.
-        return os.environ.get("EMAIL_FROM") or (f"OpenShorts <{self.smtp_user}>" if self.smtp_user else "OpenShorts")
+        return os.environ.get("EMAIL_FROM") or (f"CREOVIS <{self.smtp_user}>" if self.smtp_user else "CREOVIS")
 
     @property
     def admin_email(self) -> str:
@@ -416,8 +416,12 @@ class Settings:
         return os.environ.get("MANAGED_UPLOAD_POST_API_KEY", "")
 
     @property
+    def creovis_logo_url(self) -> str:
+        return os.environ.get("CREOVIS_LOGO_URL") or os.environ.get("OPENSHORTS_LOGO_URL", "https://creovis.app/logo.png")
+
+    @property
     def openshorts_logo_url(self) -> str:
-        return os.environ.get("OPENSHORTS_LOGO_URL", "https://openshorts.app/logo.png")
+        return self.creovis_logo_url
 
     # Cloudflare R2 (S3-compatible) — durable video library storage
     @property

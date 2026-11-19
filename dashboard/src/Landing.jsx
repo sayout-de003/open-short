@@ -7,11 +7,11 @@ import './landing.css';
 
 const APPARATUS_CALLOUTS = ['RATIO · 9:16', 'CLIPS · 3–15', 'HOOK · AUTO', 'SUBS · WORD-LEVEL'];
 
-// Real clips OpenShorts made from Creative Commons (CC BY) sources. `video` is
+// Real clips CREOVIS made from Creative Commons (CC BY) sources. `video` is
 // the original and the clip side by side, in sync; `vertical` is the clip on
 // its own for the hero. The credit is what the licence asks for, so it stays
 // next to the video that uses it.
-// The six clips OpenShorts cut from that episode with no clip-count setting,
+// The six clips CREOVIS cut from that episode with no clip-count setting,
 // in source order, with the score the moment picker gave each.
 const EPISODE_CLIPS = [
   { n: 1, score: 88, title: 'I knew I was marrying her on our third date' },
@@ -85,7 +85,7 @@ const SHOWCASE = [
     id: 'moments', tab: 'finds the moments',
     title: 'every clip scored before you see it',
     body: 'Gemini reads the word-level transcript and the scene cuts, scores each moment out of 100, and writes the title and the description for every platform.',
-    media: { type: 'img', src: '/screens/app-clipcard.webp', w: 1153, h: 441, alt: 'A clip in OpenShorts with its viral score, titles and edit actions' },
+    media: { type: 'img', src: '/screens/app-clipcard.webp', w: 1153, h: 441, alt: 'A clip in CREOVIS with its viral score, titles and edit actions' },
   },
   {
     id: 'reframe', tab: 'reframes any layout',
@@ -109,7 +109,7 @@ const SHOWCASE = [
     id: 'editor', tab: 'a real editor',
     title: 'fix anything, down to the word',
     body: 'Source and program monitors side by side with the full transcript: click a word to set a cut, add segments, change the framing, re-render in seconds.',
-    media: { type: 'img', src: '/screens/app-editor.webp', w: 1568, h: 652, alt: 'The OpenShorts clip editor with source monitor, program monitor, transcript and segments' },
+    media: { type: 'img', src: '/screens/app-editor.webp', w: 1568, h: 652, alt: 'The CREOVIS clip editor with source monitor, program monitor, transcript and segments' },
   },
   {
     id: 'autopilot', tab: 'autopilot',
@@ -120,8 +120,8 @@ const SHOWCASE = [
   {
     id: 'agents', tab: 'inside claude & chatgpt',
     title: 'clip from a chat',
-    body: 'Add OpenShorts to Claude or ChatGPT with one URL and ask for clips. Same pipeline, same minutes, no API key to manage.',
-    media: { type: 'img', src: '/screens/connect-an-agent.webp', w: 684, h: 366, alt: 'Connecting OpenShorts to an AI agent' },
+    body: 'Add CREOVIS to Claude or ChatGPT with one URL and ask for clips. Same pipeline, same minutes, no API key to manage.',
+    media: { type: 'img', src: '/screens/connect-an-agent.webp', w: 684, h: 366, alt: 'Connecting CREOVIS to an AI agent' },
   },
   {
     id: 'ugc', tab: 'ai ugc videos',
@@ -464,7 +464,7 @@ export default function Landing({ onLaunchApp }) {
     {
       icon: Bot,
       title: "MCP Server, API & CLI for AI Agents",
-      description: "Connect Claude, ChatGPT or n8n to an always-on endpoint, or run pip install openshorts and clip from the terminal. Same pipeline, no dashboard needed."
+      description: "Connect Claude, ChatGPT or n8n to an always-on endpoint, or run pip install creovis and clip from the terminal. Same pipeline, no dashboard needed."
     },
     {
       icon: Sparkles,
@@ -488,8 +488,8 @@ export default function Landing({ onLaunchApp }) {
 
   const faqs = [
     {
-      question: "How does OpenShorts work?",
-      answer: "OpenShorts is an AI clip generator that transforms long-form videos — podcasts, webinars, livestreams, vlogs, interviews — into viral-ready short clips in 9:16 vertical format. It uses faster-whisper for transcription with word-level timestamps, PySceneDetect for scene boundary detection, and Google Gemini 3.1 Flash-Lite AI for identifying the most engaging viral moments."
+      question: "How does CREOVIS work?",
+      answer: "CREOVIS is an AI clip generator that transforms long-form videos — podcasts, webinars, livestreams, vlogs, interviews — into viral-ready short clips in 9:16 vertical format. It uses faster-whisper for transcription with word-level timestamps, PySceneDetect for scene boundary detection, and Google Gemini 3.1 Flash-Lite AI for identifying the most engaging viral moments."
     },
     {
       question: "Do the clips have a watermark?",
@@ -497,7 +497,7 @@ export default function Landing({ onLaunchApp }) {
     },
     {
       question: "Do I need a credit card to start?",
-      answer: "No. You can test OpenShorts with free preview minutes without entering a credit card. You only add payment details when subscribing to a plan."
+      answer: "No. You can test CREOVIS with free preview minutes without entering a credit card. You only add payment details when subscribing to a plan."
     },
     {
       question: "How many clips do I get from one video?",
@@ -505,31 +505,31 @@ export default function Landing({ onLaunchApp }) {
     },
     {
       question: "Can I clip someone else's YouTube video?",
-      answer: "Only if you own it or have the rights or permission to use it. Before a video is processed, OpenShorts asks you to confirm you own the content or have the rights to it, and you are responsible for what you submit."
+      answer: "Only if you own it or have the rights or permission to use it. Before a video is processed, CREOVIS asks you to confirm you own the content or have the rights to it, and you are responsible for what you submit."
     },
     {
-      question: "How does OpenShorts compare to Opus Clip?",
-      answer: "OpenShorts provides high-accuracy AI viral moment detection and smart vertical cropping with two-speaker split views and screencast layouts, AI UGC videos with lip-synced actors, and a native MCP server for Claude and ChatGPT."
+      question: "How does CREOVIS compare to Opus Clip?",
+      answer: "CREOVIS provides high-accuracy AI viral moment detection and smart vertical cropping with two-speaker split views and screencast layouts, AI UGC videos with lip-synced actors, and a native MCP server for Claude and ChatGPT."
     },
     {
       question: "How do I turn a long-form video into TikTok or Reels clips?",
-      answer: "Upload your long-form video or paste its link into OpenShorts and click Process. The AI transcribes the video, detects the best viral moments, and crops them to 9:16 vertical format with face tracking."
+      answer: "Upload your long-form video or paste its link into CREOVIS and click Process. The AI transcribes the video, detects the best viral moments, and crops them to 9:16 vertical format with face tracking."
     },
     {
-      question: "Can OpenShorts generate YouTube thumbnails and titles?",
-      answer: "Yes. OpenShorts includes an AI YouTube thumbnail generator, viral title generator, and description generator powered by Google Gemini 3.1 Flash-Lite."
+      question: "Can CREOVIS generate YouTube thumbnails and titles?",
+      answer: "Yes. CREOVIS includes an AI YouTube thumbnail generator, viral title generator, and description generator powered by Google Gemini 3.1 Flash-Lite."
     },
     {
       question: "What is the AI UGC Video Generator?",
-      answer: "OpenShorts includes an AI UGC (User Generated Content) video creator that generates marketing videos with AI actors for any product or business. Describe your product or paste a website URL — the AI writes a script, generates a realistic AI actor with lip-synced voiceover, and adds b-roll visuals and subtitles."
+      answer: "CREOVIS includes an AI UGC (User Generated Content) video creator that generates marketing videos with AI actors for any product or business. Describe your product or paste a website URL — the AI writes a script, generates a realistic AI actor with lip-synced voiceover, and adds b-roll visuals and subtitles."
     },
     {
-      question: "Can OpenShorts post my clips to social networks automatically?",
+      question: "Can CREOVIS post my clips to social networks automatically?",
       answer: "Yes, on paid plans. Connect your TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky accounts once and each clip can be posted in one go or scheduled. Channel Autopilot also monitors your YouTube channel to automatically clip and schedule new uploads."
     },
     {
-      question: "Can I automate OpenShorts from Claude, ChatGPT or n8n?",
-      answer: "Yes. OpenShorts provides a native Model Context Protocol (MCP) server at mcp.openshorts.app/mcp plus a REST API with webhooks, so AI agents can submit video URLs, await processing, and publish clips automatically."
+      question: "Can I automate CREOVIS from Claude, ChatGPT or n8n?",
+      answer: "Yes. CREOVIS provides a native Model Context Protocol (MCP) server at mcp.creovis.app/mcp plus a REST API with webhooks, so AI agents can submit video URLs, await processing, and publish clips automatically."
     }
   ];
 
@@ -703,7 +703,7 @@ export default function Landing({ onLaunchApp }) {
         </div>
       </section>
 
-      {/* One video in, many clips out: the real clips OpenShorts cut from one
+      {/* One video in, many clips out: the real clips CREOVIS cut from one
           CC BY episode with default settings, with the score the AI gave each.
           The pattern the market leader opens with, shown with our own output. */}
       <section className="py-20 px-6 border-b border-rule">
@@ -733,7 +733,7 @@ export default function Landing({ onLaunchApp }) {
             </div>
           </div>
           <p className="mt-6 text-xs text-muted">
-            Source: <a href="https://www.youtube.com/watch?v=-KbQj_vboOU" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-ink">Turn the Tables with Dan and Shoshana Jordan</a>, Heritage of Faith, licensed CC BY. Clipped by OpenShorts, scores as the AI gave them.
+            Source: <a href="https://www.youtube.com/watch?v=-KbQj_vboOU" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-ink">Turn the Tables with Dan and Shoshana Jordan</a>, Heritage of Faith, licensed CC BY. Clipped by CREOVIS, scores as the AI gave them.
           </p>
         </div>
       </section>
@@ -760,7 +760,7 @@ export default function Landing({ onLaunchApp }) {
               ))}
             </div>
           )}
-          <figure className="crop-frame crop-frame-16-9 w-full" aria-label="original video next to the vertical clip OpenShorts made from it">
+          <figure className="crop-frame crop-frame-16-9 w-full" aria-label="original video next to the vertical clip CREOVIS made from it">
             <video
               key={DEMOS[cropDemo].id}
               src={DEMOS[cropDemo].video}
@@ -776,7 +776,7 @@ export default function Landing({ onLaunchApp }) {
             />
           </figure>
           <p className="mt-6 text-xs text-muted">
-            Source: <a href={DEMOS[cropDemo].creditUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-ink">{DEMOS[cropDemo].credit}</a>, {DEMOS[cropDemo].creditBy}, licensed CC BY. Clipped by OpenShorts.
+            Source: <a href={DEMOS[cropDemo].creditUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-ink">{DEMOS[cropDemo].credit}</a>, {DEMOS[cropDemo].creditBy}, licensed CC BY. Clipped by CREOVIS.
           </p>
           <div className="mt-10 flex flex-wrap items-center gap-4">
             <button
@@ -832,7 +832,7 @@ export default function Landing({ onLaunchApp }) {
                 </a>
               ) : (
                 <button onClick={onLaunchApp} className="btn-primary whitespace-nowrap">
-                  launch openshorts <ArrowRight size={16} />
+                  launch creovis <ArrowRight size={16} />
                 </button>
               )}
             </div>
@@ -870,8 +870,8 @@ export default function Landing({ onLaunchApp }) {
       {/* Comparison Table */}
       <section id="comparison" className="py-20 px-6 border-t border-rule">
         <div className="max-w-4xl mx-auto">
-          <SectionHeader eyebrow="07 · Comparison" title="OpenShorts vs Opus Clip, Klap and Vizard">
-            OpenShorts starts at $12/mo billed monthly, packed with advanced speaker detection, UGC actors, and agent integration.
+          <SectionHeader eyebrow="07 · Comparison" title="CREOVIS vs Opus Clip, Klap and Vizard">
+            CREOVIS starts at $12/mo billed monthly, packed with advanced speaker detection, UGC actors, and agent integration.
           </SectionHeader>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -879,7 +879,7 @@ export default function Landing({ onLaunchApp }) {
                 <tr className="border-b border-rule2">
                   <th className="py-3 px-4 text-left text-sm text-muted font-medium">Feature</th>
                   <th className="py-3 px-4 text-center text-sm font-medium">
-                    <span className="text-brass">OpenShorts</span>
+                    <span className="text-brass">CREOVIS</span>
                   </th>
                   <th className="py-3 px-4 text-center text-sm text-muted font-medium">Opus Clip</th>
                   <th className="py-3 px-4 text-center text-sm text-muted font-medium">Kapwing</th>
@@ -919,7 +919,7 @@ export default function Landing({ onLaunchApp }) {
       {/* Use Cases */}
       <section className="py-20 px-6 border-t border-rule">
         <div className="max-w-5xl mx-auto">
-          <SectionHeader eyebrow="08 · Use Cases" title="Who Uses OpenShorts?">
+          <SectionHeader eyebrow="08 · Use Cases" title="Who Uses CREOVIS?">
             Creators, marketers, and agencies scaling short-form video production.
           </SectionHeader>
           <div className="grid md:grid-cols-3 gap-5">
@@ -959,7 +959,7 @@ export default function Landing({ onLaunchApp }) {
       <section className="py-20 px-6 border-t border-rule">
         <div className="max-w-6xl mx-auto">
           <SectionHeader eyebrow="09 · Also Included" title="two more tools, same account">
-            In the same openshorts.app account, with no keys and no setup.
+            In the same creovis.app account, with no keys and no setup.
           </SectionHeader>
           <div className="grid md:grid-cols-2 gap-5">
             <div className="card p-8">
@@ -992,7 +992,7 @@ export default function Landing({ onLaunchApp }) {
       <section id="faq" className="py-20 px-6 border-t border-rule">
         <div className="max-w-3xl mx-auto">
           <SectionHeader eyebrow="10 · FAQ" title="FAQ: free AI clipping, watermarks and limits">
-            Everything you need to know about OpenShorts, from setup to features.
+            Everything you need to know about CREOVIS, from setup to features.
           </SectionHeader>
           <div className="divide-y divide-rule border-y border-rule">
             {faqs.map((faq, i) => (
@@ -1035,7 +1035,7 @@ export default function Landing({ onLaunchApp }) {
                     </div>
                     <h3 className="font-display text-xl lowercase text-ink mb-1">Google Gemini API</h3>
                     <div className="mb-3"><span className="badge-ok">Free tier: 1,500 req/day</span></div>
-                    <p className="text-muted text-sm leading-relaxed">Powers all AI features: viral moment detection, title generation, video effects, YouTube thumbnail creation, and description writing. The core engine of OpenShorts.</p>
+                    <p className="text-muted text-sm leading-relaxed">Powers all AI features: viral moment detection, title generation, video effects, YouTube thumbnail creation, and description writing. The core engine of CREOVIS.</p>
                   </div>
                   <div className="card p-6 relative">
                     <span className="readout absolute top-4 right-4 border border-rule rounded-full px-2.5 py-1">Optional</span>
@@ -1053,7 +1053,7 @@ export default function Landing({ onLaunchApp }) {
                     </div>
                     <h3 className="font-display text-xl lowercase text-ink mb-1">Upload-Post API</h3>
                     <div className="mb-3"><span className="badge-ok">Free tier included</span></div>
-                    <p className="text-muted text-sm leading-relaxed">Enables direct publishing to YouTube, TikTok, and Instagram Reels from the dashboard. <a href="https://www.upload-post.com" target="_blank" rel="noopener noreferrer" className="text-brass underline hover:brightness-110">Social media API</a> that lets you post your clips and thumbnails without leaving OpenShorts.</p>
+                    <p className="text-muted text-sm leading-relaxed">Enables direct publishing to YouTube, TikTok, and Instagram Reels from the dashboard. <a href="https://www.upload-post.com" target="_blank" rel="noopener noreferrer" className="text-brass underline hover:brightness-110">Social media API</a> that lets you post your clips and thumbnails without leaving CREOVIS.</p>
                   </div>
                 </div>
                 <div className="grid md:grid-cols-2 gap-5 mt-5">
@@ -1123,7 +1123,7 @@ export default function Landing({ onLaunchApp }) {
               </a>
             ) : (
               <button onClick={onLaunchApp} className="btn-primary whitespace-nowrap">
-                launch openshorts
+                launch creovis
                 <ArrowRight size={16} />
               </button>
             )}
@@ -1200,8 +1200,8 @@ export default function Landing({ onLaunchApp }) {
           </nav>
           <div className="border-t border-rule pt-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <img src="/logo-openshorts.png" alt="OpenShorts" className="w-6 h-6" />
-              <span className="text-sm text-muted">OpenShorts — AI Video Repurposing &amp; UGC Video Platform</span>
+              <img src="/logo-openshorts.png" alt="CREOVIS" className="w-6 h-6" />
+              <span className="text-sm text-muted">CREOVIS — AI Video Repurposing &amp; UGC Video Platform</span>
             </div>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm lowercase text-muted">
               <a href="#features" className="hover:text-ink transition-colors">Features</a>

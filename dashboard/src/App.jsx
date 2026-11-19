@@ -259,7 +259,8 @@ const UserProfileSelector = ({ profiles, selectedUserId, onSelect, onConnect }) 
   );
 };
 
-const SESSION_KEY = 'openshorts_session';
+const SESSION_KEY = 'creovis_session';
+const LEGACY_SESSION_KEY = 'openshorts_session';
 
 // The server's own explanation for a rejected/failed job, readable: FastAPI
 // answers {"detail": "..."} or {"detail": {"message": ...}}. Showing the raw
@@ -429,6 +430,9 @@ function App() {
   }, [logs, logsVisible]);
   const [processingMedia, setProcessingMedia] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, settings
+  const [selectedTemplate, setSelectedTemplate] = useState(() => {
+    try { return localStorage.getItem('os_template_id') || ''; } catch { return ''; }
+  });
   // Mobile only: the full nav lives in a drawer behind the header's menu button.
   const [navOpen, setNavOpen] = useState(false);
   // Reopened-project state (paid mode): per-clip {index, server_file, active_layers}
@@ -724,7 +728,7 @@ function App() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `openshorts_clips_${(jobId || '').slice(0, 8)}.zip`;
+      a.download = `creovis_clips_${(jobId || '').slice(0, 8)}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -739,11 +743,12 @@ function App() {
   // Session Recovery: Restore on mount
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(SESSION_KEY);
+      const saved = localStorage.getItem(SESSION_KEY) || localStorage.getItem(LEGACY_SESSION_KEY);
       if (!saved) return;
       const session = JSON.parse(saved);
       if (Date.now() - session.timestamp > SESSION_MAX_AGE) {
         localStorage.removeItem(SESSION_KEY);
+        localStorage.removeItem(LEGACY_SESSION_KEY);
         return;
       }
       if (session.jobId && session.status && session.status !== 'idle') {
@@ -1282,6 +1287,7 @@ function App() {
         auto_hook_style: data.autoHook ? (data.autoHookStyle || 'pill') : null,
         // 'auto' is the server default, so only a deliberate choice travels.
         layouts: data.layout && data.layout !== 'auto' ? data.layout : null,
+        template_id: data.templateId || data.template_id || null,
         // Set when the user took the quota wall's "clip the first N minutes"
         // offer: the server reserves N minutes and cuts the source to them.
         max_minutes: data.maxMinutes || null,
@@ -1504,11 +1510,11 @@ function App() {
         </a>
       )}
       <a
-        href="mailto:info@openshorts.app"
+        href="mailto:info@creovis.app"
         className="flex items-center gap-2 px-3 py-2 text-xs lowercase text-muted hover:text-ink2 transition-colors"
       >
         <Mail size={14} className="shrink-0" />
-        <span className={collapsed ? 'hidden lg:block truncate' : 'truncate'}>info@openshorts.app</span>
+        <span className={collapsed ? 'hidden lg:block truncate' : 'truncate'}>info@creovis.app</span>
       </a>
     </>
   );
@@ -1517,11 +1523,11 @@ function App() {
   // entirely — an unlabelled 80px rail ate a fifth of a phone screen.
   const Sidebar = () => (
     <div className="hidden md:flex w-20 lg:w-64 bg-paper2 border-r border-rule flex-col h-full shrink-0 transition-all duration-300">
-      <a href="#app" onClick={() => goToTab('dashboard')} className="p-6 flex items-center gap-3" title="openshorts home">
+      <a href="#app" onClick={() => goToTab('dashboard')} className="p-6 flex items-center gap-3" title="creovis home">
         <div className="w-8 h-8 bg-paper3 rounded-input flex items-center justify-center shrink-0 overflow-hidden border border-rule">
-          <img src="/logo-openshorts.png" alt="Logo" className="w-full h-full object-cover" />
+          <img src="/logo-creovis.png" alt="Logo" className="w-full h-full object-cover" />
         </div>
-        <span className="font-display lowercase text-lg text-ink hidden lg:block">openshorts</span>
+        <span className="font-display lowercase text-lg text-ink hidden lg:block">creovis</span>
       </a>
 
       <nav className="flex-1 px-4 py-4 space-y-1">
@@ -1575,9 +1581,9 @@ function App() {
         <div className="flex items-center justify-between px-5 h-14 border-b border-rule shrink-0">
           <a href="#app" className="flex items-center gap-2.5" onClick={() => goToTab('dashboard')}>
             <div className="w-7 h-7 bg-paper3 rounded-input overflow-hidden border border-rule shrink-0">
-              <img src="/logo-openshorts.png" alt="" className="w-full h-full object-cover" />
+              <img src="/logo-creovis.png" alt="" className="w-full h-full object-cover" />
             </div>
-            <span className="font-display lowercase text-lg text-ink">openshorts</span>
+            <span className="font-display lowercase text-lg text-ink">creovis</span>
           </a>
           <button
             onClick={() => setNavOpen(false)}
@@ -1691,7 +1697,7 @@ function App() {
               <Menu size={20} />
             </button>
             <span data-tutorial="nav-clips" className="md:hidden font-display lowercase text-base text-ink truncate">
-              {activeNav?.label || 'openshorts'}
+              {activeNav?.label || 'creovis'}
             </span>
             {status !== 'idle' && (
               <button
@@ -1772,7 +1778,7 @@ function App() {
               <div className="min-w-0">
                 <span className="font-medium text-ink">Required API keys missing.</span>{' '}
                 <span className="text-muted">
-                  Set your Gemini API key or enable local models in .env to use OpenShorts.
+                  Set your Gemini API key or enable local models in .env to use CREOVIS.
                 </span>
               </div>
             </div>
@@ -2434,7 +2440,14 @@ function App() {
           )}
 
           {activeTab === 'templates' && (
-            <TemplateStudio />
+            <TemplateStudio
+              selectedTemplateId={selectedTemplate}
+              onApplyTemplate={(tmpl) => {
+                setSelectedTemplate(tmpl.id);
+                try { localStorage.setItem('os_template_id', tmpl.id); } catch {}
+                setActiveTab('dashboard');
+              }}
+            />
           )}
 
           {activeTab === 'thumbnails' && (
@@ -2489,7 +2502,13 @@ function App() {
                   )}
                 </div>
 
-                <MediaInput onProcess={handleProcess} isProcessing={status === 'processing'} />
+                <MediaInput
+                  onProcess={handleProcess}
+                  isProcessing={status === 'processing'}
+                  selectedTemplate={selectedTemplate}
+                  onSelectTemplate={setSelectedTemplate}
+                  onOpenTemplates={() => setActiveTab('templates')}
+                />
 
                 <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8 text-muted text-xs sm:text-sm">
                   <span className="flex items-center gap-2"><Youtube size={16} /> YouTube</span>

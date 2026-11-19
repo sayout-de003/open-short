@@ -332,7 +332,7 @@ async def erase_account(user_id, reason=None, *, cancel_stripe=True, notify_user
             print(f"⚠️  Account deletion aborted, Stripe cancel failed for {user_id}: {e}")
             raise HTTPException(status_code=502, detail=(
                 "We couldn't cancel your subscription, so nothing was deleted. "
-                "Please try again, or email info@openshorts.app."))
+                "Please try again, or email info@creovis.app."))
     else:
         plan = _plan_of(sub_rows)
 
@@ -349,7 +349,7 @@ async def erase_account(user_id, reason=None, *, cancel_stripe=True, notify_user
             raise HTTPException(status_code=502, detail=(
                 "We couldn't reach the storage that holds your clips, so your "
                 "account was not deleted. Your subscription has already been "
-                "cancelled. Please try again, or email info@openshorts.app."))
+                "cancelled. Please try again, or email info@creovis.app."))
 
     if _local_purge is not None:
         try:
@@ -371,7 +371,7 @@ async def erase_account(user_id, reason=None, *, cancel_stripe=True, notify_user
         print(f"⚠️  Account row delete failed for {user_id} after purge: {e}")
         raise HTTPException(status_code=500, detail=(
             "Your clips were deleted but we couldn't close the account itself. "
-            "Please try again, or email info@openshorts.app."))
+            "Please try again, or email info@creovis.app."))
     # ``email`` was read before the delete on purpose: from here on the address
     # exists nowhere in our systems, and the goodbye email still has to go out.
 

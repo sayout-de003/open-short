@@ -232,7 +232,7 @@ async def accept_retention_offer(body: CancelRequest, request: Request):
         print(f"⚠️  Retention coupon failed for {user.id}: {e}")
         raise HTTPException(status_code=502, detail=(
             "We couldn't apply the discount right now. Please try again, "
-            "or email info@openshorts.app."))
+            "or email info@creovis.app."))
 
     details, review = _clean(body.details), _clean(body.review)
     async with database.session() as session:
@@ -277,7 +277,7 @@ async def pause_subscription(body: CancelRequest, request: Request):
         print(f"⚠️  Stripe pause failed for {user.id}: {e}")
         raise HTTPException(status_code=502, detail=(
             "We couldn't pause your plan right now. Please try again, "
-            "or email info@openshorts.app."))
+            "or email info@creovis.app."))
 
     details, review = _clean(body.details), _clean(body.review)
     async with database.session() as session:
@@ -327,7 +327,7 @@ async def unpause_subscription(request: Request):
         print(f"⚠️  Stripe unpause failed for {user.id}: {e}")
         raise HTTPException(status_code=502, detail=(
             "We couldn't restart your plan right now. Please check your card "
-            "in Manage billing, or email info@openshorts.app."))
+            "in Manage billing, or email info@creovis.app."))
     if scheduled:
         async with database.session() as session:
             async with session.begin():
@@ -361,7 +361,7 @@ async def resume_subscription(request: Request):
         print(f"⚠️  Stripe resume failed for {user.id}: {e}")
         raise HTTPException(status_code=502, detail=(
             "We couldn't resume your subscription right now. Please try again, "
-            "or email info@openshorts.app."))
+            "or email info@creovis.app."))
     async with database.session() as session:
         async with session.begin():
             row = (await session.execute(
@@ -394,7 +394,7 @@ async def cancel_subscription(body: CancelRequest, request: Request):
         print(f"⚠️  Stripe cancel failed for {user.id}: {e}")
         raise HTTPException(status_code=502, detail=(
             "We couldn't cancel your subscription right now. Please try again, "
-            "or email info@openshorts.app."))
+            "or email info@creovis.app."))
 
     # Written after Stripe accepted the cancel, so a failed call leaves no
     # feedback row claiming a cancellation that never happened. Flipping

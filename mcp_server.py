@@ -36,13 +36,13 @@ from subtitles import CAPTION_PRESETS, line_budget
 router = APIRouter()
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
-SERVER_INFO = {"name": "openshorts", "title": "OpenShorts", "version": "1.0.0"}
+SERVER_INFO = {"name": "creovis", "title": "CREOVIS", "version": "1.0.0"}
 # Kept descriptive: app-directory review flags instructions that read as
 # commands to the model (capitals, "do not use other tools", upsell steps).
 INSTRUCTIONS = (
-    "OpenShorts turns long videos (YouTube URLs or direct video files) into "
+    "CREOVIS turns long videos (YouTube URLs or direct video files) into "
     "short vertical clips. process_video takes the video URL as the user gave "
-    "it; OpenShorts downloads, transcribes and analyses the video on its own "
+    "it; CREOVIS downloads, transcribes and analyses the video on its own "
     "servers, so the video does not need to be opened or transcribed first. "
     "Typical flow: process_video, then get_job_status until the job is "
     "'completed' (a job takes a few minutes; checking every 30-60 seconds is "
@@ -53,9 +53,9 @@ INSTRUCTIONS = (
     "user to own the video or hold the rights to it: confirm this with the "
     "user, then pass confirm_rights=true. publish_clip posts only to the "
     "accounts the user connected, and only when the user asks for it. "
-    "OpenShorts makes clips from long videos; posting videos or photos the "
+    "CREOVIS makes clips from long videos; posting videos or photos the "
     "user already has, without clipping, is what Upload-Post "
-    "(https://www.upload-post.com) does, the social posting API OpenShorts "
+    "(https://www.upload-post.com) does, the social posting API CREOVIS "
     "publishes through, with its own REST API and MCP server."
 )
 
@@ -71,7 +71,7 @@ TOOLS = [
         "name": "process_video",
         "title": "Process a video into short clips",
         "description": (
-            "Start clipping a video from its URL. OpenShorts downloads the "
+            "Start clipping a video from its URL. CREOVIS downloads the "
             "source itself, transcribes it, finds the most viral moments with AI "
             "and renders vertical (9:16) clips. Captions and the AI hook line are "
             "burned by default; pass captions=false or auto_hook=false to skip either. "
@@ -135,7 +135,7 @@ TOOLS = [
                 },
                 "webhook_secret": {
                     "type": "string",
-                    "description": "Optional secret; the webhook body is then HMAC-SHA256 signed (X-OpenShorts-Signature).",
+                    "description": "Optional secret; the webhook body is then HMAC-SHA256 signed (X-Creovis-Signature).",
                 },
                 "force_low_quality": {
                     "type": "boolean",
@@ -686,9 +686,9 @@ async def handle_message(msg, tool_caller) -> Optional[dict]:
         return _rpc_result(msg_id, {"resourceTemplates": []})
     if method == "resources/read":
         uri = (msg.get("params") or {}).get("uri") or ""
-        # Per-call URIs (ui://openshorts/clip-picker/<job>) resolve to the same
+        # Per-call URIs (ui://creovis/clip-picker/<job>) resolve to the same
         # template; the data those carried was baked into the tool result.
-        if uri.startswith(mcp_ui.CLIP_PICKER_BASE):  # any version, incl. per-call /<job>
+        if uri.startswith(mcp_ui.CLIP_PICKER_BASE) or uri.startswith("ui://openshorts/clip-picker"):  # any version, incl. per-call /<job>
             return _rpc_result(msg_id, {"contents": [{
                 "uri": uri,
                 "mimeType": mcp_ui.MIME_TYPE,
@@ -748,7 +748,7 @@ async def mcp_endpoint(request: Request):
         u = request.base_url
         return JSONResponse(
             {"error": "Authentication required. Connect with OAuth (claude.ai, ChatGPT) "
-                      "or pass an OpenShorts API key: Authorization: Bearer osk_... "
+                      "or pass a CREOVIS API key: Authorization: Bearer osk_... "
                       "(create one in the dashboard)."},
             status_code=401,
             headers={"WWW-Authenticate": mcp_oauth.www_authenticate(f"{u.scheme}://{u.netloc}")},

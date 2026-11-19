@@ -1124,7 +1124,7 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                     {Number.isFinite(clip.predicted_score) && (
                         <span
                             className="bg-black/75 backdrop-blur-sm font-mono text-micro uppercase px-2 py-1 rounded-full flex items-center gap-1 border border-rule"
-                            title="openshorts' prediction of how well this clip will perform, from 0 to 100"
+                            title="creovis' prediction of how well this clip will perform, from 0 to 100"
                         >
                             <TrendingUp size={11} className="shrink-0 text-muted" />
                             <span className="text-muted">viral</span>
@@ -1166,7 +1166,7 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                                 ref={whyRef}
                                 className={`text-xs text-muted leading-snug line-clamp-2 break-words ${whyClamped ? 'cursor-pointer hover:text-ink2' : ''}`}
                                 onClick={() => whyClamped && setWhyOpen(v => !v)}
-                                aria-label="why openshorts picked this moment"
+                                aria-label="why creovis picked this moment"
                             >
                                 {clip.why}
                             </p>

@@ -1,4 +1,4 @@
-"""Buffer API Integration for OpenShorts.
+"""Buffer API Integration for CREOVIS.
 
 Connects to the Buffer GraphQL API (https://api.buffer.com) using a Bearer token
 to list connected social channels, create posts, and schedule video clip publishing
@@ -77,7 +77,7 @@ def execute_graphql(query: str, variables: Optional[Dict[str, Any]] = None, toke
     headers = {
         "Authorization": f"Bearer {auth_token}",
         "Content-Type": "application/json",
-        "User-Agent": "OpenShorts-SocialPublisher/1.0"
+        "User-Agent": "CREOVIS-SocialPublisher/1.0"
     }
 
     payload = {"query": query}

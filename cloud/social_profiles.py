@@ -32,7 +32,7 @@ def connect_description(platforms) -> str:
     """The connect page's subtitle. Twitch is read-only there, so it is named
     as a source to clip from, never as somewhere shorts get posted."""
     text = ("Link TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky "
-            "to post your shorts directly from OpenShorts.")
+            "to post your shorts directly from CREOVIS.")
     if "twitch" in platforms:
         text += " Link Twitch so Autopilot can clip your past broadcasts (read-only)."
     return text
@@ -119,7 +119,7 @@ async def get_connect_url(username: str, return_to: str = "account") -> str:
         "connectTitle": "Connect your social accounts",
         "connectDescription": connect_description(platforms),
         "redirectUrl": f"{settings.frontend_url}{back}",
-        "redirectButtonText": "Back to OpenShorts",
+        "redirectButtonText": "Back to CREOVIS",
         "platforms": platforms,
         "showCalendar": True,  # keep the scheduling calendar available in the page
     }

@@ -20,7 +20,7 @@ const CATEGORY_ITEMS = [
     { id: 'news_documentary', label: 'News & Docs', Icon: Newspaper },
 ];
 
-export default function TemplateStudio() {
+export default function TemplateStudio({ selectedTemplateId = '', onApplyTemplate = null }) {
     const [templates, setTemplates] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedCategory, setSelectedCategory] = useState('all');
@@ -227,11 +227,25 @@ export default function TemplateStudio() {
                                     <button
                                         type="button"
                                         onClick={() => handleSelectTemplate(template)}
-                                        className="btn-primary !text-xs !py-1 flex-1 flex items-center justify-center gap-1.5"
+                                        className="btn-secondary !text-xs !py-1 flex-1 flex items-center justify-center gap-1.5"
                                     >
                                         <Eye size={13} />
-                                        <span>Preview &amp; Customize</span>
+                                        <span>Preview &amp; Edit</span>
                                     </button>
+                                    {onApplyTemplate && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onApplyTemplate(template)}
+                                            className={`!text-xs !py-1 px-3 flex items-center justify-center gap-1.5 rounded-[6px] font-medium transition-all ${
+                                                selectedTemplateId === template.id
+                                                    ? 'bg-ok/20 border border-ok/50 text-ok'
+                                                    : 'btn-primary'
+                                            }`}
+                                        >
+                                            <Check size={13} />
+                                            <span>{selectedTemplateId === template.id ? 'Active' : 'Use Template'}</span>
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         );
@@ -378,11 +392,24 @@ export default function TemplateStudio() {
                                 <button
                                     type="button"
                                     onClick={handleSaveToBackend}
-                                    className="btn-primary !text-xs !py-1.5 flex items-center gap-1.5"
+                                    className="btn-secondary !text-xs !py-1.5 flex items-center gap-1.5"
                                 >
                                     <Save size={13} />
-                                    <span>Save Preset to Database</span>
+                                    <span>Save Changes</span>
                                 </button>
+                                {onApplyTemplate && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            onApplyTemplate(activeTemplate);
+                                            setActiveTemplate(null);
+                                        }}
+                                        className="btn-primary !text-xs !py-1.5 flex items-center gap-1.5"
+                                    >
+                                        <Check size={13} />
+                                        <span>Use in Clip Generator</span>
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>

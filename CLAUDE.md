@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-OpenShorts is an AI-powered vertical video generator that turns long YouTube videos or local uploads into short 9:16 clips for TikTok, Instagram Reels and YouTube Shorts. Google Gemini 3.1 Flash-Lite (`gemini-3.1-flash-lite`, overridable with `GEMINI_MODEL`) picks the viral moments and writes the titles. It operates as a cloud-first SaaS platform (`BILLING_ENABLED`, code under `cloud/`).
+CREOVIS is an AI-powered vertical video generator that turns long YouTube videos or local uploads into short 9:16 clips for TikTok, Instagram Reels and YouTube Shorts. Google Gemini 3.1 Flash-Lite (`gemini-3.1-flash-lite`, overridable with `GEMINI_MODEL`) picks the viral moments and writes the titles. It operates as a cloud-first SaaS platform (`BILLING_ENABLED`, code under `cloud/`).
 
 ## Development Commands
 
@@ -55,7 +55,7 @@ Ingest (yt-dlp or upload) → transcription (word timestamps) → scene detectio
 **SEO / site**
 - Keep `seo/landing-fallback.js` in sync with `Landing.jsx`. Never add a static `public/sitemap.xml` back: `vite-plugin-seo.js` generates it.
 - Standalone pages are emitted as flat `.html` files (directories make nginx 301 and break canonicals).
-- When editing pricing anywhere, edit `seo/data.js` too. Never say "OpenShorts is free" without the Cloud price next to it.
+- When editing pricing anywhere, edit `seo/data.js` too. Never say "CREOVIS is free" without the Cloud price next to it.
 - `/gta-5-clips`, `/gta-6-clips` and `/platforms/twitch` state the silent-footage thresholds and stretch sizes: change their copy if that behaviour changes.
 
 **Free tools**

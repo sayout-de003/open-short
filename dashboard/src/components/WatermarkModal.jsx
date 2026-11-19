@@ -34,7 +34,7 @@ export function markWatermarkNoticed(jobId) {
 // download far fewer of those checkouts were paid. From a
 // download, the clip is downloaded first either way: the user asked for it.
 export default function WatermarkModal({ onClose, onContinue, onUpgrade, previewSrc = null,
-                                         source = 'download', jobId = null }) {
+  source = 'download', jobId = null }) {
   const [dontShow, setDontShow] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
   const [starter, setStarter] = useState(null);
@@ -47,7 +47,7 @@ export default function WatermarkModal({ onClose, onContinue, onUpgrade, preview
   useEffect(() => {
     apiJson('/api/billing/plans')
       .then((d) => setStarter((d.plans || []).find((p) => p.plan === 'starter' && p.interval === 'month') || null))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const close = (proceed) => {
@@ -75,7 +75,7 @@ export default function WatermarkModal({ onClose, onContinue, onUpgrade, preview
   return (
     <Modal isOpen onClose={() => close(false)} eyebrow="FREE PLAN" title="Want the watermark off?" size="md">
       <p className="text-muted text-sm mb-4">
-        Clips on the free plan carry the OpenShorts mark and are deleted after 7 days.
+        Clips on the free plan carry the CREOVIS mark and are deleted after 7 days.
         Upgrade and <b className="text-ink font-medium">these exact clips lose the mark on the spot</b>,
         no re-render, and stay in your library for good.
       </p>

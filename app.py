@@ -297,7 +297,7 @@ def gemini_missing_error():
     """
     if BILLING_ENABLED:
         return payment_required(
-            "no_plan", "This action needs an active OpenShorts plan (or the user's own API key).")
+            "no_plan", "This action needs an active CREOVIS plan (or the user's own API key).")
     return HTTPException(status_code=400, detail="Missing X-Gemini-Key header")
 
 
@@ -684,7 +684,7 @@ async def _reserve_after_job_limit(request, user, url, input_path, job_id, max_m
     if balance["remaining"] < 1:
         _maybe_send_quota_email(user)
         raise payment_required(
-            "quota_exceeded", "The user is out of OpenShorts processing minutes for this period.",
+            "quota_exceeded", "The user is out of CREOVIS processing minutes for this period.",
             minutes_required=1, minutes_remaining=balance["remaining"], partial_minutes=0)
 
     # Free queue lane, then the brake: before the probe, the reservation and
@@ -3948,9 +3948,11 @@ async def _webhook_clip_entries(job_id, job):
 
 
 async def _deliver_webhook(url, body: bytes, secret):
-    headers = {"Content-Type": "application/json", "User-Agent": "OpenShorts-Webhook/1.0"}
+    headers = {"Content-Type": "application/json", "User-Agent": "CREOVIS-Webhook/1.0"}
     if secret:
-        headers["X-OpenShorts-Signature"] = _sign_webhook(body, secret)
+        sig = _sign_webhook(body, secret)
+        headers["X-Creovis-Signature"] = sig
+        headers["X-OpenShorts-Signature"] = sig
     from security_utils import assert_public_url, UnsafeURLError
     loop = asyncio.get_event_loop()
     for attempt, delay in enumerate(WEBHOOK_RETRY_DELAYS, 1):
@@ -5578,6 +5580,112 @@ async def capture_live_stream(req: StreamCaptureRequest):
         "message": f"Successfully captured {req.duration_seconds}s from {req.url}"
     }
 
+
+# --------------------------------------------------------------------------- #
+# Live Stream Ultra-Low-Latency Hype Auto-Clipping Endpoints
+# --------------------------------------------------------------------------- #
+_active_live_pipeline = None
+
+
+class LiveHypeStartRequest(BaseModel):
+    url_or_channel: str
+    platform: str = "twitch"  # "twitch" or "youtube"
+    stream_video_url: Optional[str] = None
+    pre_roll_sec: float = 25.0
+    post_roll_sec: float = 10.0
+
+
+@app.post("/api/intelligence/live/start")
+async def start_live_hype_tracking(req: LiveHypeStartRequest):
+    global _active_live_pipeline
+    from gaming_intelligence.live.pipeline import LiveHypePipeline
+    from gaming_intelligence.live.models import Platform
+
+    if _active_live_pipeline:
+        await _active_live_pipeline.stop()
+
+    out_dir = os.path.join(OUTPUT_DIR, "live_shorts")
+    buf_dir = os.path.join(UPLOAD_DIR, "live_buffer")
+    _active_live_pipeline = LiveHypePipeline(
+        buffer_dir=buf_dir,
+        output_dir=out_dir,
+        pre_roll_sec=req.pre_roll_sec,
+        post_roll_sec=req.post_roll_sec
+    )
+
+    if req.platform.lower() == "twitch":
+        channel = req.url_or_channel.rstrip("/").split("/")[-1].lstrip("#")
+        await _active_live_pipeline.start_twitch(channel=channel, stream_url=req.stream_video_url)
+    else:
+        await _active_live_pipeline.start_youtube(
+            video_id_or_url=req.url_or_channel,
+            stream_url=req.stream_video_url,
+            api_key=os.environ.get("YOUTUBE_API_KEY")
+        )
+
+    return {
+        "ok": True,
+        "message": f"Live hype tracking active for {req.platform}: {req.url_or_channel}",
+        "pre_roll_sec": req.pre_roll_sec,
+        "post_roll_sec": req.post_roll_sec
+    }
+
+
+@app.get("/api/intelligence/live/status")
+async def get_live_hype_status():
+    global _active_live_pipeline
+    if not _active_live_pipeline:
+        return {"active": False, "message": "No live pipeline running"}
+
+    detector = _active_live_pipeline.detector
+    metrics = detector.compute_metrics()
+    latency_stats = _active_live_pipeline.get_latency_stats()
+
+    return {
+        "active": True,
+        "metrics": {
+            "velocity_mps": metrics.velocity_mps,
+            "acceleration": metrics.acceleration,
+            "unique_users": metrics.unique_users,
+            "chant_density": metrics.chant_density,
+            "z_score": metrics.z_score,
+            "top_chants": metrics.top_chants
+        },
+        "completed_clips_count": len(_active_live_pipeline.completed_jobs),
+        "latency_stats": latency_stats
+    }
+
+
+@app.get("/api/intelligence/live/clips")
+async def get_live_hype_clips():
+    global _active_live_pipeline
+    if not _active_live_pipeline:
+        return {"clips": []}
+
+    clips = []
+    for job in _active_live_pipeline.completed_jobs:
+        clips.append({
+            "job_id": job.job_id,
+            "status": job.status,
+            "draft_path": job.draft_path,
+            "final_path": job.final_path,
+            "milestones": job.milestones.to_dict(),
+            "top_chants": job.event.top_chants,
+            "peak_velocity": job.event.peak_velocity,
+            "z_score": job.event.z_score
+        })
+    return {"clips": clips}
+
+
+@app.post("/api/intelligence/live/stop")
+async def stop_live_hype_tracking():
+    global _active_live_pipeline
+    if _active_live_pipeline:
+        await _active_live_pipeline.stop()
+        _active_live_pipeline = None
+    return {"ok": True, "message": "Live hype tracking stopped"}
+
+
 async def _probe_youtube_quality(url: str) -> dict:
     """What the source offers ({max_height, duration, ...}); {} on any failure
     (fail-open). The metering probe a moment ago already asked YouTube for
@@ -5982,6 +6090,7 @@ async def process_endpoint(
     buffer_platforms: Optional[str] = Form(None),
     scheduling_mode: Optional[str] = Form(None),
     posts_per_day: Optional[str] = Form(None),
+    template_id: Optional[str] = Form(None),
 ):
     api_key = await resolve_gemini(request)
     if not api_key and not (llm_backend.active() and not BILLING_ENABLED):
@@ -6022,6 +6131,7 @@ async def process_endpoint(
         buffer_platforms = body.get("buffer_platforms")
         scheduling_mode = body.get("scheduling_mode")
         posts_per_day = body.get("posts_per_day")
+        template_id = body.get("template_id") or template_id
 
     # Autopost and scheduling settings
     autopost_enabled = str(autopost_buffer).lower() in ("1", "true", "yes") if autopost_buffer is not None else False
@@ -6126,6 +6236,31 @@ async def process_endpoint(
     profile_confidence = 1.0
     profile_reason = "User specified"
 
+    # Look up template preset if specified
+    tmpl_obj = None
+    if template_id:
+        try:
+            from template_library.models import get_template_store
+            tmpl_obj = get_template_store().get_template(template_id)
+            if tmpl_obj:
+                print(f"🎨 [Template] Using template preset: {template_id} ({tmpl_obj.get('name')})")
+                if not clipping_profile or clipping_profile == "auto":
+                    effective_profile = ContentProfile.normalize(tmpl_obj.get("category", effective_profile))
+                tmpl_layout = tmpl_obj.get("layout")
+                if tmpl_layout == "stacked_top_cam":
+                    env["STREAMER_CAM_POSITION"] = "top"
+                elif tmpl_layout in ("split_two_speaker", "split") and "split" not in layouts:
+                    layouts.append("split")
+                if tmpl_obj.get("duration_range") and not clip_min_seconds and not clip_max_seconds:
+                    dr = tmpl_obj["duration_range"]
+                    if isinstance(dr, (list, tuple)) and len(dr) == 2:
+                        clip_min_seconds = str(dr[0])
+                        clip_max_seconds = str(dr[1])
+                if tmpl_obj.get("caption_preset"):
+                    env["TEMPLATE_CAPTION_STYLE"] = tmpl_obj["caption_preset"]
+        except Exception as e:
+            print(f"⚠️ Template lookup failed for {template_id}: {e}")
+
     if effective_profile == ContentProfile.AUTO:
         sample_title = (thumb_session.get("title") if thumb_session else None) or (os.path.basename(file.filename) if file and file.filename else None) or url
         detected_info = detect_content_type(title=sample_title)
@@ -6141,6 +6276,7 @@ async def process_endpoint(
         profile_confidence=profile_confidence,
         profile_reason=profile_reason,
         aspect_ratio=aspect_ratio or "9:16",
+        template_id=template_id,
     )
     env = job_ctx.to_subprocess_env(env)
     if api_key:
@@ -6158,6 +6294,8 @@ async def process_endpoint(
     # already takes.
     chosen = layout_env(layouts)
     env.update(chosen)
+    if "stacked_top_cam" in layouts:
+        env["STREAMER_CAM_POSITION"] = "top"
     if chosen:
         print(f"[layouts] job={job_id} enabled={sorted(chosen)}")
 
@@ -6372,6 +6510,7 @@ async def process_endpoint(
         'clipping_profile': effective_profile,
         'profile_confidence': profile_confidence,
         'profile_reason': profile_reason,
+        'template_id': template_id,
         'job_context': job_ctx.to_dict(),
         'webhook_url': webhook_url,
         'webhook_secret': webhook_secret,
@@ -6523,6 +6662,7 @@ async def get_status(job_id: str, request: Request):
         "clipping_profile": job.get('clipping_profile'),
         "profile_confidence": job.get('profile_confidence', 1.0),
         "profile_reason": job.get('profile_reason'),
+        "template_id": job.get('template_id'),
         "job_context": job.get('job_context'),
     }
 
@@ -6798,7 +6938,7 @@ async def download_all_clips(job_id: str, request: Request):
     return FileResponse(
         zip_path,
         media_type="application/zip",
-        filename=f"openshorts_clips_{job_id[:8]}.zip",
+        filename=f"creovis_clips_{job_id[:8]}.zip",
         background=BackgroundTask(remove_zip),
     )
 
@@ -9210,7 +9350,7 @@ async def youtube_auth_callback(code: str, request: Request):
         return HTMLResponse(
             f"<html><body style='font-family:sans-serif;padding:40px;color:#d32f2f;'>"
             f"<h2>OAuth Exchange Error</h2><p>{str(e)}</p>"
-            f"<p><a href='/'>Return to OpenShorts</a></p></body></html>",
+            f"<p><a href='/'>Return to CREOVIS</a></p></body></html>",
             status_code=400
         )
 
@@ -9226,8 +9366,8 @@ async def youtube_auth_callback(code: str, request: Request):
         "<html><body style='font-family:sans-serif;padding:50px;text-align:center;background:#0d1117;color:#e6edf3;'>"
         "<div style='max-width:500px;margin:auto;padding:30px;background:#161b22;border-radius:12px;border:1px solid #30363d;'>"
         "<h2 style='color:#3fb950;margin-top:0;'>🎉 YouTube Connected Successfully!</h2>"
-        "<p style='color:#8b949e;'>Your Google account has been authorized. OpenShorts can now publish directly to YouTube Shorts.</p>"
-        "<div style='margin-top:24px;'><a href='/' style='background:#f59e0b;color:#000;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600;'>Return to OpenShorts Dashboard</a></div>"
+        "<p style='color:#8b949e;'>Your Google account has been authorized. CREOVIS can now publish directly to YouTube Shorts.</p>"
+        "<div style='margin-top:24px;'><a href='/' style='background:#f59e0b;color:#000;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600;'>Return to CREOVIS Dashboard</a></div>"
         "</div>"
         "<script>setTimeout(() => { window.location.href = '/'; }, 3000);</script>"
         "</body></html>"
@@ -10005,7 +10145,7 @@ async def _social_analytics_auth(request: Request, byok_profile: Optional[str]):
         if BILLING_ENABLED:
             # Signed-in free user (or no auth at all): social posting is
             # paid-only in cloud, so there are no posts to measure either.
-            raise payment_required("no_plan", "Social analytics needs an active OpenShorts plan.")
+            raise payment_required("no_plan", "Social analytics needs an active CREOVIS plan.")
         raise HTTPException(status_code=400, detail="Missing X-Upload-Post-Key header")
     if forced_profile:
         user = await _user_from_request(request)
@@ -10268,7 +10408,7 @@ async def _probe_thumbnail_url(request, url, user):
     if balance["remaining"] < 1:
         _maybe_send_quota_email(user)
         raise payment_required(
-            "quota_exceeded", "The user is out of OpenShorts processing minutes for this period.",
+            "quota_exceeded", "The user is out of CREOVIS processing minutes for this period.",
             minutes_required=1, minutes_remaining=balance["remaining"])
     _check_probe_rate(user.id)
     paid_allowed = not await _paid_proxy_budget_exceeded()
@@ -10618,7 +10758,7 @@ async def _thumbnail_text_gate(request, session):
             _maybe_send_quota_email(user)
             raise payment_required(
                 "quota_exceeded",
-                "The user is out of OpenShorts minutes; analyze a video to get title suggestions.",
+                "The user is out of CREOVIS minutes; analyze a video to get title suggestions.",
                 minutes_required=1, minutes_remaining=balance["remaining"])
     times.append(now)
 
@@ -11426,11 +11566,11 @@ async def gallery_html_page():
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AI UGC Video Gallery | OpenShorts</title>
+<title>AI UGC Video Gallery | CREOVIS</title>
 <meta name="description" content="Browse {len(videos)} AI-generated UGC marketing videos. Create viral TikTok and Instagram Reels for your SaaS product.">
 <meta name="robots" content="{UGC_ROBOTS}">
 <link rel="canonical" href="{GALLERY_HOST}/gallery">
-<meta property="og:title" content="AI UGC Video Gallery | OpenShorts">
+<meta property="og:title" content="AI UGC Video Gallery | CREOVIS">
 <meta property="og:type" content="website">
 <meta property="og:description" content="Browse AI-generated UGC marketing videos for SaaS products.">
 <script type="application/ld+json">{ld_json}</script>
@@ -11445,7 +11585,7 @@ h1{{font-size:28px;font-weight:700;padding:40px 20px 0;text-align:center}}
 </style>
 </head>
 <body>
-<nav><strong style="font-size:18px">OpenShorts</strong><a href="{APP_HOST}/" class="cta">Create Your Video</a></nav>
+<nav><strong style="font-size:18px">CREOVIS</strong><a href="{APP_HOST}/" class="cta">Create Your Video</a></nav>
 <h1>AI-Generated UGC Videos</h1>
 <p class="subtitle">{len(videos)} videos generated · Low Cost & Premium modes</p>
 <div class="grid">{cards_html}</div>

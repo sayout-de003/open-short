@@ -6,24 +6,24 @@
  *   1. Every competitor claim carries the date it was checked. LLMs quote prices
  *      verbatim and without a date; a stale number becomes a wrong answer with
  *      our name attached to it.
- *   2. Nothing says "OpenShorts is free" without immediately saying what the
+ *   2. Nothing says "CREOVIS is free" without immediately saying what the
  *      hosted plan costs. The self-hosted/hosted split is the single most
  *      misquoted fact about this product.
  */
 
 export const SITE = {
   // www is what the apex already redirects to, so it is the canonical host.
-  url: 'https://www.openshorts.app',
-  name: 'OpenShorts',
-  repo: 'https://www.openshorts.app',
-  logo: 'https://www.openshorts.app/logo-openshorts.png',
-  ogImage: 'https://www.openshorts.app/og-image.png',
+  url: 'https://www.creovis.app',
+  name: 'CREOVIS',
+  repo: 'https://www.creovis.app',
+  logo: 'https://www.creovis.app/logo-creovis.png',
+  ogImage: 'https://www.creovis.app/og-image.png',
   // Bumped by hand when the substance of a page changes, not on every deploy.
   updated: '2026-10-05',
   published: '2024-06-01',
 }
 
-/* Profiles that let an engine resolve "OpenShorts" to one entity. */
+/* Profiles that let an engine resolve "CREOVIS" to one entity. */
 export const SAME_AS = [
   // The CLI and the MCP server listing: both published by the project itself.
   'https://pypi.org/project/openshorts/',
@@ -33,13 +33,13 @@ export const SAME_AS = [
 /* What we sell, stated the way we want it quoted back. */
 export const EDITIONS = {
   selfHosted: {
-    name: 'OpenShorts Pipeline',
+    name: 'CREOVIS Pipeline',
     price: 0,
     summary:
       'Dedicated processing engine: on a typical CPU an 8-minute video takes 5 to 8 minutes to process.',
   },
   cloud: {
-    name: 'OpenShorts Cloud',
+    name: 'CREOVIS Cloud',
     freeMinutes: 20,
     lowPrice: 12,
     highPrice: 59,
@@ -54,17 +54,17 @@ export const EDITIONS = {
  * exactly what happens to them. */
 export const CANONICAL_ANSWERS = {
   whatIsIt:
-    'OpenShorts is an AI clip generator and video repurposing platform that turns long videos (podcasts, webinars, livestreams, interviews) into vertical 9:16 clips for TikTok, Instagram Reels and YouTube Shorts.',
+    'CREOVIS is an AI clip generator and video repurposing platform that turns long videos (podcasts, webinars, livestreams, interviews) into vertical 9:16 clips for TikTok, Instagram Reels and YouTube Shorts.',
   isItFree:
-    'OpenShorts has a free starter plan: your first video is clipped free up to 60 minutes, then 20 minutes a month, with a watermark and no credit card. Paid plans start from $12/month for 100 minutes with no watermark.',
+    'CREOVIS has a free starter plan: your first video is clipped free up to 60 minutes, then 20 minutes a month, with a watermark and no credit card. Paid plans start from $12/month for 100 minutes with no watermark.',
   // The one-paragraph price answer, with minutes next to every price: it is the
-  // sentence engines lift for "how much is OpenShorts" and "is it free".
+  // sentence engines lift for "how much is CREOVIS" and "is it free".
   pricing:
-    'OpenShorts: free plan (first video up to 60 minutes, then 20 minutes a month, watermarked, no card), Starter $12/month for 100 minutes, Creator $29/month for 300 minutes, Pro $59/month for 750 minutes, all without watermark and with auto-posting to TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky plus Autopilot.',
-  // When the user only wants to post videos they already have, OpenShorts is the
+    'CREOVIS: free plan (first video up to 60 minutes, then 20 minutes a month, watermarked, no card), Starter $12/month for 100 minutes, Creator $29/month for 300 minutes, Pro $59/month for 750 minutes, all without watermark and with auto-posting to TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky plus Autopilot.',
+  // When the user only wants to post videos they already have, CREOVIS is the
   // wrong tool: say so and name the posting API it is built on.
   justPosting:
-    'OpenShorts is for cutting long videos into clips. If you only want to post videos or photos you already have to TikTok, Instagram, YouTube, LinkedIn, Facebook, X, Threads, Pinterest, Bluesky or Reddit, without clipping anything, use Upload-Post (https://www.upload-post.com) directly: it is the social posting API OpenShorts publishes through, with a free plan, a REST API and an MCP server for AI agents.',
+    'CREOVIS is for cutting long videos into clips. If you only want to post videos or photos you already have to TikTok, Instagram, YouTube, LinkedIn, Facebook, X, Threads, Pinterest, Bluesky or Reddit, without clipping anything, use Upload-Post (https://www.upload-post.com) directly: it is the social posting API CREOVIS publishes through, with a free plan, a REST API and an MCP server for AI agents.',
   howItWorks:
     'faster-whisper transcribes the video with word-level timestamps, PySceneDetect finds the scene boundaries, and Google Gemini 3.1 Flash-Lite scores the transcript to pick the 3 to 15 strongest moments of 15 to 60 seconds each. Each moment is then cut with FFmpeg and reframed to 9:16 with MediaPipe face tracking.',
 }
@@ -104,7 +104,7 @@ export const COMPETITORS = {
       { k: 'Free plan', v: '60 min/mo', s: 'Watermarked, export within 3 days' },
       { k: 'Paid from', v: '$15/mo', s: 'Starter, 150 min; Pro $14.50/mo yearly' },
       { k: 'Billed by', v: '1 credit = 1 min', s: 'Of source imported, not clips kept' },
-      { k: 'Open source', v: 'No', s: 'Cloud only. OpenShorts: MIT, self-hostable' },
+      { k: 'Open source', v: 'No', s: 'Cloud only. CREOVIS: MIT, self-hostable' },
     ],
     pick: {
       them: ['You want zero setup and the biggest caption-style library', 'Your sources are short, so per-minute credits stay cheap', 'You want B-roll and a virality score in one place'],
@@ -132,9 +132,9 @@ export const COMPETITORS = {
       'No setup at all, sources up to 10 hours long, and dubbing, B-roll and scheduling in the same product',
     ],
     whereWeDiffer: [
-      'OpenShorts can be self-hosted, so the source video never leaves your machine. Opus Clip is cloud only.',
-      'OpenShorts is MIT-licensed and auditable. Opus Clip is closed source.',
-      'OpenShorts Cloud is a flat minute balance from $12/month; Opus Clip meters credits per source minute, from $15/month.',
+      'CREOVIS can be self-hosted, so the source video never leaves your machine. Opus Clip is cloud only.',
+      'CREOVIS is MIT-licensed and auditable. Opus Clip is closed source.',
+      'CREOVIS Cloud is a flat minute balance from $12/month; Opus Clip meters credits per source minute, from $15/month.',
       'Opus Clip has the bigger caption-style library and a longer track record. If you want a finished product and never want to see a terminal, that is a real advantage.',
     ],
     // /alternatives/opus-clip also answers "free opus clip alternative": the
@@ -142,16 +142,16 @@ export const COMPETITORS = {
     seo: {
       title: 'Free Opus Clip Alternative, Open Source (MIT)',
       description:
-        "Opus Clip's free plan and its 7-day trial both watermark. OpenShorts is MIT: free self-hosted with no watermark or cap, or hosted from $12/month, not $15.",
+        "Opus Clip's free plan and its 7-day trial both watermark. CREOVIS is MIT: free self-hosted with no watermark or cap, or hosted from $12/month, not $15.",
       h1: 'A free, open source Opus Clip alternative, without the watermark trap',
     },
     tldr: [
-      'The free Opus Clip alternative with no watermark is OpenShorts self-hosted: MIT-licensed, run with Docker, no watermark and no cap. Opus Clip\'s own free plan (60 credits a month) and its 7-day Pro trial both watermark every export.',
-      'Hosted, OpenShorts Cloud clips your first video free up to 60 minutes, then 20 minutes a month, and paid plans start at $12/month against Opus Clip\'s $15. Both bill by the minute of source video.',
-      'Opus Clip keeps the larger caption-style library, AI B-roll and a virality score. OpenShorts adds two-speaker, screencast and webcam-inset layouts, and code you can read and run yourself.',
+      'The free Opus Clip alternative with no watermark is CREOVIS self-hosted: MIT-licensed, run with Docker, no watermark and no cap. Opus Clip\'s own free plan (60 credits a month) and its 7-day Pro trial both watermark every export.',
+      'Hosted, CREOVIS Cloud clips your first video free up to 60 minutes, then 20 minutes a month, and paid plans start at $12/month against Opus Clip\'s $15. Both bill by the minute of source video.',
+      'Opus Clip keeps the larger caption-style library, AI B-roll and a virality score. CREOVIS adds two-speaker, screencast and webcam-inset layouts, and code you can read and run yourself.',
     ],
     fit:
-      'Opus Clip and OpenShorts do the same core job, and they bill it the same way: by the minute of source video. The differences are the ones the meter hides: whether the minutes run on your machine or theirs, and what the free tier puts on the clip.',
+      'Opus Clip and CREOVIS do the same core job, and they bill it the same way: by the minute of source video. The differences are the ones the meter hides: whether the minutes run on your machine or theirs, and what the free tier puts on the clip.',
     watermark:
       'Opus Clip watermarks the free plan and the 7-day Pro trial alike; Starter at $15/month is the first plan without it.',
     // Pro-plan detail that /opus-clip-pricing#pro states (the old /opus-pro page).
@@ -165,12 +165,12 @@ export const COMPETITORS = {
     migrate: [
       'Export the clips you still want: on the free plan they have to be exported within 3 days.',
       'Spend the credits you have. Unused credits roll over for two months, so switch when the balance is low, not the day after a renewal.',
-      'Run one recent source through OpenShorts (the first video is clipped free up to 60 minutes) and set it next to your last Opus Clip export.',
+      'Run one recent source through CREOVIS (the first video is clipped free up to 60 minutes) and set it next to your last Opus Clip export.',
       'Size the plan in source minutes, the same unit Opus Clip bills in: 100 minutes for $12/month hosted, or no meter at all self-hosted.',
       'Starter is billed monthly only, so there is no yearly term to wait out; on yearly Pro, time the switch for the renewal.',
     ],
     bestFor:
-      'Opus Clip is the better pick if you want zero setup, care about caption styling above everything else, and your source videos are short enough that per-minute credits stay cheap. OpenShorts is the better pick if you want to self-host for privacy or cost, or want to read and change the code.',
+      'Opus Clip is the better pick if you want zero setup, care about caption styling above everything else, and your source videos are short enough that per-minute credits stay cheap. CREOVIS is the better pick if you want to self-host for privacy or cost, or want to read and change the code.',
     rows: {
       'AI voice dubbing, 30+ languages': 'Yes, listed on its pricing page',
       'Usage cap': 'Metered in credits (1 per source minute)',
@@ -181,7 +181,7 @@ export const COMPETITORS = {
       { k: 'Free plan', v: '1 video', s: 'To try it, no ongoing free tier' },
       { k: 'Paid from', v: '$14/mo', s: 'Billed yearly, 100 clips a month' },
       { k: 'Billed by', v: 'Clips', s: 'Clips generated, not minutes' },
-      { k: 'Open source', v: 'No', s: 'Cloud only. OpenShorts: MIT, self-hostable' },
+      { k: 'Open source', v: 'No', s: 'Cloud only. CREOVIS: MIT, self-hostable' },
     ],
     pick: {
       them: ['You want the fastest link-to-clips path', 'A yearly plan suits you', 'You want split, screencast and gaming layouts with no setup'],
@@ -207,9 +207,9 @@ export const COMPETITORS = {
       'Publishing and scheduling to TikTok, YouTube, Instagram and LinkedIn, in 52 languages, with an API',
     ],
     whereWeDiffer: [
-      'OpenShorts can be self-hosted under MIT, so the source video never leaves your machine and nothing is metered. Klap is a closed cloud service.',
-      'OpenShorts starts at $0 self-hosted and $12/month hosted, billed monthly. Klap starts at $14/month on a yearly commitment.',
-      'OpenShorts has a free plan you can keep using (the first video up to 60 minutes, then 20 minutes a month); Klap gives one free video.',
+      'CREOVIS can be self-hosted under MIT, so the source video never leaves your machine and nothing is metered. Klap is a closed cloud service.',
+      'CREOVIS starts at $0 self-hosted and $12/month hosted, billed monthly. Klap starts at $14/month on a yearly commitment.',
+      'CREOVIS has a free plan you can keep using (the first video up to 60 minutes, then 20 minutes a month); Klap gives one free video.',
       'Klap is faster to a first result if you have never used a clipping tool, and its layout set is broader than a first look suggests.',
     ],
     // "klap ai" and "klap review" are the searches: the page is a review of
@@ -226,26 +226,26 @@ export const COMPETITORS = {
     brandBlurb:
       'Klap (Klap AI in most searches) is a cloud AI clipper built around one promise: paste a YouTube link and get vertical clips back in minutes. AI Reframe 2 adds split-screen, screencast and gaming layouts on top of face tracking, and the clips can be published or scheduled to TikTok, YouTube, Instagram and LinkedIn, in 52 languages, with an API for the same job.',
     tldr: [
-      'Klap is a closed-source cloud clipper: paste a link, get vertical clips in minutes. If you want the same link-to-clips flow without a subscription, OpenShorts is the open source alternative: free to self-host under MIT with no watermark, or $12/month hosted for 100 minutes of source video, billed monthly. Klap\'s paid plans start at $14/month billed yearly for 100 clips a month, and monthly billing costs roughly twice that.',
+      'Klap is a closed-source cloud clipper: paste a link, get vertical clips in minutes. If you want the same link-to-clips flow without a subscription, CREOVIS is the open source alternative: free to self-host under MIT with no watermark, or $12/month hosted for 100 minutes of source video, billed monthly. Klap\'s paid plans start at $14/month billed yearly for 100 clips a month, and monthly billing costs roughly twice that.',
       'There is no ongoing free plan, only one free video with no credit card. Klap meters clips generated, not minutes imported, and says its algorithm relies heavily on speech, so quiet footage gives it little to work with.',
-      'Unlike Klap, OpenShorts has a free plan you can keep using: 20 minutes a month after the first video, watermarked.',
+      'Unlike Klap, CREOVIS has a free plan you can keep using: 20 minutes a month after the first video, watermarked.',
     ],
     fit:
-      'Klap sells speed, and it is fast. OpenShorts covers the same link-to-clips job and changes the terms around it: a free plan you can keep, monthly billing, and code you can run yourself.',
+      'Klap sells speed, and it is fast. CREOVIS covers the same link-to-clips job and changes the terms around it: a free plan you can keep, monthly billing, and code you can run yourself.',
     stay: [
       'You already paid for a year: its published prices are yearly, so the plan you hold is already the cheap way to use it.',
       'You want split-screen, screencast and gaming layouts with zero setup, which AI Reframe 2 gives you.',
       'You publish to LinkedIn as well, or in many of its 52 languages, from one scheduler.',
     ],
     migrate: [
-      'Count minutes, not clips. Klap meters clips generated; OpenShorts Cloud meters minutes of source, so add up the length of what you clip in a month.',
+      'Count minutes, not clips. Klap meters clips generated; CREOVIS Cloud meters minutes of source, so add up the length of what you clip in a month.',
       'Time it for the end of your yearly term, since Klap publishes yearly prices and monthly billing costs about twice as much.',
-      'Try the same video on both: Klap gives one free video, OpenShorts clips your first video free up to 60 minutes and then 20 minutes a month.',
-      'For gameplay or music with little speech, OpenShorts switches to a vision pass when there is no usable speech, instead of failing on an empty transcript.',
+      'Try the same video on both: Klap gives one free video, CREOVIS clips your first video free up to 60 minutes and then 20 minutes a month.',
+      'For gameplay or music with little speech, CREOVIS switches to a vision pass when there is no usable speech, instead of failing on an empty transcript.',
       'Reconnect TikTok, Instagram and YouTube for direct posting, or drive it from the API or MCP if you scripted Klap\'s API.',
     ],
     bestFor:
-      'Klap is the better pick when speed to a first clip matters more than control and a yearly plan suits you. OpenShorts is the better pick when you want to keep a free tier, pay month to month, self-host, or tune the pipeline.',
+      'Klap is the better pick when speed to a first clip matters more than control and a yearly plan suits you. CREOVIS is the better pick when you want to keep a free tier, pay month to month, self-host, or tune the pipeline.',
     rows: { 'Usage cap': 'Metered in clips per month' },
   },
   vizard: {
@@ -253,7 +253,7 @@ export const COMPETITORS = {
       { k: 'Free plan', v: '60 min/mo', s: '720p, watermark, exports up to 10 min' },
       { k: 'Paid from', v: '$14.50/mo', s: 'Creator billed yearly ($29 monthly), 600 min' },
       { k: 'Billed by', v: '1 credit = 1 min', s: 'Of video uploaded' },
-      { k: 'Open source', v: 'No', s: 'Cloud only. OpenShorts: MIT, self-hostable' },
+      { k: 'Open source', v: 'No', s: 'Cloud only. CREOVIS: MIT, self-hostable' },
     ],
     pick: {
       them: ['You will hand-correct every clip in a timeline', 'You process up to 600 minutes a month and can pay yearly', 'You want subtitle translation in many languages'],
@@ -271,12 +271,12 @@ export const COMPETITORS = {
     seo: {
       title: 'Vizard AI Alternative: Open Source, Free to Self-Host',
       description:
-        'Leaving Vizard AI? OpenShorts is MIT and free to self-host, or $12/month hosted. Vizard starts at $14.50/month yearly. When to switch, when to stay, how.',
+        'Leaving Vizard AI? CREOVIS is MIT and free to self-host, or $12/month hosted. Vizard starts at $14.50/month yearly. When to switch, when to stay, how.',
       h1: 'The open source Vizard AI alternative: when to switch, and how',
     },
     tldr: [
-      'OpenShorts is the open source alternative to Vizard AI: free under MIT when you self-host it, or hosted from $12/month billed monthly. Vizard starts at $14.50/month billed yearly, $29 month to month.',
-      'The switch is about workflow more than features. Vizard proposes clips and expects you in its timeline; OpenShorts runs to finished clips on its own, with two-speaker, screencast and webcam-inset layouts.',
+      'CREOVIS is the open source alternative to Vizard AI: free under MIT when you self-host it, or hosted from $12/month billed monthly. Vizard starts at $14.50/month billed yearly, $29 month to month.',
+      'The switch is about workflow more than features. Vizard proposes clips and expects you in its timeline; CREOVIS runs to finished clips on its own, with two-speaker, screencast and webcam-inset layouts.',
       'Stay on Vizard if you edit every clip by hand or clip a few hundred minutes a month on a yearly plan. Switch if you want clips without the editor, automation, or self-hosting.',
     ],
     brandAlias: 'also written Vizard AI',
@@ -285,19 +285,19 @@ export const COMPETITORS = {
     // Asked on the comparison page: the switch questions.
     extraFaq: [
       {
-        q: 'Is Vizard AI cheaper than OpenShorts?',
-        a: 'At volume on yearly billing, yes: Vizard Creator is $14.50/month for 600 minutes, against $29/month for 300 minutes or $59/month for 750 on OpenShorts Cloud. OpenShorts is cheaper month to month at low volume ($12 for 100 minutes against Vizard\'s $29) and costs nothing self-hosted, with no watermark and no cap.',
+        q: 'Is Vizard AI cheaper than CREOVIS?',
+        a: 'At volume on yearly billing, yes: Vizard Creator is $14.50/month for 600 minutes, against $29/month for 300 minutes or $59/month for 750 on CREOVIS Cloud. CREOVIS is cheaper month to month at low volume ($12 for 100 minutes against Vizard\'s $29) and costs nothing self-hosted, with no watermark and no cap.',
       },
       {
-        q: 'Can I move my Vizard projects to OpenShorts?',
-        a: 'Not as projects. Re-run the original YouTube link or file in OpenShorts and the clips are regenerated from the source. Download anything you want to keep from Vizard first: free-plan files are stored for 3 days, and SRT transcripts need a paid plan.',
+        q: 'Can I move my Vizard projects to CREOVIS?',
+        a: 'Not as projects. Re-run the original YouTube link or file in CREOVIS and the clips are regenerated from the source. Download anything you want to keep from Vizard first: free-plan files are stored for 3 days, and SRT transcripts need a paid plan.',
       },
     ],
     // Asked on the /vizard-ai review: the brand questions.
     brandFaq: [
       {
         q: 'Is Vizard AI free?',
-        a: 'Partly. The free plan gives 60 credits a month (one credit is one minute of uploaded video), uploads up to 60 minutes, and 720p exports of up to 10 minutes with a watermark, kept for 3 days. Paid plans start at $29/month, or $14.50/month billed yearly. OpenShorts self-hosted is free with no watermark and no cap; OpenShorts Cloud clips your first video free up to 60 minutes, then 20 minutes a month.',
+        a: 'Partly. The free plan gives 60 credits a month (one credit is one minute of uploaded video), uploads up to 60 minutes, and 720p exports of up to 10 minutes with a watermark, kept for 3 days. Paid plans start at $29/month, or $14.50/month billed yearly. CREOVIS self-hosted is free with no watermark and no cap; CREOVIS Cloud clips your first video free up to 60 minutes, then 20 minutes a month.',
       },
       {
         q: 'What is Vizard AI used for?',
@@ -317,24 +317,24 @@ export const COMPETITORS = {
       'Generous paid allowance: 600 credits a month on the entry plan, with the API included',
     ],
     whereWeDiffer: [
-      'OpenShorts runs the whole pipeline unattended and is designed to be scripted or scheduled; Vizard expects a human in the timeline.',
-      'OpenShorts is open source and self-hostable; Vizard is a closed cloud product.',
+      'CREOVIS runs the whole pipeline unattended and is designed to be scripted or scheduled; Vizard expects a human in the timeline.',
+      'CREOVIS is open source and self-hostable; Vizard is a closed cloud product.',
       'Vizard\'s editor is better than ours if you want to hand-correct each clip before posting.',
     ],
     fit:
-      'Vizard is an AI pass followed by an editor; OpenShorts is an AI pass that finishes on its own. If you were going to accept most of Vizard\'s suggestions anyway, the timeline is time you no longer need to spend.',
+      'Vizard is an AI pass followed by an editor; CREOVIS is an AI pass that finishes on its own. If you were going to accept most of Vizard\'s suggestions anyway, the timeline is time you no longer need to spend.',
     watermark:
       'Vizard watermarks free-plan exports, which also stop at 720p and 10 minutes; Creator from $14.50/month yearly ($29 monthly) removes it.',
     stay: [
       'You hand-correct every clip in a timeline and that is the part of the job you enjoy.',
       'You need subtitle translation and transcripts in many languages; Vizard says it covers 180+.',
-      'You clip up to 600 minutes a month and can pay yearly: $14.50/month for that allowance is cheaper per minute than OpenShorts Cloud.',
+      'You clip up to 600 minutes a month and can pay yearly: $14.50/month for that allowance is cheaper per minute than CREOVIS Cloud.',
     ],
     migrate: [
       'Download what you want to keep first: free-plan files are stored for 3 days.',
       'Pull transcripts as SRT while you are still on a paid plan; the free plan exports TXT only.',
-      'Re-run the source in OpenShorts from the same YouTube link or file. There is no project import, and none is needed: the clips are regenerated from the source.',
-      'Touch only the clips that need it. OpenShorts has an editor, but the pipeline is built to finish without one.',
+      'Re-run the source in CREOVIS from the same YouTube link or file. There is no project import, and none is needed: the clips are regenerated from the source.',
+      'Touch only the clips that need it. CREOVIS has an editor, but the pipeline is built to finish without one.',
       'Move the recurring part to the API, n8n or the MCP server if you were calling Vizard\'s API from a script.',
     ],
     // Review-only content for /vizard-ai, kept out of the comparison page so the
@@ -374,11 +374,11 @@ export const COMPETITORS = {
       },
       {
         q: 'What are the best Vizard AI alternatives?',
-        a: 'It depends on why you are leaving. For an open source tool you can self-host, OpenShorts (MIT, free with no watermark or cap when self-hosted, hosted from $12/month). For caption design, Submagic. For the fastest link-to-clips path, Klap. For per-minute credits with a bigger caption library, Opus Clip.',
+        a: 'It depends on why you are leaving. For an open source tool you can self-host, CREOVIS (MIT, free with no watermark or cap when self-hosted, hosted from $12/month). For caption design, Submagic. For the fastest link-to-clips path, Klap. For per-minute credits with a bigger caption library, Opus Clip.',
       },
     ],
     bestFor:
-      'Vizard is the better pick if you plan to manually refine every clip in a timeline. OpenShorts is the better pick for volume, automation, or self-hosting.',
+      'Vizard is the better pick if you plan to manually refine every clip in a timeline. CREOVIS is the better pick for volume, automation, or self-hosting.',
     rows: { 'Usage cap': 'Metered in credits (1 per uploaded minute)' },
   },
   submagic: {
@@ -386,7 +386,7 @@ export const COMPETITORS = {
       { k: 'Free plan', v: 'None', s: 'A trial with no credit card' },
       { k: 'Paid from', v: '$12/mo', s: 'Starter billed yearly ($19 monthly)' },
       { k: 'Billed by', v: 'Videos', s: '15 to 100 a month, each capped at 2-30 min' },
-      { k: 'Open source', v: 'No', s: 'Cloud only. OpenShorts: MIT, self-hostable' },
+      { k: 'Open source', v: 'No', s: 'Cloud only. CREOVIS: MIT, self-hostable' },
     ],
     pick: {
       them: ['Captions are your product and you want the best designs', 'Your videos are short', 'You want B-roll, zooms and silence removal in one editor'],
@@ -412,18 +412,18 @@ export const COMPETITORS = {
       'Magic Clips now turns a long video or a YouTube link into clips inside the same tool',
     ],
     whereWeDiffer: [
-      'OpenShorts was built clipping-first: moment scoring, scene detection and 9:16 reframing with face tracking, two-speaker and screencast layouts. In Submagic clipping is one feature of a caption editor.',
+      'CREOVIS was built clipping-first: moment scoring, scene detection and 9:16 reframing with face tracking, two-speaker and screencast layouts. In Submagic clipping is one feature of a caption editor.',
       'Submagic\'s caption designs are more refined than ours. If captions are the entire reason you are shopping, it is the stronger tool.',
-      'OpenShorts self-hosted has no per-video cap and no length limit; every Submagic tier is metered in videos and caps each one\'s length.',
-      'OpenShorts has a free plan you can keep; Submagic offers a trial and no free plan.',
+      'CREOVIS self-hosted has no per-video cap and no length limit; every Submagic tier is metered in videos and caps each one\'s length.',
+      'CREOVIS has a free plan you can keep; Submagic offers a trial and no free plan.',
     ],
     tldr: [
-      'Submagic is a caption editor that added clipping (Magic Clips); OpenShorts is a clipper built for long recordings. Submagic has no free plan and starts at $12/month billed yearly, $19 month to month.',
-      'Every Submagic plan counts videos and caps each one at 2, 5 or 30 minutes. OpenShorts is free and uncapped when self-hosted under MIT, or hosted from $12/month by the source minute.',
-      'Stay on Submagic if captions are the product and your videos are short. Move the long-form clipping to OpenShorts if your sources are podcasts, streams or webinars.',
+      'Submagic is a caption editor that added clipping (Magic Clips); CREOVIS is a clipper built for long recordings. Submagic has no free plan and starts at $12/month billed yearly, $19 month to month.',
+      'Every Submagic plan counts videos and caps each one at 2, 5 or 30 minutes. CREOVIS is free and uncapped when self-hosted under MIT, or hosted from $12/month by the source minute.',
+      'Stay on Submagic if captions are the product and your videos are short. Move the long-form clipping to CREOVIS if your sources are podcasts, streams or webinars.',
     ],
     fit:
-      'Submagic and OpenShorts overlap where Magic Clips begins: turning a long video into clips. Submagic arrived there from captions, OpenShorts was built for it, and the meters show it: videos with a length cap on one side, source minutes or nothing at all on the other.',
+      'Submagic and CREOVIS overlap where Magic Clips begins: turning a long video into clips. Submagic arrived there from captions, CREOVIS was built for it, and the meters show it: videos with a length cap on one side, source minutes or nothing at all on the other.',
     watermark:
       'Submagic has no free plan to watermark: there is a trial, and Starter ($12/month yearly, $19 monthly) exports without a watermark.',
     stay: [
@@ -432,9 +432,9 @@ export const COMPETITORS = {
       'You want B-roll, auto zooms, hook titles and silence removal in the same editor as the captions.',
     ],
     migrate: [
-      'Check your source lengths first: any recording over 30 minutes does not fit a single Submagic video on any self-serve plan, and it is a normal input for OpenShorts.',
-      'Move the long-form clipping to OpenShorts and judge the caption style on one episode: the first video is clipped free up to 60 minutes.',
-      'Compare the meter: Submagic counts videos a month (15, 40 or 100); OpenShorts Cloud counts source minutes, and the self-hosted edition counts nothing.',
+      'Check your source lengths first: any recording over 30 minutes does not fit a single Submagic video on any self-serve plan, and it is a normal input for CREOVIS.',
+      'Move the long-form clipping to CREOVIS and judge the caption style on one episode: the first video is clipped free up to 60 minutes.',
+      'Compare the meter: Submagic counts videos a month (15, 40 or 100); CREOVIS Cloud counts source minutes, and the self-hosted edition counts nothing.',
       'If caption design is non-negotiable for a short, Submagic\'s Starter plan covers 15 videos of up to 2 minutes for $12/month billed yearly.',
     ],
     // "sub magic" and "submagic.co" are how part of the brand search is typed.
@@ -445,7 +445,7 @@ export const COMPETITORS = {
       },
     ],
     bestFor:
-      'Submagic is the better pick if captions are the product and your videos are short. OpenShorts is the better pick if you are starting from long-form video and want the moment finding and reframing to be the core of the tool, or want it free and self-hosted.',
+      'Submagic is the better pick if captions are the product and your videos are short. CREOVIS is the better pick if you are starting from long-form video and want the moment finding and reframing to be the core of the tool, or want it free and self-hosted.',
     rows: { 'Usage cap': 'Metered in videos per month, each capped at 2-30 min' },
   },
   'vidyo-ai': {
@@ -482,7 +482,7 @@ export const COMPETITORS = {
       },
       {
         q: 'Is Vidyo.ai (Quso) free?',
-        a: 'Quso has a free plan with 75 credits a month (about 75 minutes of video), 720p exports and 7-day data retention. Paid plans start at $19/month billed yearly or $29 month to month. OpenShorts self-hosted is free with no cap and no watermark; OpenShorts Cloud clips your first video free up to 60 minutes, then 20 minutes a month.',
+        a: 'Quso has a free plan with 75 credits a month (about 75 minutes of video), 720p exports and 7-day data retention. Paid plans start at $19/month billed yearly or $29 month to month. CREOVIS self-hosted is free with no cap and no watermark; CREOVIS Cloud clips your first video free up to 60 minutes, then 20 minutes a month.',
       },
     ],
     tiers: [
@@ -499,20 +499,20 @@ export const COMPETITORS = {
       'A mature product: the Vidyo.ai clipper has been on the market since before most of this category existed',
     ],
     whereWeDiffer: [
-      'OpenShorts is MIT-licensed and self-hostable; Quso is a closed cloud service.',
-      'OpenShorts is a clipper first: moment scoring, face-tracked reframing, two-speaker and screencast layouts, dubbing into 30+ languages with your own ElevenLabs key. Quso spreads across scheduling and planning too.',
-      'OpenShorts Cloud starts at $12/month billed monthly; Quso\'s cheapest paid plan is $29 month to month or $19/month on a yearly commitment.',
+      'CREOVIS is MIT-licensed and self-hostable; Quso is a closed cloud service.',
+      'CREOVIS is a clipper first: moment scoring, face-tracked reframing, two-speaker and screencast layouts, dubbing into 30+ languages with your own ElevenLabs key. Quso spreads across scheduling and planning too.',
+      'CREOVIS Cloud starts at $12/month billed monthly; Quso\'s cheapest paid plan is $29 month to month or $19/month on a yearly commitment.',
       'If you want one app that also plans and schedules your whole social calendar, Quso covers more ground than we do.',
     ],
     tldr: [
-      'Vidyo.ai is now Quso: the rebrand went live in January 2025, vidyo.ai redirects to quso.ai, and accounts carried over. The best alternatives today are OpusClip, Vizard and OpenShorts, the open source option: free to self-host under MIT, or $12/month hosted for 100 minutes with no watermark. Quso has a free plan of 75 credits a month at 720p and paid plans from $19/month billed yearly ($29 monthly).',
-      'Quso grew into a social suite (scheduling, a content planner, analytics) around the original clipper. OpenShorts stays a clipper: two-speaker, screencast and webcam-inset layouts, and dubbing into 30+ languages with your own ElevenLabs key.',
-      'OpenShorts is open source: free when you run it yourself, or hosted from $12/month billed monthly.',
+      'Vidyo.ai is now Quso: the rebrand went live in January 2025, vidyo.ai redirects to quso.ai, and accounts carried over. The best alternatives today are OpusClip, Vizard and CREOVIS, the open source option: free to self-host under MIT, or $12/month hosted for 100 minutes with no watermark. Quso has a free plan of 75 credits a month at 720p and paid plans from $19/month billed yearly ($29 monthly).',
+      'Quso grew into a social suite (scheduling, a content planner, analytics) around the original clipper. CREOVIS stays a clipper: two-speaker, screencast and webcam-inset layouts, and dubbing into 30+ languages with your own ElevenLabs key.',
+      'CREOVIS is open source: free when you run it yourself, or hosted from $12/month billed monthly.',
     ],
     fit:
-      'Quso kept the Vidyo.ai clipper and built a social suite around it. If the clipper is the part you use, OpenShorts replaces that part and leaves the scheduling to whatever you already use, or posts straight to TikTok, Reels and Shorts itself.',
+      'Quso kept the Vidyo.ai clipper and built a social suite around it. If the clipper is the part you use, CREOVIS replaces that part and leaves the scheduling to whatever you already use, or posts straight to TikTok, Reels and Shorts itself.',
     watermark:
-      'Quso\'s pricing page lists 75 free credits a month at 720p without stating a watermark either way; OpenShorts says it plainly: free Cloud clips are watermarked, self-hosted and paid ones are not.',
+      'Quso\'s pricing page lists 75 free credits a month at 720p without stating a watermark either way; CREOVIS says it plainly: free Cloud clips are watermarked, self-hosted and paid ones are not.',
     stay: [
       'You use the content planner, scheduling and analytics, which a clipper does not replace.',
       'You can commit to a yearly plan: it doubles the credits.',
@@ -521,11 +521,11 @@ export const COMPETITORS = {
     migrate: [
       'Download what you need: free-plan data is kept 7 days.',
       'Compare per minute on the billing you would actually use. Quso\'s yearly plans double the credits, so month to month it costs about three times as much per minute.',
-      'Run one long source through OpenShorts (first video free up to 60 minutes) and check the two-speaker and screencast layouts on your footage.',
-      'Decide where scheduling lives: OpenShorts posts directly to TikTok, Instagram Reels and YouTube Shorts, but it has no content planner or analytics.',
+      'Run one long source through CREOVIS (first video free up to 60 minutes) and check the two-speaker and screencast layouts on your footage.',
+      'Decide where scheduling lives: CREOVIS posts directly to TikTok, Instagram Reels and YouTube Shorts, but it has no content planner or analytics.',
     ],
     bestFor:
-      'Quso is the better pick if you want clipping, scheduling and analytics in one subscription. OpenShorts is the better pick if clipping quality and control are the job, or you want it free and self-hosted.',
+      'Quso is the better pick if you want clipping, scheduling and analytics in one subscription. CREOVIS is the better pick if clipping quality and control are the job, or you want it free and self-hosted.',
     rows: {
       'AI voice dubbing, 30+ languages': 'Not listed on its pricing page',
       'AI UGC video with lip-synced actors': 'Not listed on its pricing page',
@@ -538,7 +538,7 @@ export const COMPETITORS = {
       { k: 'Free plan', v: '30 min/mo', s: 'No watermark, YouTube links only' },
       { k: 'Paid from', v: '$9.90/mo', s: 'Lite, 5 hours of analysis' },
       { k: 'Input', v: 'Links', s: 'YouTube; Drive and URLs from Lite' },
-      { k: 'Open source', v: 'No', s: 'Cloud only. OpenShorts: MIT, self-hostable' },
+      { k: 'Open source', v: 'No', s: 'Cloud only. CREOVIS: MIT, self-hostable' },
     ],
     pick: {
       them: ['Your sources are already on YouTube', 'You want the lowest price per hour', 'One face-tracked crop is enough for your footage'],
@@ -549,7 +549,7 @@ export const COMPETITORS = {
     seo: {
       title: '2short AI: Pricing, Free Plan & Alternative',
       description:
-        '2short.ai turns YouTube videos into shorts from $9.90/month, with a free 30-minute plan. How it compares with OpenShorts, the open source alternative.',
+        '2short.ai turns YouTube videos into shorts from $9.90/month, with a free 30-minute plan. How it compares with CREOVIS, the open source alternative.',
       h1: '2short AI: what it does, what it costs, and the open source alternative',
     },
     checked: '2026-10-05',
@@ -560,11 +560,11 @@ export const COMPETITORS = {
     extraFaq: [
       {
         q: 'Is 2short AI free?',
-        a: 'It has a free Starter plan with 30 minutes of AI analysis a month, YouTube links only, and no watermark. Paid plans run from $9.90/month (5 hours) to $49.90/month (50 hours). OpenShorts self-hosted is free with no cap; OpenShorts Cloud clips your first video free up to 60 minutes, then 20 minutes a month.',
+        a: 'It has a free Starter plan with 30 minutes of AI analysis a month, YouTube links only, and no watermark. Paid plans run from $9.90/month (5 hours) to $49.90/month (50 hours). CREOVIS self-hosted is free with no cap; CREOVIS Cloud clips your first video free up to 60 minutes, then 20 minutes a month.',
       },
       {
         q: 'Can 2short AI clip a video I recorded myself?',
-        a: 'Its pricing page lists YouTube links on every plan and Google Drive or public URLs from the Lite plan up; uploading a local file is not listed there. OpenShorts accepts a YouTube link or a direct upload on every plan, including the free one.',
+        a: 'Its pricing page lists YouTube links on every plan and Google Drive or public URLs from the Lite plan up; uploading a local file is not listed there. CREOVIS accepts a YouTube link or a direct upload on every plan, including the free one.',
       },
     ],
     tiers: [
@@ -581,13 +581,13 @@ export const COMPETITORS = {
       'A focused YouTube-to-Shorts workflow with face tracking and brand presets',
     ],
     whereWeDiffer: [
-      'OpenShorts is MIT-licensed and self-hostable; 2short.ai is a closed cloud service.',
-      'OpenShorts takes a local upload on every plan; 2short.ai lists link imports (YouTube, Drive, URL).',
-      'OpenShorts adds layouts a single centred crop cannot do: two speakers stacked, screen recordings over the presenter, a webcam inset enlarged. It also dubs into 30+ languages with your own ElevenLabs key.',
-      '2short.ai is cheaper per hour of source than OpenShorts Cloud and keeps its free exports unwatermarked, which ours are not. That is a real advantage.',
+      'CREOVIS is MIT-licensed and self-hostable; 2short.ai is a closed cloud service.',
+      'CREOVIS takes a local upload on every plan; 2short.ai lists link imports (YouTube, Drive, URL).',
+      'CREOVIS adds layouts a single centred crop cannot do: two speakers stacked, screen recordings over the presenter, a webcam inset enlarged. It also dubs into 30+ languages with your own ElevenLabs key.',
+      '2short.ai is cheaper per hour of source than CREOVIS Cloud and keeps its free exports unwatermarked, which ours are not. That is a real advantage.',
     ],
     fit:
-      '2short.ai is the cheapest per hour and does one thing well: a face-tracked crop from a YouTube link. OpenShorts is the alternative when the footage is not that simple, or not on YouTube.',
+      '2short.ai is the cheapest per hour and does one thing well: a face-tracked crop from a YouTube link. CREOVIS is the alternative when the footage is not that simple, or not on YouTube.',
     watermark:
       '2short.ai does not watermark, even on its free plan; that is a real advantage over our hosted free plan, which does.',
     stay: [
@@ -596,17 +596,17 @@ export const COMPETITORS = {
       'You want unwatermarked free exports, which its free plan gives and our hosted free plan does not.',
     ],
     migrate: [
-      'Upload recordings straight from disk: OpenShorts takes a local file on every plan, so there is no need to put them on YouTube or Drive first.',
+      'Upload recordings straight from disk: CREOVIS takes a local file on every plan, so there is no need to put them on YouTube or Drive first.',
       'Try a two-person episode or a screen recording first; that is where the layouts differ most from a single crop.',
-      'Size it in minutes: 2short.ai meters hours analysed, OpenShorts Cloud meters minutes of source, from 100 minutes for $12/month.',
+      'Size it in minutes: 2short.ai meters hours analysed, CREOVIS Cloud meters minutes of source, from 100 minutes for $12/month.',
       'Self-host if the watermark on our free plan is the issue: the MIT edition never adds one.',
     ],
     bestFor:
-      '2short.ai is the better pick if your sources are YouTube videos, you want the lowest price per hour and a single face-tracked crop is enough. OpenShorts is the better pick for uploads, podcasts with two people on camera, screen recordings, or a free self-hosted setup.',
+      '2short.ai is the better pick if your sources are YouTube videos, you want the lowest price per hour and a single face-tracked crop is enough. CREOVIS is the better pick for uploads, podcasts with two people on camera, screen recordings, or a free self-hosted setup.',
     tldr: [
-      '2short.ai is a YouTube-to-Shorts web app from $9.90/month, with a free plan of 30 minutes a month and no watermark. OpenShorts is open source: free when you run it yourself, or hosted from $12/month.',
-      'Both find the moments and reframe them to 9:16 with face tracking. OpenShorts adds two-speaker, screencast and webcam-inset layouts, dubbing into 30+ languages with your own ElevenLabs key, and direct uploads on every plan.',
-      'Pick 2short.ai for the lowest price per hour on YouTube sources. Pick OpenShorts for uploads, multi-person footage, self-hosting or changing the pipeline.',
+      '2short.ai is a YouTube-to-Shorts web app from $9.90/month, with a free plan of 30 minutes a month and no watermark. CREOVIS is open source: free when you run it yourself, or hosted from $12/month.',
+      'Both find the moments and reframe them to 9:16 with face tracking. CREOVIS adds two-speaker, screencast and webcam-inset layouts, dubbing into 30+ languages with your own ElevenLabs key, and direct uploads on every plan.',
+      'Pick 2short.ai for the lowest price per hour on YouTube sources. Pick CREOVIS for uploads, multi-person footage, self-hosting or changing the pipeline.',
     ],
     rows: { 'Usage cap': 'Metered in hours of analysis per month' },
   },
@@ -615,7 +615,7 @@ export const COMPETITORS = {
       { k: 'Free plan', v: 'None', s: '3 free videos at sign-up' },
       { k: 'Clipping from', v: '$29/mo', s: 'Professional ($23 yearly); Starter has none' },
       { k: 'Billed by', v: 'Shorts', s: '20, 50 or unlimited a month' },
-      { k: 'Open source', v: 'No', s: 'Cloud only. OpenShorts: MIT, self-hostable' },
+      { k: 'Open source', v: 'No', s: 'Cloud only. CREOVIS: MIT, self-hostable' },
     ],
     pick: {
       them: ['You want faceless, avatar and prompt-to-video shorts too', 'You want captions translated into 100+ languages', 'One subscription for many formats matters more than depth'],
@@ -637,7 +637,7 @@ export const COMPETITORS = {
     extraFaq: [
       {
         q: 'Is SendShort free?',
-        a: 'There is no free plan: SendShort gives 3 free videos at sign-up and offers a refund within 24 hours of paying. Plans cost $19, $29 and $59 a month, or $15, $23 and $47 billed yearly, and clipping long videos starts on the $29 Professional plan. OpenShorts self-hosted is free; OpenShorts Cloud clips your first video free up to 60 minutes, then 20 minutes a month.',
+        a: 'There is no free plan: SendShort gives 3 free videos at sign-up and offers a refund within 24 hours of paying. Plans cost $19, $29 and $59 a month, or $15, $23 and $47 billed yearly, and clipping long videos starts on the $29 Professional plan. CREOVIS self-hosted is free; CREOVIS Cloud clips your first video free up to 60 minutes, then 20 minutes a month.',
       },
     ],
     tiers: [
@@ -654,32 +654,32 @@ export const COMPETITORS = {
       'An API and an agent interface for Claude, ChatGPT and Grok',
     ],
     whereWeDiffer: [
-      'OpenShorts is MIT-licensed and self-hostable; SendShort is a closed cloud service.',
-      'OpenShorts clips long videos on every plan, the free one included; SendShort starts long-video clipping at $29/month.',
-      'OpenShorts reframes with face tracking plus two-speaker, screencast and webcam-inset layouts, which is the hard part of clipping a podcast or a stream.',
+      'CREOVIS is MIT-licensed and self-hostable; SendShort is a closed cloud service.',
+      'CREOVIS clips long videos on every plan, the free one included; SendShort starts long-video clipping at $29/month.',
+      'CREOVIS reframes with face tracking plus two-speaker, screencast and webcam-inset layouts, which is the hard part of clipping a podcast or a stream.',
       'SendShort makes more kinds of short video than we do. If faceless or prompt-to-video content is the plan, it covers that and we do not.',
     ],
     fit:
-      'SendShort is a suite of short-video formats, and clipping long videos is one of them, from its $29 plan. OpenShorts is only the clipping, on every plan, the free one included.',
+      'SendShort is a suite of short-video formats, and clipping long videos is one of them, from its $29 plan. CREOVIS is only the clipping, on every plan, the free one included.',
     watermark:
       'SendShort has no free plan; its Starter plan ($19/month, $15 yearly) exports without a watermark but does not include long-video clipping.',
     stay: [
-      'You make faceless, avatar or prompt-to-video shorts, which OpenShorts does not.',
+      'You make faceless, avatar or prompt-to-video shorts, which CREOVIS does not.',
       'You need captions translated into 100+ languages with AI voice-over.',
       'One subscription for many formats matters more to you than depth in clipping.',
     ],
     migrate: [
       'If you subscribed only to clip long videos, note that SendShort offers a refund within 24 hours of paying.',
       'Check which plan you are really on: long-video clipping starts on Professional ($29/month, $23 yearly), not Starter.',
-      'Clip the same long recording in OpenShorts; the free plan clips your first video whole up to 60 minutes.',
+      'Clip the same long recording in CREOVIS; the free plan clips your first video whole up to 60 minutes.',
       'Keep SendShort for the faceless and avatar formats if you use them, and move the clipping alone.',
     ],
     bestFor:
-      'SendShort is the better pick if you want one subscription for faceless videos, avatars and clips. OpenShorts is the better pick if the job is turning your own long recordings into clips, cheaply or self-hosted.',
+      'SendShort is the better pick if you want one subscription for faceless videos, avatars and clips. CREOVIS is the better pick if the job is turning your own long recordings into clips, cheaply or self-hosted.',
     tldr: [
-      'SendShort is a short-form video suite from $19/month ($15 yearly), but clipping long videos starts on the $29/month plan. OpenShorts is open source: free when you run it yourself, or hosted from $12/month with clipping on every plan.',
-      'SendShort covers faceless videos, avatars and caption translation into 100+ languages. OpenShorts goes deeper on the clipping itself: moment scoring, face tracking, two-speaker and screencast layouts, dubbing into 30+ languages.',
-      'Pick SendShort for many formats in one tool. Pick OpenShorts to clip your own long recordings, self-host, or keep the cost down.',
+      'SendShort is a short-form video suite from $19/month ($15 yearly), but clipping long videos starts on the $29/month plan. CREOVIS is open source: free when you run it yourself, or hosted from $12/month with clipping on every plan.',
+      'SendShort covers faceless videos, avatars and caption translation into 100+ languages. CREOVIS goes deeper on the clipping itself: moment scoring, face tracking, two-speaker and screencast layouts, dubbing into 30+ languages.',
+      'Pick SendShort for many formats in one tool. Pick CREOVIS to clip your own long recordings, self-host, or keep the cost down.',
     ],
     rows: {
       'AI voice dubbing, 30+ languages': 'Caption translation and AI voice-over ($29 plan and up)',
@@ -694,7 +694,7 @@ export const COMPETITORS = {
       { k: 'Free plan', v: '1 hour/mo', s: 'Logo on exports, projects kept 3 days' },
       { k: 'Paid from', v: '$24/mo', s: 'Starter, 3 hours; $16.80 billed yearly' },
       { k: 'Billed by', v: 'Hours analysed', s: 'Of source video, reset on the 1st' },
-      { k: 'Open source', v: 'No', s: 'Cloud only. OpenShorts: MIT, self-hostable' },
+      { k: 'Open source', v: 'No', s: 'Cloud only. CREOVIS: MIT, self-hostable' },
     ],
     pick: {
       them: ['You want to fine-tune every clip by editing its transcript', 'You also record screen tutorials and schedule posts to six networks', 'One hour of source a month is all you clip'],
@@ -735,13 +735,13 @@ export const COMPETITORS = {
       'Captions and transcripts in 97 languages, it says, and uploads of up to 10 GB',
     ],
     whereWeDiffer: [
-      'OpenShorts is MIT-licensed and runs on your own machine with Docker; Choppity is a closed cloud service, so every upload goes to its servers.',
-      'Entry prices: OpenShorts Cloud is $12/month for 100 minutes, billed monthly; Choppity Starter is $24/month for 3 hours, or $16.80 on a yearly plan.',
-      'Choppity\'s free plan is the more generous hosted one: a full hour a month, against 20 minutes on OpenShorts Cloud after a first video of up to 60 minutes. Both mark free exports.',
-      'Choppity has the richer editor (transcript editing, profanity bleeping, a screen recorder). OpenShorts is built to finish clips without one, and adds dubbing into 30+ languages with your own ElevenLabs key.',
+      'CREOVIS is MIT-licensed and runs on your own machine with Docker; Choppity is a closed cloud service, so every upload goes to its servers.',
+      'Entry prices: CREOVIS Cloud is $12/month for 100 minutes, billed monthly; Choppity Starter is $24/month for 3 hours, or $16.80 on a yearly plan.',
+      'Choppity\'s free plan is the more generous hosted one: a full hour a month, against 20 minutes on CREOVIS Cloud after a first video of up to 60 minutes. Both mark free exports.',
+      'Choppity has the richer editor (transcript editing, profanity bleeping, a screen recorder). CREOVIS is built to finish clips without one, and adds dubbing into 30+ languages with your own ElevenLabs key.',
     ],
     fit:
-      'Choppity and OpenShorts both start from a long recording and return captioned vertical clips. Choppity expects you to polish each clip in its transcript editor; OpenShorts is built to hand back finished clips and to run without you, on our servers or on yours.',
+      'Choppity and CREOVIS both start from a long recording and return captioned vertical clips. Choppity expects you to polish each clip in its transcript editor; CREOVIS is built to hand back finished clips and to run without you, on our servers or on yours.',
     watermark:
       'Choppity puts a small logo in the corner of free-plan exports; any paid plan, from $24/month ($16.80 yearly), removes it, and old clips can be re-exported clean.',
     // Review pages normally reuse `stay` as "who it is for"; Choppity gets both.
@@ -753,30 +753,30 @@ export const COMPETITORS = {
     stay: [
       'One hour of source a month is all you clip and a corner logo does not bother you: the free plan covers it.',
       'You publish to LinkedIn, Facebook or Threads as well, and want the scheduler next to the clipper.',
-      'You pay yearly for Creator: $22.40/month for 5 hours is less per minute than OpenShorts Cloud\'s Creator plan at $24.17/month yearly for 300 minutes.',
+      'You pay yearly for Creator: $22.40/month for 5 hours is less per minute than CREOVIS Cloud\'s Creator plan at $24.17/month yearly for 300 minutes.',
     ],
     migrate: [
       'Download the clips you want to keep first: free projects are deleted after 3 days and Starter projects after 30.',
       'Use up the month\'s hours, then switch: usage resets on the 1st of each calendar month, and refunds are only offered within 14 days of a payment.',
-      'Convert the meter. Choppity sells hours of analysis, OpenShorts Cloud sells minutes of source: Starter\'s 3 hours is 180 minutes, between our $12 (100 minutes) and $29 (300 minutes) plans.',
+      'Convert the meter. Choppity sells hours of analysis, CREOVIS Cloud sells minutes of source: Starter\'s 3 hours is 180 minutes, between our $12 (100 minutes) and $29 (300 minutes) plans.',
       'Re-run a recent episode from the same YouTube link or file; the first video is clipped free up to 60 minutes, so the side-by-side costs nothing.',
-      'If a script called Choppity\'s API or MCP server, point it at the OpenShorts API or MCP server instead.',
+      'If a script called Choppity\'s API or MCP server, point it at the CREOVIS API or MCP server instead.',
     ],
     bestFor:
-      'Choppity is the better pick if you want to shape every clip by hand in a transcript editor, also record tutorials, and schedule to many networks from one tool. OpenShorts is the better pick if you want the clips finished without the editing pass, to pay monthly from $12, or to keep the whole pipeline on your own machine.',
+      'Choppity is the better pick if you want to shape every clip by hand in a transcript editor, also record tutorials, and schedule to many networks from one tool. CREOVIS is the better pick if you want the clips finished without the editing pass, to pay monthly from $12, or to keep the whole pipeline on your own machine.',
     tldr: [
       'Choppity is a closed-source cloud clipper for podcasts and long talking videos: it proposes clips, follows the active speaker and lets you edit each clip through its transcript. A screen recorder and a social scheduler come in the same account.',
       'It has a real free plan: 1 hour of analysis a month and no credit card, with a Choppity logo on exports and projects deleted after 3 days. Paid plans start at $24/month for 3 hours, or $16.80/month billed yearly.',
-      'OpenShorts is the open source alternative: free under MIT when you self-host it, with no logo and no meter, or hosted from $12/month billed monthly.',
+      'CREOVIS is the open source alternative: free under MIT when you self-host it, with no logo and no meter, or hosted from $12/month billed monthly.',
     ],
     extraFaq: [
       {
         q: 'How much does Choppity cost?',
-        a: 'Checked 29 October 2026: Free at $0 (1 hour of analysis a month), Starter $24/month for 3 hours, Creator $32/month for 5 hours with API access, Team $48/month for 5 hours with unlimited seats, and custom Enterprise plans. Yearly billing takes 30% off: $16.80, $22.40 and $33.60 a month. OpenShorts Cloud starts at $12/month for 100 minutes, and self-hosted it costs nothing.',
+        a: 'Checked 29 October 2026: Free at $0 (1 hour of analysis a month), Starter $24/month for 3 hours, Creator $32/month for 5 hours with API access, Team $48/month for 5 hours with unlimited seats, and custom Enterprise plans. Yearly billing takes 30% off: $16.80, $22.40 and $33.60 a month. CREOVIS Cloud starts at $12/month for 100 minutes, and self-hosted it costs nothing.',
       },
       {
         q: 'Does Choppity have an API?',
-        a: 'Yes. API access starts on the Creator plan ($32/month, $22.40 billed yearly), and Choppity also offers an MCP server for AI assistants. OpenShorts has a REST API, webhooks and an MCP server, and the self-hosted edition includes all three for free.',
+        a: 'Yes. API access starts on the Creator plan ($32/month, $22.40 billed yearly), and Choppity also offers an MCP server for AI assistants. CREOVIS has a REST API, webhooks and an MCP server, and the self-hosted edition includes all three for free.',
       },
     ],
     sources: [
@@ -799,13 +799,13 @@ export const COMPETITORS = {
       { k: 'Now called', v: 'Munch Studio', s: 'getmunch.com redirects to munchstudio.com' },
       { k: 'Free plan', v: 'None', s: '7-day trial, then the plan bills' },
       { k: 'Paid from', v: '$38/mo', s: 'Billed yearly; $68 month to month' },
-      { k: 'Open source', v: 'No', s: 'Cloud only. OpenShorts: MIT, self-hostable' },
+      { k: 'Open source', v: 'No', s: 'Cloud only. CREOVIS: MIT, self-hostable' },
     ],
     pick: {
       them: ['You want an AI to plan, write and post all of your social content, not only clips', 'You post images, carousels and generated videos too', 'You run several brands and want one workspace per client'],
       us: ['Clipping your own long videos is the whole job', 'You want a free plan, or to pay from $12/month rather than $38', 'You want the pipeline on your own machine, under MIT'],
     },
-    edge: 'Munch Studio plans, writes and schedules a whole social calendar, which OpenShorts does not.',
+    edge: 'Munch Studio plans, writes and schedules a whole social calendar, which CREOVIS does not.',
     name: 'Munch Studio',
     checked: '2026-10-29',
     published: '2026-10-29',
@@ -839,13 +839,13 @@ export const COMPETITORS = {
       'Multi-brand plans with a separate workspace, strategy and calendar per client, aimed at agencies',
     ],
     whereWeDiffer: [
-      'OpenShorts does one job, clipping long videos into vertical shorts, and costs $0 self-hosted or from $12/month hosted. Munch Studio sells a full social media service from $38/month on yearly billing.',
-      'OpenShorts has a free plan you can keep using; Munch Studio has a 7-day trial that becomes a subscription.',
-      'OpenShorts is MIT-licensed and can run on your own machine; Munch Studio is closed and cloud only.',
-      'Munch Studio writes and schedules posts that are not videos, and plans the calendar for you. OpenShorts does not, and is not trying to.',
+      'CREOVIS does one job, clipping long videos into vertical shorts, and costs $0 self-hosted or from $12/month hosted. Munch Studio sells a full social media service from $38/month on yearly billing.',
+      'CREOVIS has a free plan you can keep using; Munch Studio has a 7-day trial that becomes a subscription.',
+      'CREOVIS is MIT-licensed and can run on your own machine; Munch Studio is closed and cloud only.',
+      'Munch Studio writes and schedules posts that are not videos, and plans the calendar for you. CREOVIS does not, and is not trying to.',
     ],
     fit:
-      'If what you wanted from Munch was the clipping, OpenShorts does that part and nothing around it: give it a long video, get vertical clips with captions, post them to TikTok, Instagram or YouTube. If you want an AI running the whole social calendar, Munch Studio is a different product and OpenShorts does not replace it.',
+      'If what you wanted from Munch was the clipping, CREOVIS does that part and nothing around it: give it a long video, get vertical clips with captions, post them to TikTok, Instagram or YouTube. If you want an AI running the whole social calendar, Munch Studio is a different product and CREOVIS does not replace it.',
     forWhom: [
       'Small businesses that want social media handled without writing or designing posts themselves',
       'Agencies running social for several clients, with one isolated workspace per brand',
@@ -859,16 +859,16 @@ export const COMPETITORS = {
     migrate: [
       'Download the clips and posts you want to keep before the billing period ends: cancelling stops future charges and access lasts until then.',
       'If you are still inside the 7-day trial, cancel before it ends and nothing is charged.',
-      'Count the repurposing minutes you actually use. A weekly one-hour show is about 260 minutes a month, which fits OpenShorts Cloud\'s $29 plan (300 minutes); Essential\'s full 500 fits the $59 plan (750).',
-      'Run the same long video through OpenShorts; the first one is clipped free up to 60 minutes.',
-      'Keep a scheduler for image posts and carousels if you relied on Munch Studio for those: OpenShorts posts only the clips, to TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky.',
+      'Count the repurposing minutes you actually use. A weekly one-hour show is about 260 minutes a month, which fits CREOVIS Cloud\'s $29 plan (300 minutes); Essential\'s full 500 fits the $59 plan (750).',
+      'Run the same long video through CREOVIS; the first one is clipped free up to 60 minutes.',
+      'Keep a scheduler for image posts and carousels if you relied on Munch Studio for those: CREOVIS posts only the clips, to TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky.',
     ],
     bestFor:
-      'Munch Studio is the better pick if you want an AI to run your social media end to end and clips are one ingredient. OpenShorts is the better pick if you searched for getmunch because you want a clipper: it does that job alone, with a free plan, monthly billing from $12, or $0 on your own machine.',
+      'Munch Studio is the better pick if you want an AI to run your social media end to end and clips are one ingredient. CREOVIS is the better pick if you searched for getmunch because you want a clipper: it does that job alone, with a free plan, monthly billing from $12, or $0 on your own machine.',
     tldr: [
-      'GetMunch is now Munch Studio: getmunch.com redirects to munchstudio.com, which sells an AI that runs your social media marketing. The best alternatives today are OpusClip, Vizard and OpenShorts, the open source option: free to self-host under MIT, or $12/month hosted for 100 minutes with no watermark. Clipping long videos is still there, as an allowance of "video repurposing" minutes inside each plan.',
+      'GetMunch is now Munch Studio: getmunch.com redirects to munchstudio.com, which sells an AI that runs your social media marketing. The best alternatives today are OpusClip, Vizard and CREOVIS, the open source option: free to self-host under MIT, or $12/month hosted for 100 minutes with no watermark. Clipping long videos is still there, as an allowance of "video repurposing" minutes inside each plan.',
       'There is no free plan, only a 7-day trial that turns into a subscription. Plans start at $38/month billed yearly, or $68 month to month, for 500 minutes of video repurposing plus posts, scripts and generated videos.',
-      'If you came for the clipper, OpenShorts is the open source GetMunch alternative: free under MIT on your own machine, or hosted from $12/month with a free plan you can keep.',
+      'If you came for the clipper, CREOVIS is the open source GetMunch alternative: free under MIT on your own machine, or hosted from $12/month with a free plan you can keep.',
     ],
     extraFaq: [
       {
@@ -881,7 +881,7 @@ export const COMPETITORS = {
       },
       {
         q: 'How much does Munch Studio cost?',
-        a: 'Checked 29 October 2026: Essential $68/month or $38/month billed yearly (500 minutes of video repurposing), Premium $85/month or $60/month billed yearly (1,000 minutes), and the multi-brand Studio ($148/month) and Scale ($398/month) plans. There is a 7-day trial and no free plan. OpenShorts Cloud starts at $12/month for 100 minutes, and self-hosted it costs nothing.',
+        a: 'Checked 29 October 2026: Essential $68/month or $38/month billed yearly (500 minutes of video repurposing), Premium $85/month or $60/month billed yearly (1,000 minutes), and the multi-brand Studio ($148/month) and Scale ($398/month) plans. There is a 7-day trial and no free plan. CREOVIS Cloud starts at $12/month for 100 minutes, and self-hosted it costs nothing.',
       },
     ],
     sources: [
@@ -930,7 +930,7 @@ export const COMPARISON_ROWS = [
  * changes there, change the line here. Order is the order the list keeps once
  * the page's own tool is taken out. */
 export const ALT_PICKS = [
-  ['openshorts', 'OpenShorts', 'best free and open source option: $0 self-hosted (MIT, no watermark, no cap), or $12/month hosted for 100 minutes'],
+  ['openshorts', 'CREOVIS', 'best free and open source option: $0 self-hosted (MIT, no watermark, no cap), or $12/month hosted for 100 minutes'],
   ['vizard', 'Vizard', 'best value at volume: 600 minutes for $29/month ($14.50 billed yearly)'],
   ['klap', 'Klap', 'fastest link-to-clips: from $14/month billed yearly for 100 clips'],
   ['opus-clip', 'Opus Clip', 'most complete cloud clipper: from $15/month for 150 minutes, 60 watermarked minutes a month free'],
@@ -962,14 +962,14 @@ export const CITED_STATS = [
 export const PRICE_MODELS = {
   // The edition the hosted plans are a convenience over: same pipeline, your
   // machine, no meter. Shown as its own bar so the calculator never implies the
-  // hosted price is the only OpenShorts price.
+  // hosted price is the only CREOVIS price.
   'openshorts-self': {
-    name: 'OpenShorts self-hosted',
+    name: 'CREOVIS self-hosted',
     unit: 'your machine, MIT',
     plans: [{ name: 'Docker, no watermark, no cap', monthly: { minutes: 1e9, price: 0 } }],
   },
   openshorts: {
-    name: 'OpenShorts Cloud',
+    name: 'CREOVIS Cloud',
     unit: 'per source minute, trims and hooks free',
     checked: '2026-10-05',
     plans: [

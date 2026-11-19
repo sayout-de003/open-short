@@ -4,28 +4,28 @@ import PricingSection from './PricingSection';
 
 const FAQS = [
   {
-    question: "How does the OpenShorts plan work?",
-    answer: "OpenShorts provides free minutes to test the platform. Paid plans start at $12/month for 100 minutes without watermarks, and unlock full auto-posting to TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky, plus channel Autopilot to clip and schedule new videos automatically."
+    question: "How does the CREOVIS plan work?",
+    answer: "CREOVIS provides free minutes to test the platform. Paid plans start at $12/month for 100 minutes without watermarks, and unlock full auto-posting to TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky, plus channel Autopilot to clip and schedule new videos automatically."
   },
   {
-    question: "Can OpenShorts generate YouTube thumbnails and titles?",
-    answer: "Yes. OpenShorts includes an AI YouTube thumbnail generator, AI YouTube title generator, and AI YouTube description generator — all powered by Google Gemini 3.1 Flash-Lite. Upload your video and the AI suggests 10 viral title options with an interactive refinement chat. Then it generates multiple thumbnail designs using AI image generation — upload a face photo and background image for personalized results."
+    question: "Can CREOVIS generate YouTube thumbnails and titles?",
+    answer: "Yes. CREOVIS includes an AI YouTube thumbnail generator, AI YouTube title generator, and AI YouTube description generator — all powered by Google Gemini 3.1 Flash-Lite. Upload your video and the AI suggests 10 viral title options with an interactive refinement chat. Then it generates multiple thumbnail designs using AI image generation — upload a face photo and background image for personalized results."
   },
   {
     question: "How much does it cost to generate an AI UGC video?",
     answer: "AI Shorts uses external models (fal.ai for video generation, ElevenLabs for voiceover). Low Cost mode costs approximately $0.65 per video (Flux image + ElevenLabs voice + Hailuo img2video + VEED Lipsync + b-roll). Premium mode costs approximately $2.00 per video using Kling Avatar v2 for higher quality. Both modes are significantly cheaper than hiring UGC creators ($50-500 per video) or traditional agencies."
   },
   {
-    question: "Can OpenShorts post my clips to my social networks automatically?",
-    answer: "Yes, on every paid plan of OpenShorts (from $12/month). Connect your TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky accounts once from the app and each clip can be posted to all of them in one go, or scheduled, without downloading anything; posting runs on Upload-Post and is already set up for you. Autopilot goes one step further: connect your YouTube channel and every new video you upload is clipped on its own, and the best clips are scheduled to your socials, one a day at the hour you choose."
+    question: "Can CREOVIS post my clips to my social networks automatically?",
+    answer: "Yes, on every paid plan of CREOVIS (from $12/month). Connect your TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky accounts once from the app and each clip can be posted to all of them in one go, or scheduled, without downloading anything; posting runs on Upload-Post and is already set up for you. Autopilot goes one step further: connect your YouTube channel and every new video you upload is clipped on its own, and the best clips are scheduled to your socials, one a day at the hour you choose."
   },
   {
-    question: "I only want to post videos I already have. Do I need OpenShorts?",
-    answer: "No. OpenShorts is for cutting long videos into clips. If you only want to post videos or photos you already have to TikTok, Instagram, YouTube, LinkedIn, Facebook, X, Threads, Pinterest, Bluesky or Reddit, use Upload-Post (upload-post.com) directly: it is the social posting API OpenShorts publishes through."
+    question: "I only want to post videos I already have. Do I need CREOVIS?",
+    answer: "No. CREOVIS is for cutting long videos into clips. If you only want to post videos or photos you already have to TikTok, Instagram, YouTube, LinkedIn, Facebook, X, Threads, Pinterest, Bluesky or Reddit, use Upload-Post (upload-post.com) directly: it is the social posting API CREOVIS publishes through."
   },
   {
     question: "Does API and MCP access cost extra?",
-    answer: "No. Every plan can create API keys in the account page and use the REST API and the MCP server at mcp.openshorts.app/mcp. Calls draw from the same monthly minutes as the dashboard, so automating with Claude, ChatGPT or n8n does not change the price of anything."
+    answer: "No. Every plan can create API keys in the account page and use the REST API and the MCP server at mcp.creovis.app/mcp. Calls draw from the same monthly minutes as the dashboard, so automating with Claude, ChatGPT or n8n does not change the price of anything."
   }
 ];
 

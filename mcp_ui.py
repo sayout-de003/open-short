@@ -62,7 +62,7 @@ button:disabled{opacity:.4;cursor:default}
 </style>
 </head>
 <body>
-<h1 id="hd">OpenShorts clips</h1>
+<h1 id="hd">CREOVIS clips</h1>
 <div class="grid" id="grid"><span class="empty">Waiting for clip data…</span></div>
 <div class="bar" id="bar" hidden>
   <span class="chip on" data-p="tiktok">TikTok</span>
@@ -76,7 +76,7 @@ button:disabled{opacity:.4;cursor:default}
 </div>
 <div class="msg" id="msg"></div>
 <script>
-var inline = __OPENSHORTS_DATA__;
+var inline = __CREOVIS_DATA__;
 var state = null;
 var rendered = null;
 var selected = {};
@@ -208,7 +208,7 @@ else if (!fromOpenai()) {
 
 # Hosts cache a template by its URI (ChatGPT kept rendering the first version it
 # saw), so the URI carries a hash of the HTML: any change is a new template.
-CLIP_PICKER_BASE = "ui://openshorts/clip-picker"
+CLIP_PICKER_BASE = "ui://creovis/clip-picker"
 CLIP_PICKER_URI = (CLIP_PICKER_BASE + "-"
                    + hashlib.sha256(_TEMPLATE.encode()).hexdigest()[:10])
 
@@ -216,7 +216,7 @@ RESOURCES = [
     {
         "uri": CLIP_PICKER_URI,
         "name": "clip-picker",
-        "title": "OpenShorts clip picker",
+        "title": "CREOVIS clip picker",
         "description": (
             "Interactive picker for a job's finished clips: preview each 9:16 "
             "clip, select the keepers and publish them to TikTok, Instagram, "
@@ -247,4 +247,4 @@ def clip_picker_html(data=None) -> str:
     """
     payload = "null" if data is None else json.dumps(
         data, ensure_ascii=False).replace("<", "\\u003c")
-    return _TEMPLATE.replace("__OPENSHORTS_DATA__", payload)
+    return _TEMPLATE.replace("__CREOVIS_DATA__", payload).replace("__OPENSHORTS_DATA__", payload)
