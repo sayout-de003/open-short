@@ -43,6 +43,8 @@ def schedule_clip_post(
     clip_index: int,
     scheduled_at: str,
     platforms: Optional[List[str]] = None,
+    provider: Optional[str] = "auto",
+    buffer_channels: Optional[List[str]] = None,
     title: Optional[str] = None,
     description: Optional[str] = None,
     privacy_status: Optional[str] = "public",
@@ -69,6 +71,8 @@ def schedule_clip_post(
         "clip_index": clip_index,
         "scheduled_at": dt.isoformat(),
         "platforms": platforms or ["youtube"],
+        "provider": provider or "auto",
+        "buffer_channels": buffer_channels or [],
         "title": title,
         "description": description,
         "privacy_status": privacy_status or "public",
@@ -79,7 +83,7 @@ def schedule_clip_post(
     }
     posts.append(entry)
     _save_schedules(posts)
-    print(f"📅 [Scheduler] Scheduled clip {clip_index} of {job_id} for auto-posting at {dt.isoformat()}")
+    print(f"📅 [Scheduler] Scheduled clip {clip_index} of {job_id} for auto-posting at {dt.isoformat()} (provider: {provider})")
     return entry
 
 
@@ -89,6 +93,8 @@ def auto_schedule_project(
     start_time: Optional[str] = None,
     interval_hours: float = 4.0,
     platforms: Optional[List[str]] = None,
+    provider: Optional[str] = "auto",
+    buffer_channels: Optional[List[str]] = None,
     privacy_status: str = "public",
 ) -> List[Dict[str, Any]]:
     """Automatically schedule all clips in a project spaced out across days/hours."""
@@ -119,13 +125,15 @@ def auto_schedule_project(
             clip_index=i,
             scheduled_at=clip_time.isoformat(),
             platforms=platforms or ["youtube"],
+            provider=provider or "auto",
+            buffer_channels=buffer_channels,
             title=clip_title,
             description=clip_desc,
             privacy_status=privacy_status,
         )
         scheduled_entries.append(entry)
 
-    print(f"🚀 [Scheduler] Auto-scheduled {len(scheduled_entries)} clips for job {job_id}")
+    print(f"🚀 [Scheduler] Auto-scheduled {len(scheduled_entries)} clips for job {job_id} (provider: {provider})")
     return scheduled_entries
 
 
@@ -195,9 +203,12 @@ async def execute_due_posts(app_module):
                 title = post.get("title") or clip.get("video_title_for_youtube_short") or "Short"
                 description = post.get("description") or clip.get("video_description_for_instagram") or ""
                 results_collected = {}
+                provider = post.get("provider", "auto")
+                use_youtube = provider in ("youtube", "both", "auto")
+                use_buffer = provider in ("buffer", "both", "auto")
 
                 # 1. Direct YouTube Publishing
-                if "youtube" in platforms and youtube_publisher.is_direct_youtube_configured():
+                if use_youtube and "youtube" in platforms and youtube_publisher.is_direct_youtube_configured():
                     try:
                         yt_result = await asyncio.to_thread(
                             youtube_publisher.upload_video_to_youtube,
@@ -218,16 +229,24 @@ async def execute_due_posts(app_module):
 
                 # 2. Buffer Publishing across connected social channels
                 buffer_channels = post.get("buffer_channels")
-                if buffer_publisher.is_buffer_configured():
+                if use_buffer and buffer_publisher.is_buffer_configured():
                     try:
                         all_buffer_channels = await asyncio.to_thread(buffer_publisher.list_channels)
                         channels_to_post = []
                         if buffer_channels:
                             channels_to_post = [c for c in all_buffer_channels if c.get("id") in buffer_channels]
                         else:
-                            # Match channels by platform (e.g. instagram, tiktok, facebook, linkedin, twitter, etc.)
-                            target_services = set(p.lower() for p in platforms if p != "youtube" or not youtube_publisher.is_direct_youtube_configured())
-                            channels_to_post = [c for c in all_buffer_channels if c.get("service", "").lower() in target_services]
+                            if provider == "buffer":
+                                # Post to all matching or all available Buffer channels
+                                target_services = set(p.lower() for p in platforms)
+                                channels_to_post = [c for c in all_buffer_channels if c.get("service", "").lower() in target_services]
+                                if not channels_to_post:
+                                    channels_to_post = all_buffer_channels
+                            else:
+                                # For "both" or "auto", only include youtube if direct youtube was not used
+                                yt_handled = "youtube" in results_collected
+                                target_services = set(p.lower() for p in platforms if p != "youtube" or not yt_handled)
+                                channels_to_post = [c for c in all_buffer_channels if c.get("service", "").lower() in target_services]
 
                         if channels_to_post:
                             video_url = clip.get("video_url")

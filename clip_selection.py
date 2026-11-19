@@ -49,14 +49,11 @@ def clip_count_targets(n_windows):
     import os
 
     n = max(1, int(n_windows or 1))
-    if os.environ.get("IS_LIVE_STREAM") == "1":
-        low, high = 1, 2
-    else:
-        # Floor grows with the material: 3 windows -> 3, 5 -> 4, 10+ -> 6.
-        low = max(2, min(6, n // 2 + 2))
-        # Ceiling allows a rich window to yield more than one without inviting padding.
-        high = min(12, max(4, n * 2))
-        low = min(low, high)
+    # Floor grows with the material: 3 windows -> 3, 5 -> 4, 10+ -> 6.
+    low = max(2, min(6, n // 2 + 2))
+    # Ceiling allows a rich window to yield more than one without inviting padding.
+    high = min(12, max(4, n * 2))
+    low = min(low, high)
 
     def _override(name, current):
         raw = os.environ.get(name)
@@ -83,8 +80,6 @@ def shortlist_target(video_duration):
         seconds = float(video_duration or 0)
     except (TypeError, ValueError):
         seconds = 0.0
-    if os.environ.get("IS_LIVE_STREAM") == "1":
-        return 2
     return max(3, min(10, int(seconds // 90) + 2))
 
 

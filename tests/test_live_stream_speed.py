@@ -6,29 +6,29 @@ from clip_selection import shortlist_target, clip_count_targets
 
 def test_live_stream_shortlist_target():
     with patch.dict(os.environ, {"IS_LIVE_STREAM": "1"}):
-        assert shortlist_target(600) == 2
-        assert shortlist_target(120) == 2
+        assert shortlist_target(600) == 8
+        assert shortlist_target(120) == 3
 
 
 def test_live_stream_clip_count_targets():
     with patch.dict(os.environ, {"IS_LIVE_STREAM": "1"}):
         low, high = clip_count_targets(5)
-        assert low == 1
-        assert high == 2
+        assert low >= 3
+        assert high >= 5
 
 
 def test_live_stream_override_targets():
-    with patch.dict(os.environ, {"IS_LIVE_STREAM": "1", "CLIP_TARGET_MAX": "3", "CLIP_TARGET_MIN": "2"}):
+    with patch.dict(os.environ, {"IS_LIVE_STREAM": "1", "CLIP_TARGET_MAX": "5", "CLIP_TARGET_MIN": "3"}):
         low, high = clip_count_targets(5)
-        assert low == 2
-        assert high == 3
+        assert low == 3
+        assert high == 5
 
 
 def test_live_cut_seconds_env_parsing():
-    val = float(os.environ.get("LIVE_CUT_SECONDS", "120"))
-    assert val == 120 or val > 0
+    val = float(os.environ.get("LIVE_CUT_SECONDS", "600"))
+    assert val == 600 or val > 0
     with patch.dict(os.environ, {"LIVE_CUT_SECONDS": "90"}):
-        assert float(os.environ.get("LIVE_CUT_SECONDS", "120")) == 90.0
+        assert float(os.environ.get("LIVE_CUT_SECONDS", "600")) == 90.0
 
 
 def test_live_ffmpeg_hls_command_options():

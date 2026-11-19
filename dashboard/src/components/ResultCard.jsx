@@ -254,14 +254,19 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
     const [bufferConfigured, setBufferConfigured] = useState(false);
     const [bufferAccount, setBufferAccount] = useState(null);
     const [bufferChannels, setBufferChannels] = useState([]);
+    const [selectedProvider, setSelectedProvider] = useState('buffer');
 
     useEffect(() => {
+        let ytOk = false;
+        let bufOk = false;
         apiFetch('/api/youtube/config')
             .then(r => r.json())
             .then(data => {
                 if (data && data.configured) {
                     setYtDirectConfigured(true);
+                    ytOk = true;
                     if (data.default_privacy) setYtPrivacy(data.default_privacy);
+                    if (!bufOk) setSelectedProvider('youtube');
                 }
             })
             .catch(() => {});
@@ -271,8 +276,10 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
             .then(data => {
                 if (data && data.configured) {
                     setBufferConfigured(true);
+                    bufOk = true;
                     setBufferAccount(data.account);
                     setBufferChannels(data.channels || []);
+                    setSelectedProvider('buffer');
                 }
             })
             .catch(() => {});
@@ -844,15 +851,19 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
     };
 
     // Managed users, BYOK upload-post, direct YouTube, or Buffer integration
-    const canPost = isManaged || (uploadPostKey && uploadUserId) || (ytDirectConfigured && platforms.youtube) || bufferConfigured;
+    const canPost = isManaged ||
+        (uploadPostKey && uploadUserId) ||
+        (selectedProvider === 'buffer' && bufferConfigured) ||
+        (selectedProvider === 'youtube' && ytDirectConfigured) ||
+        (selectedProvider === 'both' && (bufferConfigured || ytDirectConfigured));
 
     const handlePost = async () => {
         if (!canPost) {
-            setPostResult({ success: false, msg: "Missing API Key or User ID." });
+            setPostResult({ success: false, msg: "Please connect Buffer or YouTube Direct to publish/schedule." });
             return;
         }
 
-        if (noAccountsConnected) {
+        if (noAccountsConnected && !bufferConfigured && !ytDirectConfigured) {
             setPostResult({ success: false, msg: "Connect a social account first." });
             return;
         }
@@ -882,6 +893,7 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                         clip_index: index,
                         scheduled_at: new Date(scheduleDate).toISOString(),
                         platforms: selectedPlatforms,
+                        provider: selectedProvider,
                         title: postTitle,
                         description: postDescription,
                         privacy_status: ytPrivacy,
@@ -912,9 +924,49 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
             }
         }
 
-        // Check if direct YouTube upload should handle YouTube directly
-        const isDirectYt = ytDirectConfigured && selectedPlatforms.includes('youtube') && (!uploadPostKey || selectedPlatforms.length === 1);
-        if (isDirectYt && selectedPlatforms.length === 1 && !isScheduling) {
+        // Direct Buffer publishing immediately
+        if (!isScheduling && (selectedProvider === 'buffer' || (selectedProvider === 'both' && bufferConfigured))) {
+            try {
+                const res = await apiFetch('/api/buffer/publish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        job_id: jobId,
+                        clip_index: index,
+                        title: postTitle,
+                        text: postDescription,
+                    })
+                });
+                if (!res.ok) {
+                    const errText = await res.text();
+                    let detail = errText;
+                    try { detail = JSON.parse(errText).detail || errText; } catch {}
+                    throw new Error(detail);
+                }
+                const sent = await res.json();
+                if (selectedProvider === 'buffer') {
+                    setPostResult({
+                        success: true,
+                        msg: `Published to ${sent.results?.length || 1} Buffer channels!`,
+                    });
+                    setTimeout(() => {
+                        setShowModal(false);
+                        setPostResult(null);
+                    }, 3000);
+                    return;
+                }
+            } catch (e) {
+                if (selectedProvider === 'buffer') {
+                    setPostResult({ success: false, msg: `Buffer Publish Failed: ${e.message}` });
+                    setPosting(false);
+                    return;
+                }
+            }
+        }
+
+        // Direct YouTube upload immediately
+        const isDirectYt = ytDirectConfigured && (selectedProvider === 'youtube' || selectedProvider === 'both');
+        if (isDirectYt && !isScheduling) {
             try {
                 const res = await apiFetch('/api/youtube/publish', {
                     method: 'POST',
@@ -1496,14 +1548,14 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                 title="post clip"
                 size="md"
                 footer={
-                    (platforms.youtube && !ytDirectConfigured && !uploadPostKey && Object.keys(platforms).filter(k => platforms[k]).length === 1) ? (
+                    (selectedProvider === 'youtube' && !ytDirectConfigured && !uploadPostKey) ? (
                         <a
                             href="/api/youtube/auth/login"
                             className="btn-primary w-full flex items-center justify-center gap-2 py-2.5 text-xs text-center font-medium"
                         >
                             <Youtube size={16} /> 1-Click Connect YouTube Channel
                         </a>
-                    ) : (noAccountsConnected && !platforms.youtube) ? (
+                    ) : (noAccountsConnected && !platforms.youtube && !bufferConfigured) ? (
                         <button onClick={handleConnectAccounts} className="btn-primary w-full">
                             <Link2 size={16} /> connect accounts
                         </button>
@@ -1518,7 +1570,54 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                     )
                 }
             >
-                {platforms.youtube && !ytDirectConfigured && (
+                {/* Publishing Service Selector */}
+                <div className="mb-4 p-3 rounded-input bg-paper border border-rule space-y-2">
+                    <div className="flex items-center justify-between">
+                        <label className="eyebrow block">PUBLISHING SERVICE</label>
+                        <span className="text-[11px] text-muted">
+                            {selectedProvider === 'buffer' ? (bufferConfigured ? `${bufferChannels.length} Buffer channels ready` : 'Buffer not configured') :
+                             selectedProvider === 'youtube' ? (ytDirectConfigured ? 'YouTube Direct ready' : 'YouTube OAuth required') :
+                             'Both services'}
+                        </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setSelectedProvider('buffer')}
+                            className={`py-2 px-2 text-xs rounded-input font-medium flex items-center justify-center gap-1.5 border transition-all ${
+                                selectedProvider === 'buffer'
+                                    ? 'bg-brass/10 border-brass text-brass'
+                                    : 'bg-paper hover:bg-hover border-rule text-muted hover:text-ink'
+                            }`}
+                        >
+                            <Share2 size={13} /> Buffer {bufferConfigured ? '✓' : ''}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setSelectedProvider('youtube')}
+                            className={`py-2 px-2 text-xs rounded-input font-medium flex items-center justify-center gap-1.5 border transition-all ${
+                                selectedProvider === 'youtube'
+                                    ? 'bg-red-500/10 border-red-500 text-red-500'
+                                    : 'bg-paper hover:bg-hover border-rule text-muted hover:text-ink'
+                            }`}
+                        >
+                            <Youtube size={13} /> YouTube Direct {ytDirectConfigured ? '✓' : ''}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setSelectedProvider('both')}
+                            className={`py-2 px-2 text-xs rounded-input font-medium flex items-center justify-center gap-1.5 border transition-all ${
+                                selectedProvider === 'both'
+                                    ? 'bg-ink/10 border-ink text-ink font-semibold'
+                                    : 'bg-paper hover:bg-hover border-rule text-muted hover:text-ink'
+                            }`}
+                        >
+                            Both / All
+                        </button>
+                    </div>
+                </div>
+
+                {selectedProvider !== 'buffer' && platforms.youtube && !ytDirectConfigured && (
                     <div className="mb-4 p-3 rounded-input text-xs bg-paper border border-brass/50 space-y-2.5 animate-fade">
                         <div className="flex items-center justify-between">
                             <span className="font-semibold text-ink flex items-center gap-1.5">
@@ -1572,7 +1671,7 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                     </div>
                 )}
 
-                {bufferConfigured && (
+                {selectedProvider !== 'youtube' && bufferConfigured && (
                     <div className="mb-4 p-3 rounded-input text-xs bg-paper border border-brass/40 space-y-2 animate-fade">
                         <div className="flex items-center justify-between">
                             <span className="font-semibold text-ink flex items-center gap-1.5">

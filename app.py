@@ -9286,6 +9286,8 @@ class ScheduleClipRequest(BaseModel):
     clip_index: int
     scheduled_at: str  # ISO-8601 string
     platforms: Optional[List[str]] = None
+    provider: Optional[str] = "auto"
+    buffer_channels: Optional[List[str]] = None
     title: Optional[str] = None
     description: Optional[str] = None
     privacy_status: Optional[str] = "public"
@@ -9296,6 +9298,8 @@ class AutoScheduleProjectRequest(BaseModel):
     start_time: Optional[str] = None
     interval_hours: Optional[float] = 4.0
     platforms: Optional[List[str]] = None
+    provider: Optional[str] = "auto"
+    buffer_channels: Optional[List[str]] = None
     privacy_status: Optional[str] = "public"
 
 
@@ -9320,6 +9324,8 @@ async def api_schedule_clip(req: ScheduleClipRequest, request: Request):
             clip_index=req.clip_index,
             scheduled_at=req.scheduled_at,
             platforms=req.platforms or ["youtube"],
+            provider=req.provider or "auto",
+            buffer_channels=req.buffer_channels,
             title=title,
             description=desc,
             privacy_status=req.privacy_status,
@@ -9350,6 +9356,8 @@ async def api_auto_schedule_project(req: AutoScheduleProjectRequest, request: Re
         start_time=req.start_time,
         interval_hours=req.interval_hours or 4.0,
         platforms=req.platforms or ["youtube"],
+        provider=req.provider or "auto",
+        buffer_channels=req.buffer_channels,
         privacy_status=req.privacy_status or "public",
     )
     return {"success": True, "count": len(entries), "schedules": entries}

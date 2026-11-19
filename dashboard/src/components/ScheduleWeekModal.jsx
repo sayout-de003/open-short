@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Loader2, Calendar, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Circle, ExternalLink } from 'lucide-react';
+import { Loader2, Calendar, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Circle, ExternalLink, Share2, Youtube } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { platformOptions, defaultPlatformFlags, flagsFromList } from '../lib/socialPlatforms';
 import Modal from './ui/Modal';
@@ -78,13 +78,19 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
     const [intervalHours, setIntervalHours] = useState(24);
     const [ytDirectConfigured, setYtDirectConfigured] = useState(false);
     const [bufferConfigured, setBufferConfigured] = useState(false);
+    const [bufferChannels, setBufferChannels] = useState([]);
+    const [selectedProvider, setSelectedProvider] = useState('buffer');
 
     React.useEffect(() => {
+        let ytOk = false;
+        let bufOk = false;
         apiFetch('/api/youtube/config')
             .then(r => r.json())
             .then(data => {
                 if (data && data.configured) {
                     setYtDirectConfigured(true);
+                    ytOk = true;
+                    if (!bufOk) setSelectedProvider('youtube');
                 }
             })
             .catch(() => {});
@@ -94,6 +100,9 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
             .then(data => {
                 if (data && data.configured) {
                     setBufferConfigured(true);
+                    bufOk = true;
+                    setBufferChannels(data.channels || []);
+                    setSelectedProvider('buffer');
                 }
             })
             .catch(() => {});
@@ -151,7 +160,11 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
     const selectedPlatforms = Object.keys(platforms).filter(k => platforms[k]);
 
     // Managed users, upload-post, direct YouTube, or Buffer
-    const canPost = isManaged || (uploadPostKey && uploadUserId) || (ytDirectConfigured && platforms.youtube) || bufferConfigured;
+    const canPost = isManaged ||
+        (uploadPostKey && uploadUserId) ||
+        (selectedProvider === 'buffer' && bufferConfigured) ||
+        (selectedProvider === 'youtube' && ytDirectConfigured) ||
+        (selectedProvider === 'both' && (bufferConfigured || ytDirectConfigured));
 
     const handleScheduleAll = async () => {
         if (!canPost) return;
@@ -175,6 +188,7 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
                 clip_index: index,
                 scheduled_at: scheduledIso,
                 platforms: selectedPlatforms,
+                provider: selectedProvider,
                 title: clip.video_title_for_youtube_short || 'Viral Short',
                 description: clip.video_description_for_instagram || clip.video_description_for_tiktok || '',
                 privacy_status: 'public'
@@ -267,6 +281,53 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
                     <div>Connect your YouTube channel, Buffer account, or set Upload-Post API key in Settings.</div>
                 </div>
             )}
+
+            {/* Publishing Service */}
+            <div className="mb-5 p-3 rounded-input bg-paper border border-rule space-y-2">
+                <div className="flex items-center justify-between">
+                    <label className="eyebrow block">PUBLISHING SERVICE</label>
+                    <span className="text-[11px] text-muted">
+                        {selectedProvider === 'buffer' ? (bufferConfigured ? `${bufferChannels.length} Buffer channels ready` : 'Buffer not connected') :
+                         selectedProvider === 'youtube' ? (ytDirectConfigured ? 'YouTube Direct ready' : 'YouTube OAuth required') :
+                         'Both services'}
+                    </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setSelectedProvider('buffer')}
+                        className={`py-2 px-2 text-xs rounded-input font-medium flex items-center justify-center gap-1.5 border transition-all ${
+                            selectedProvider === 'buffer'
+                                ? 'bg-brass/10 border-brass text-brass'
+                                : 'bg-paper hover:bg-hover border-rule text-muted hover:text-ink'
+                        }`}
+                    >
+                        <Share2 size={13} /> Buffer {bufferConfigured ? '✓' : ''}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSelectedProvider('youtube')}
+                        className={`py-2 px-2 text-xs rounded-input font-medium flex items-center justify-center gap-1.5 border transition-all ${
+                            selectedProvider === 'youtube'
+                                ? 'bg-red-500/10 border-red-500 text-red-500'
+                                : 'bg-paper hover:bg-hover border-rule text-muted hover:text-ink'
+                        }`}
+                    >
+                        <Youtube size={13} /> YouTube Direct {ytDirectConfigured ? '✓' : ''}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSelectedProvider('both')}
+                        className={`py-2 px-2 text-xs rounded-input font-medium flex items-center justify-center gap-1.5 border transition-all ${
+                            selectedProvider === 'both'
+                                ? 'bg-ink/10 border-ink text-ink font-semibold'
+                                : 'bg-paper hover:bg-hover border-rule text-muted hover:text-ink'
+                        }`}
+                    >
+                        Both / All
+                    </button>
+                </div>
+            </div>
 
             {/* Interval Spacing */}
             <div className="mb-5">

@@ -1302,16 +1302,16 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
         # Real-time live video cutting: do not wait for the stream to end.
         is_live = bool(info.get('is_live') or info.get('live_status') == 'is_live')
         if is_live:
-            # Default to 90s-120s rolling window (1-2 min delay) for ultra-fast reel generation
-            live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "90"))
-            print(f"🔴 Live video stream detected! Real-time live clipping active (capturing {live_seconds/60:.1f}m rolling window from 1-2 min buffer)...")
+            # Default to 600s (10 min) rolling window (or LIVE_CUT_SECONDS) so big live streams yield multiple reels
+            live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "600"))
+            print(f"🔴 Live video stream detected! Real-time live clipping active (capturing {live_seconds/60:.1f}m rolling window)...")
             os.environ["IS_LIVE_STREAM"] = "1"
             if not os.environ.get("X264_PRESET"):
                 os.environ["X264_PRESET"] = "ultrafast"
             if not os.environ.get("CLIP_TARGET_MAX"):
-                os.environ["CLIP_TARGET_MAX"] = "2"
+                os.environ["CLIP_TARGET_MAX"] = "5"
             if not os.environ.get("CLIP_TARGET_MIN"):
-                os.environ["CLIP_TARGET_MIN"] = "1"
+                os.environ["CLIP_TARGET_MIN"] = "3"
 
             v_url = None
             a_url = None
@@ -1348,7 +1348,7 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
                             expected
                         ]
                     print(f"🎬 Capturing live stream via fast HLS demuxer for {live_seconds}s (start index {start_index})...")
-                    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=int(live_seconds + 30))
+                    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=int(live_seconds + 60))
                     if os.path.exists(expected) and os.path.getsize(expected) > 256 * 1024:
                         print(f"✅ Real-time live stream captured ({os.path.getsize(expected)} bytes). Cutting clips immediately!")
                         return sanitized
@@ -1357,7 +1357,7 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
 
         # If live stream fell back to yt-dlp, ensure _range_cap is set to live_seconds
         if is_live and not _range_cap:
-            _range_cap = float(os.environ.get("LIVE_CUT_SECONDS", "90"))
+            _range_cap = float(os.environ.get("LIVE_CUT_SECONDS", "600"))
 
         # Only when the whole source is far bigger than what was paid for: a
         # ranged fetch goes through ffmpeg at ~1-2.5x realtime, while a native
@@ -1367,7 +1367,7 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
         ranged = False
         if _range_cap or is_live:
             _dur = info.get('duration')
-            ranged = is_live or not _dur or float(_dur) > max(3 * (_range_cap or 120), (_range_cap or 120) + 2700)
+            ranged = is_live or not _dur or float(_dur) > max(3 * (_range_cap or 600), (_range_cap or 600) + 2700)
         # Once per download, and not on the per-GB proxy (that is paid bytes,
         # and it is the last resort anyway). Not for a ranged download either:
         # the early audio would be the whole source.
