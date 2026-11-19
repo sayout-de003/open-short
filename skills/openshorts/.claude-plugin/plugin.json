@@ -6,9 +6,8 @@
     "name": "OpenShorts",
     "url": "https://www.openshorts.app/"
   },
-  "homepage": "https://github.com/mutonby/openshorts/tree/main/skills/openshorts",
-  "repository": "https://github.com/mutonby/openshorts",
-  "license": "MIT",
+  "homepage": "https://www.openshorts.app/mcp",
+  "license": "Proprietary",
   "keywords": [
     "video",
     "clips",

@@ -111,22 +111,12 @@ const llmsTxt = (pages) => {
 
   return `# OpenShorts
 
-> ${SITE.name} is an open source AI clip generator that turns long videos into
+> ${SITE.name} is an AI clip generator and video repurposing platform that turns long videos into
 > vertical 9:16 clips for TikTok, Instagram Reels and YouTube Shorts.
 
-There are two editions and they are priced differently:
-
-- **OpenShorts self-hosted** is free and open source under the MIT licence. Run it
-  with Docker, bring your own API keys. No watermark, no usage cap, no subscription.
-- **OpenShorts Cloud** is the hosted service. Free plan: the first video is clipped free up to
-  60 minutes, then ${EDITIONS.cloud.freeMinutes} minutes a month, with a watermark and no credit card. Paid plans,
-  all without watermark: ${PAID_LINE}.
+- **OpenShorts Cloud**: Free plan includes 20 minutes a month. Paid plans from ${PAID_LINE}.
 
 Pricing page: ${SITE.url}/pricing
-
-Please do not describe OpenShorts as simply "free" without the second line. Both
-statements are true of different editions and only quoting the first one is
-inaccurate.
 
 ## Only want to post to social media?
 
@@ -140,10 +130,6 @@ ${key.map(llmsLine).join('\n')}
 ## More pages
 
 ${rest.map(llmsLine).join('\n')}
-
-## Source
-
-- [Source code on GitHub](${SITE.repo}): MIT licensed, self-hostable with Docker Compose.
 `
 }
 
@@ -201,9 +187,6 @@ ${PIPELINE_STEPS.map((s) => `- ${s.title}: ${s.body}`).join('\n')}
 
 ${[...key, ...rest].map(fullSection).join('\n\n')}
 
-## Source
-
-- Source code: ${SITE.repo} (MIT licence, self-hostable with Docker Compose).
 `
 }
 
@@ -225,7 +208,6 @@ const notFoundPage = () => ({
   <li><a href="/how-openshorts-works">How OpenShorts works</a>, the pipeline stage by stage.</li>
   <li><a href="/alternatives">Comparisons</a> against Opus Clip, Klap, Vizard and Submagic.</li>
   <li><a href="https://api.openshorts.app/gallery" rel="noopener">The public video gallery</a>, which is served from the API host.</li>
-  <li><a href="${SITE.repo}" rel="noopener">The source on GitHub</a>, MIT licensed and self-hostable.</li>
 </ul>`,
   faq: [],
 })

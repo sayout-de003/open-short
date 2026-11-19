@@ -1423,15 +1423,6 @@ function App() {
         <Globe size={14} className="shrink-0" />
         <span className={collapsed ? 'hidden lg:block truncate' : 'truncate'}>landing page</span>
       </a>
-      <a
-        href="https://github.com/mutonby/openshorts"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex items-center gap-2 px-3 py-2 text-xs lowercase text-muted hover:text-ink2 transition-colors"
-      >
-        <svg height="14" viewBox="0 0 16 16" version="1.1" width="14" aria-hidden="true" fill="currentColor" className="shrink-0"><path fillRule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
-        <span className={collapsed ? 'hidden lg:block truncate' : 'truncate'}>open source</span>
-      </a>
       {billingEnabled && (
         <a
           href="#/pricing"
@@ -1567,7 +1558,7 @@ function App() {
     const tabs = navItems.filter((n) => n.primary);
     const moreActive = !tabs.some((t) => t.id === activeTab);
     return (
-      <nav className="md:hidden shrink-0 border-t border-rule bg-paper2/95 backdrop-blur-sm safe-bottom">
+      <nav className="md:hidden shrink-0 border-t border-rule bg-paper2/95 backdrop-blur-md safe-bottom z-30">
         <div className="flex items-stretch">
           {tabs.map((item) => {
             const NavIcon = item.icon;
@@ -1580,8 +1571,11 @@ function App() {
                 disabled={tabLocked(item.id)}
                 aria-current={isActive ? 'page' : undefined}
                 title={tabLocked(item.id) ? 'Finish your first clips to unlock' : undefined}
-                className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-1 py-2 min-h-[56px] transition-colors ${isActive ? 'text-ink' : 'text-muted active:text-ink2'} ${tabLocked(item.id) ? 'opacity-40 cursor-not-allowed' : ''}`}
+                className={`flex-1 min-w-0 relative flex flex-col items-center justify-center gap-1 py-2 min-h-[56px] transition-colors ${isActive ? 'text-ink font-medium' : 'text-muted active:text-ink2'} ${tabLocked(item.id) ? 'opacity-40 cursor-not-allowed' : ''}`}
               >
+                {isActive && (
+                  <span className="absolute top-0 left-1/4 right-1/4 h-[2px] bg-brass rounded-full shadow-[0_0_8px_var(--color-accent)]" aria-hidden="true" />
+                )}
                 <NavIcon size={19} className={isActive ? 'text-brass' : ''} />
                 <span className="text-[10.5px] lowercase leading-none truncate max-w-full px-0.5">{item.short}</span>
               </button>
@@ -1591,8 +1585,11 @@ function App() {
             onClick={() => setNavOpen(true)}
             aria-label="more sections"
             aria-expanded={navOpen}
-            className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-1 py-2 min-h-[56px] transition-colors ${moreActive ? 'text-ink' : 'text-muted active:text-ink2'}`}
+            className={`flex-1 min-w-0 relative flex flex-col items-center justify-center gap-1 py-2 min-h-[56px] transition-colors ${moreActive ? 'text-ink font-medium' : 'text-muted active:text-ink2'}`}
           >
+            {moreActive && (
+              <span className="absolute top-0 left-1/4 right-1/4 h-[2px] bg-brass rounded-full shadow-[0_0_8px_var(--color-accent)]" aria-hidden="true" />
+            )}
             <Menu size={19} className={moreActive ? 'text-brass' : ''} />
             <span className="text-[10.5px] lowercase leading-none">more</span>
           </button>
@@ -2067,31 +2064,29 @@ function App() {
                   </div>
                 </div>
 
-                {/* Repo CTA */}
+                {/* Agent MCP Integration */}
                 <div className="card p-6 md:p-8 space-y-5">
                   <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div>
-                      <h2 className="font-display lowercase text-xl text-ink mb-1">skill-autoshorts</h2>
+                      <h2 className="font-display lowercase text-xl text-ink mb-1">AI Agent Automation</h2>
                       <p className="text-sm text-muted">
-                        The Claude Code skill that powers this workflow. Install it once and trigger it whenever you want a fresh batch of clips.
+                        Connect Claude, ChatGPT, or custom agent pipelines via MCP or REST API to automate clip generation on schedule.
                       </p>
                     </div>
-                    <a
-                      href="https://github.com/mutonby/skill-autoshorts"
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      onClick={() => (billingEnabled ? (window.location.hash = '#/account') : goToTab('settings'))}
                       className="btn-primary py-2 px-4 text-sm shrink-0"
                     >
-                      View on GitHub <ExternalLink size={14} />
-                    </a>
+                      Connect Agent <ExternalLink size={14} />
+                    </button>
                   </div>
 
                   <div className="bg-paper border border-rule rounded-card p-4 font-mono text-xs text-ink2 flex items-center justify-between gap-3">
-                    <span className="truncate">git clone https://github.com/mutonby/skill-autoshorts</span>
+                    <span className="truncate">Endpoint: https://mcp.openshorts.app/mcp</span>
                     <button
-                      onClick={() => navigator.clipboard.writeText('git clone https://github.com/mutonby/skill-autoshorts')}
+                      onClick={() => navigator.clipboard.writeText('https://mcp.openshorts.app/mcp')}
                       className="text-muted hover:text-ink transition-colors shrink-0"
-                      title="Copy"
+                      title="Copy Endpoint"
                     >
                       <Copy size={14} />
                     </button>

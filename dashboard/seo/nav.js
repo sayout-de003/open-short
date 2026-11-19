@@ -18,7 +18,7 @@
  * This file is imported by the browser bundle too, so keep it free of Node
  * APIs and of imports that would pull the SEO page data into the app. */
 
-export const REPO_URL = 'https://github.com/mutonby/openshorts'
+export const REPO_URL = 'https://www.openshorts.app'
 
 /* `/#app` opens the app (main.jsx): the paste box and the clip generator.
  * `/#app?login=1` opens it with the sign-in dialog already up (App.jsx). */
@@ -92,12 +92,11 @@ export const NAV_GROUPS = [
  * #/pricing?plan=..., a different thing: nginx sends /pricing?plan=... there. */
 export const NAV_LINKS = [
   { href: '/#pricing', label: { en: 'Pricing', es: 'Precios' } },
-  { href: '/self-hosted-ai-clip-maker', label: { en: 'Open source', es: 'Código abierto' } },
 ]
 
 export const NAV_STRINGS = {
-  en: { cta: 'Get free clips', ctaHint: 'First video free up to 60 min, no card. No watermark from $12/month, or self-host free (MIT).', openApp: 'Open app', login: 'Log in', menu: 'Menu', main: 'Main', github: 'OpenShorts on GitHub' },
-  es: { cta: 'Clips gratis', ctaHint: 'Primer vídeo gratis hasta 60 min, sin tarjeta. Sin marca de agua desde 12 $/mes, o autoalojado gratis (MIT).', openApp: 'Abrir la app', login: 'Iniciar sesión', menu: 'Menú', main: 'Principal', github: 'OpenShorts en GitHub' },
+  en: { cta: 'Get free clips', ctaHint: 'First video free up to 60 min, no card. No watermark from $12/month.', openApp: 'Open app', login: 'Log in', menu: 'Menu', main: 'Main' },
+  es: { cta: 'Clips gratis', ctaHint: 'Primer vídeo gratis hasta 60 min, sin tarjeta. Sin marca de agua desde 12 $/mes.', openApp: 'Abrir la app', login: 'Iniciar sesión', menu: 'Menú', main: 'Principal' },
 }
 
 const pick = (v, lang) => (v && typeof v === 'object' ? v[lang] || v.en : v)
@@ -134,7 +133,7 @@ export function renderNav({ lang = 'en', signedIn = false, showLogin = true } = 
   <input type="checkbox" id="osn-toggle" class="osn-toggle" aria-label="${esc(t.menu)}">
   <label for="osn-toggle" class="osn-burger" title="${esc(t.menu)}">${BURGER}</label>
   <nav class="osn-menu" aria-label="${esc(t.main)}">
-    <ul class="osn-list">${groups}${links}<li class="osn-item"><a class="osn-top osn-gh" href="${REPO_URL}" rel="noopener" aria-label="${esc(t.github)}" title="GitHub">${GITHUB}<span class="osn-gh-label">GitHub</span></a></li></ul>
+    <ul class="osn-list">${groups}${links}</ul>
     ${login}
   </nav>
   <a class="osn-cta" href="${APP_HREF}"${signedIn ? '' : ` title="${esc(t.ctaHint)}"`}>${esc(signedIn ? t.openApp : t.cta)}</a>

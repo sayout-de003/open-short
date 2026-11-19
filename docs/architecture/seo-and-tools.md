@@ -39,7 +39,7 @@ vendor page and the date it was checked; re-check those before editing.
 ## Site navigation (`seo/nav.js`)
 
 One header for the whole site: `seo/nav.js` holds the groups (platforms,
-use cases, compare, free tools), the top links (pricing, open source, GitHub), "Log in"
+use cases, compare, free tools), the top links (pricing), "Log in"
 (`/#app?login=1`, App.jsx opens the sign-in dialog) and the CTA (`/#app`). The
 same `renderNav()` markup is used by `render.js` (every static page, labels
 translated for `lang: 'es'`), by the homepage fallback and by the React landing

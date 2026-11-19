@@ -61,7 +61,7 @@ def test_silent_when_unconfigured(sent, monkeypatch):
 def test_acquisition_properties():
     assert analytics.acquisition_properties(None) == {"channel": "direct"}
     row = SimpleNamespace(
-        referrer="https://github.com/mutonby/openshorts", referrer_host="github.com",
+        referrer="https://github.com/example/repo", referrer_host="github.com",
         landing_path="/?utm_source=github", utm_source="", utm_medium=None, utm_campaign="readme",
         created_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
     )

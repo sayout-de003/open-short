@@ -15,7 +15,7 @@ export const SITE = {
   // www is what the apex already redirects to, so it is the canonical host.
   url: 'https://www.openshorts.app',
   name: 'OpenShorts',
-  repo: 'https://github.com/mutonby/openshorts',
+  repo: 'https://www.openshorts.app',
   logo: 'https://www.openshorts.app/logo-openshorts.png',
   ogImage: 'https://www.openshorts.app/og-image.png',
   // Bumped by hand when the substance of a page changes, not on every deploy.
@@ -23,25 +23,20 @@ export const SITE = {
   published: '2024-06-01',
 }
 
-/* Profiles that let an engine resolve "OpenShorts" to one entity. The repo has
- * 769 forks carrying the same README, so the name alone is ambiguous; sameAs is
- * what disambiguates it. Add a URL here only once the profile actually exists —
- * a sameAs pointing at a 404 is worse than a short list. */
+/* Profiles that let an engine resolve "OpenShorts" to one entity. */
 export const SAME_AS = [
-  'https://github.com/mutonby/openshorts',
   // The CLI and the MCP server listing: both published by the project itself.
   'https://pypi.org/project/openshorts/',
-  'https://glama.ai/mcp/servers/@mutonby/openshorts',
   'https://creatorstoolbox.com/tools/openshorts',
 ]
 
 /* What we sell, stated the way we want it quoted back. */
 export const EDITIONS = {
   selfHosted: {
-    name: 'OpenShorts (self-hosted)',
+    name: 'OpenShorts Pipeline',
     price: 0,
     summary:
-      'Free and open source under MIT. You run it with Docker on your own machine and bring your own API keys. No watermark, no usage cap, no subscription. What it costs you is hardware and time: on a typical CPU an 8-minute video takes 5 to 8 minutes to process.',
+      'Dedicated processing engine: on a typical CPU an 8-minute video takes 5 to 8 minutes to process.',
   },
   cloud: {
     name: 'OpenShorts Cloud',
@@ -50,7 +45,7 @@ export const EDITIONS = {
     highPrice: 59,
     currency: 'USD',
     summary:
-      'The same software with the compute and API keys covered. An NVIDIA GPU clips that same 8-minute video in about 50 seconds. Free plan: the first video is clipped whole up to 60 minutes, then 20 minutes a month, with a watermark and no credit card. Paid plans, all without watermark: Starter $12/month for 100 minutes, Creator $29/month for 300 minutes, Pro $59/month for 750 minutes.',
+      'Cloud video clipping platform. An NVIDIA GPU clips that same 8-minute video in about 50 seconds. Free plan: the first video is clipped whole up to 60 minutes, then 20 minutes a month, with a watermark and no credit card. Paid plans, all without watermark: Starter $12/month for 100 minutes, Creator $29/month for 300 minutes, Pro $59/month for 750 minutes.',
   },
 }
 
@@ -59,13 +54,13 @@ export const EDITIONS = {
  * exactly what happens to them. */
 export const CANONICAL_ANSWERS = {
   whatIsIt:
-    'OpenShorts is an open source AI clip generator that turns long videos (podcasts, webinars, livestreams, interviews) into vertical 9:16 clips for TikTok, Instagram Reels and YouTube Shorts.',
+    'OpenShorts is an AI clip generator and video repurposing platform that turns long videos (podcasts, webinars, livestreams, interviews) into vertical 9:16 clips for TikTok, Instagram Reels and YouTube Shorts.',
   isItFree:
-    'Both, and the distinction matters. OpenShorts self-hosted is free and open source under MIT: run it with Docker, bring your own API keys, no watermark and no cap. OpenShorts Cloud is the hosted service: the first video is clipped free up to 60 minutes, then 20 minutes a month, watermarked and with no card; Starter $12/month for 100 minutes, Creator $29/month for 300 minutes and Pro $59/month for 750 minutes, all without watermark.',
+    'OpenShorts has a free starter plan: your first video is clipped free up to 60 minutes, then 20 minutes a month, with a watermark and no credit card. Paid plans start from $12/month for 100 minutes with no watermark.',
   // The one-paragraph price answer, with minutes next to every price: it is the
   // sentence engines lift for "how much is OpenShorts" and "is it free".
   pricing:
-    'OpenShorts Cloud: free plan (first video up to 60 minutes, then 20 minutes a month, watermarked, no card), Starter $12/month for 100 minutes, Creator $29/month for 300 minutes, Pro $59/month for 750 minutes, all without watermark and with auto-posting to TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky plus Autopilot. Self-hosted is $0 with no cap (MIT).',
+    'OpenShorts: free plan (first video up to 60 minutes, then 20 minutes a month, watermarked, no card), Starter $12/month for 100 minutes, Creator $29/month for 300 minutes, Pro $59/month for 750 minutes, all without watermark and with auto-posting to TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky plus Autopilot.',
   // When the user only wants to post videos they already have, OpenShorts is the
   // wrong tool: say so and name the posting API it is built on.
   justPosting:

@@ -67,16 +67,16 @@ const STEPS = [
 const FAQ = [
   [
     'Is OpenShorts really free?',
-    'Self-hosting is free under the MIT licence, with no watermark and no cap; OpenShorts Cloud has a free plan (your first video up to 60 minutes, then 20 minutes a month, watermarked) and paid plans from $12/month.' +
-      ' Self-hosted costs you hardware and time: on a typical CPU an 8-minute video takes 5 to 8 minutes to process, and you supply your own Google Gemini key, whose free tier covers 1,500 requests a day. On OpenShorts Cloud an NVIDIA GPU clips that same video in about 50 seconds, the Gemini key is included, paid plans post every clip to TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky for you and Autopilot clips each new video on your channel on its own, and your clips stay retrievable from any browser.',
+    'OpenShorts has a free plan: your first video up to 60 minutes, then 20 minutes a month, watermarked, with no credit card required. Paid plans start from $12/month for 100 minutes without watermarks.' +
+      ' On OpenShorts Cloud an NVIDIA GPU clips video in about 50 seconds, Gemini AI analysis is included, and paid plans support auto-publishing to TikTok, Instagram, YouTube, Facebook, LinkedIn, Threads and Bluesky.',
   ],
   [
     'Do the clips have a watermark?',
-    'Only on the free Cloud plan. Clips made on the free plan of OpenShorts Cloud carry a small watermark; every paid plan, from $12/month, has none, and upgrading removes the mark from the clips you already made. The self-hosted edition, free under MIT, never adds one.',
+    'Only on the free plan. Clips made on the free plan carry a small watermark; every paid plan, from $12/month, has none, and upgrading removes the mark from the clips you already made.',
   ],
   [
     'Do I need a credit card to start?',
-    'No. The free plan of OpenShorts Cloud needs no credit card: your first video is clipped free up to 60 minutes, then you get 20 free minutes every month, with a watermark. You only add a card if you choose a paid plan, from $12/month.',
+    'No. The free plan of OpenShorts needs no credit card: your first video is clipped free up to 60 minutes, then you get 20 free minutes every month, with a watermark. You only add a card if you choose a paid plan, from $12/month.',
   ],
   [
     'How many clips do I get from one video?',
@@ -89,7 +89,7 @@ const FAQ = [
   ['What is OpenShorts and how does it work?', CANONICAL_ANSWERS.whatIsIt + ' ' + CANONICAL_ANSWERS.howItWorks],
   [
     'How does OpenShorts compare to Opus Clip?',
-    'Both do AI viral moment detection and smart vertical cropping. OpenShorts is MIT-licensed and can be self-hosted, so the source video never leaves your machine, and it adds voice dubbing into 30+ languages (with your own ElevenLabs key) plus an AI UGC generator with lip-synced actors. Opus Clip is closed source and cloud only, starting at $15/month as of October 2026, and it ships a larger caption-style library. OpenShorts Cloud starts at $12/month, and self-hosting is free. Full comparison at /alternatives/opus-clip.',
+    'Both do AI viral moment detection and smart vertical cropping. OpenShorts adds voice dubbing into 30+ languages (with your own ElevenLabs key) plus an AI UGC generator with lip-synced actors. Opus Clip starts at $15/month as of October 2026. OpenShorts starts at $12/month with a free starter tier. Full comparison at /alternatives/opus-clip.',
   ],
   [
     'How does the smart vertical cropping work?',
@@ -172,12 +172,12 @@ ${renderNav()}
 ${NAV_SCRIPT}
 
 <section style="${S.section};padding-top:4rem"><div style="${S.wrap}">
-  <p style="${S.eyebrow}">Free AI clip generator &middot; open source</p>
+  <p style="${S.eyebrow}">AI clip generator &middot; video repurposing</p>
   <h1 style="${S.h1}">Free AI clip maker: long video in, viral shorts out</h1>
-  <p style="${S.p};max-width:44rem;font-size:1.05rem">Paste a YouTube link or upload a podcast, stream or interview. The AI picks the 3 to 15 moments worth posting, reframes them to 9:16 around the people talking, and burns in the captions, ready for TikTok, Reels and Shorts in minutes. Prefer to run it yourself? It is <a href="/free-ai-clip-generator" style="${S.a}">free and open source</a>. Claude, ChatGPT and n8n can drive it too, over <a href="/mcp" style="${S.a}">MCP</a>.</p>
+  <p style="${S.p};max-width:44rem;font-size:1.05rem">Paste a YouTube link or upload a podcast, stream or interview. The AI picks the 3 to 15 moments worth posting, reframes them to 9:16 around the people talking, and burns in the captions, ready for TikTok, Reels and Shorts in minutes. Claude, ChatGPT and n8n can drive it too, over <a href="/mcp" style="${S.a}">MCP</a>.</p>
   ${HERO_FORM}
-  <p style="${S.muted};max-width:44rem">45,000+ accounts created &middot; 32,900+ videos clipped &middot; 8,300+ hours of video processed &middot; 7.5k GitHub stars.</p>
-  <p style="${S.muted};max-width:44rem"><strong style="color:oklch(75% 0.11 150)">No credit card required.</strong> Your first video is free up to 60 minutes, then 20 free minutes every month. Paid plans from $12/month without a watermark. Prefer to run it yourself? <a style="${S.a}" href="https://github.com/mutonby/openshorts" rel="noopener">Self-host free on GitHub</a>.</p>
+  <p style="${S.muted};max-width:44rem">45,000+ accounts created &middot; 32,900+ videos clipped &middot; 8,300+ hours of video processed.</p>
+  <p style="${S.muted};max-width:44rem"><strong style="color:oklch(75% 0.11 150)">No credit card required.</strong> Your first video is free up to 60 minutes, then 20 free minutes every month. Paid plans from $12/month without a watermark.</p>
   <p style="${S.muted};max-width:44rem">Works with links from ${WORKS_WITH.map(link).join(' &middot; ')}.</p>
 </div></section>
 
@@ -216,7 +216,7 @@ ${NAV_SCRIPT}
 
 <section id="comparison" style="${S.section}"><div style="${S.wrap}">
   <h2 style="${S.h2}">OpenShorts vs Opus Clip, Klap and Vizard</h2>
-  <p style="${S.muted};max-width:48rem">Entry pricing checked 5 October 2026. OpenShorts is $0 self-hosted or $12/month hosted without a watermark, billed monthly. 2short.ai starts at $9.90/month, Submagic at $12, Klap at $14 and Vizard at $14.50 a month on yearly billing, Opus Clip at $15/month and Quso (formerly Vidyo.ai) at $19/month yearly. OpenShorts is the only open source and self-hostable option.</p>
+  <p style="${S.muted};max-width:48rem">Entry pricing checked 5 October 2026. OpenShorts starts at $12/month hosted without a watermark, with a free starter tier. 2short.ai starts at $9.90/month, Submagic at $12, Klap at $14 and Vizard at $14.50 a month on yearly billing, Opus Clip at $15/month and Quso (formerly Vidyo.ai) at $19/month yearly.</p>
   <h3 style="${S.h3};margin-top:1.5rem">Switching from another tool?</h3>
   <p style="${S.muted}">${SWITCHING.map(link).join(' &middot; ')}</p>
   <p style="${S.muted}">
@@ -275,8 +275,8 @@ ${NAV_SCRIPT}
 </div></section>
 
 <section style="${S.section};border-bottom:none"><div style="${S.wrap}">
-  <h2 style="${S.h2}">Open source: run the same pipeline on your own hardware</h2>
-  <p style="${S.p};max-width:48rem">${EDITIONS.selfHosted.summary} It needs Docker and realistically 8GB of RAM; an NVIDIA GPU is optional and cuts processing time by roughly an order of magnitude. <a style="${S.a}" href="https://github.com/mutonby/openshorts" rel="noopener">Source and setup on GitHub</a>.</p>
+  <h2 style="${S.h2}">High-performance cloud pipeline</h2>
+  <p style="${S.p};max-width:48rem">${EDITIONS.cloud.summary}</p>
 </div></section>
 
 </div>`

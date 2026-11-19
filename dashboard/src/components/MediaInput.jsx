@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link2, Upload, FileVideo, X, Info, Loader2, ChevronDown } from 'lucide-react';
+import { Link2, Upload, FileVideo, X, Info, Loader2, ChevronDown, ClipboardPaste, Check, Sparkles } from 'lucide-react';
 import { track } from '../lib/analytics';
 import { getApiUrl } from '../config';
 import SourceCost from './SourceCost';
@@ -67,7 +67,21 @@ export default function MediaInput({ onProcess, isProcessing }) {
     const [clippingProfile, setClippingProfile] = useState(() => {
         try { return localStorage.getItem('os_clipping_profile') || 'gaming'; } catch { return 'gaming'; }
     });
+    const [pasteFeedback, setPasteFeedback] = useState(false);
     const infoRef = useRef(null);
+
+    const handlePaste = async () => {
+        try {
+            const text = await navigator.clipboard.readText();
+            if (text && text.trim()) {
+                setUrl(text.trim());
+                setPasteFeedback(true);
+                setTimeout(() => setPasteFeedback(false), 1800);
+            }
+        } catch (_) {
+            /* clipboard API blocked or denied: silently let user type/paste */
+        }
+    };
 
     // Close the compatibility popover on any outside click.
     useEffect(() => {
@@ -155,29 +169,37 @@ export default function MediaInput({ onProcess, isProcessing }) {
         }
     };
 
+    const hasMedia = mode === 'url' ? Boolean(url) : Boolean(file && !fileTooShort);
+    const canSubmit = hasMedia && acknowledged && !isProcessing;
+
     return (
         <div className="card p-4 sm:p-6 animate-fade">
-            <div className="flex gap-4 sm:gap-6 mb-6 border-b border-rule" data-tutorial="source-tabs">
+            {/* Tactile Source Selector */}
+            <div className="grid grid-cols-2 p-1 bg-paper border border-rule rounded-input mb-5" data-tutorial="source-tabs">
                 <button
+                    type="button"
                     onClick={() => setMode('file')}
-                    className={`flex items-center gap-2 pb-3 px-1 -mb-px border-b-2 text-sm lowercase whitespace-nowrap transition-colors ${mode === 'file'
-                        ? 'text-ink border-brass'
-                        : 'text-muted border-transparent hover:text-ink2'
-                        }`}
+                    className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-[6px] text-xs lowercase font-medium transition-all ${
+                        mode === 'file'
+                            ? 'bg-paper3 text-ink border border-rule2 shadow-sm text-brass'
+                            : 'text-muted hover:text-ink2 hover:bg-paper3/30'
+                    }`}
                 >
-                    <Upload size={16} className={`hidden sm:block ${mode === 'file' ? 'text-brass' : ''}`} />
-                    Upload File
+                    <Upload size={15} className={mode === 'file' ? 'text-brass' : ''} />
+                    <span>Upload File</span>
                 </button>
                 {youtubeUrlEnabled && (
                     <button
+                        type="button"
                         onClick={() => setMode('url')}
-                        className={`flex items-center gap-2 pb-3 px-1 -mb-px border-b-2 text-sm lowercase whitespace-nowrap transition-colors ${mode === 'url'
-                            ? 'text-ink border-brass'
-                            : 'text-muted border-transparent hover:text-ink2'
-                            }`}
+                        className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-[6px] text-xs lowercase font-medium transition-all ${
+                            mode === 'url'
+                                ? 'bg-paper3 text-ink border border-rule2 shadow-sm text-brass'
+                                : 'text-muted hover:text-ink2 hover:bg-paper3/30'
+                        }`}
                     >
-                        <Link2 size={16} className={`hidden sm:block ${mode === 'url' ? 'text-brass' : ''}`} />
-                        Video URL
+                        <Link2 size={15} className={mode === 'url' ? 'text-brass' : ''} />
+                        <span>Video URL</span>
                     </button>
                 )}
             </div>
@@ -185,16 +207,34 @@ export default function MediaInput({ onProcess, isProcessing }) {
             <form onSubmit={handleSubmit}>
                 {mode === 'url' ? (
                     <div className="space-y-4" data-tutorial="drop-zone">
-                        <div className="relative">
+                        <div className="relative flex items-center">
                             <input
                                 type="url"
                                 value={url}
                                 onChange={(e) => setUrl(e.target.value)}
-                                placeholder="https://... paste a video link"
-                                className="input-field pr-11"
+                                placeholder="https://... paste YouTube, Vimeo, TikTok link"
+                                className="input-field pr-24 py-3 text-sm"
                                 required
                             />
-                            <div className="absolute inset-y-0 right-2 flex items-center" ref={infoRef}>
+                            <div className="absolute right-1.5 flex items-center gap-1" ref={infoRef}>
+                                <button
+                                    type="button"
+                                    onClick={handlePaste}
+                                    className="px-2 py-1 rounded-[6px] text-[11px] font-mono lowercase bg-paper3 border border-rule text-ink2 hover:text-brass hover:border-brass/40 transition-colors flex items-center gap-1 shrink-0"
+                                    title="Paste link from clipboard"
+                                >
+                                    {pasteFeedback ? (
+                                        <>
+                                            <Check size={12} className="text-ok" />
+                                            <span className="text-ok">pasted</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <ClipboardPaste size={12} className="text-brass" />
+                                            <span>paste</span>
+                                        </>
+                                    )}
+                                </button>
                                 <button
                                     type="button"
                                     onClick={() => setShowInfo((v) => !v)}
@@ -204,8 +244,8 @@ export default function MediaInput({ onProcess, isProcessing }) {
                                     <Info size={16} />
                                 </button>
                                 {showInfo && (
-                                    <div className="absolute right-0 top-full mt-2 w-64 z-20 card p-4 text-left animate-fade">
-                                        <p className="eyebrow mb-2">Paste a link from</p>
+                                    <div className="absolute right-0 top-full mt-2 w-64 z-20 card p-4 text-left animate-fade shadow-xl">
+                                        <p className="eyebrow mb-2">Supported Platforms</p>
                                         <div className="flex flex-wrap gap-1.5">
                                             {SUPPORTED_PLATFORMS.map((p) => (
                                                 <span key={p} className="text-xs px-2 py-0.5 rounded-full bg-paper3 text-ink2">
@@ -224,41 +264,54 @@ export default function MediaInput({ onProcess, isProcessing }) {
                 ) : (
                     <div
                         data-tutorial="drop-zone"
-                        className={`border-2 border-dashed rounded-card p-6 sm:p-8 text-center transition-colors ${file ? 'border-brass' : 'border-rule2 hover:border-brass'
-                            }`}
+                        className={`border-2 border-dashed rounded-card p-6 sm:p-8 text-center transition-colors min-h-[140px] flex flex-col items-center justify-center ${
+                            file ? 'border-brass bg-brass/5' : 'border-rule2 hover:border-brass/70 bg-paper/50'
+                        }`}
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={handleDrop}
                     >
                         {file ? (
-                            <div className="flex items-center justify-center gap-3 text-ok min-w-0">
-                                <FileVideo size={18} className="shrink-0" />
-                                <span className="font-medium truncate">{file.name}</span>
-                                <button
-                                    type="button"
-                                    onClick={() => setFile(null)}
-                                    className="p-1 text-muted hover:text-ink hover:bg-paper3 rounded-full transition-colors"
-                                >
-                                    <X size={16} />
-                                </button>
+                            <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 text-ok min-w-0 max-w-full">
+                                <div className="flex items-center gap-2 min-w-0 truncate">
+                                    <FileVideo size={20} className="shrink-0 text-brass" />
+                                    <span className="font-medium text-ink truncate text-sm">{file.name}</span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {fileSeconds && (
+                                        <span className="readout bg-paper3 px-2 py-0.5 rounded-full">
+                                            {Math.round(fileSeconds)}s
+                                        </span>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => setFile(null)}
+                                        className="p-1.5 text-muted hover:text-ink hover:bg-paper3 rounded-full transition-colors"
+                                        aria-label="Remove file"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
                             </div>
                         ) : null}
                         {file && fileTooShort ? (
-                            <p className="text-danger text-sm mt-3" role="alert">
+                            <p className="text-danger text-xs sm:text-sm mt-3" role="alert">
                                 This video is {Math.round(fileSeconds)}s long. Clip generation needs at least {MIN_SOURCE_SECONDS}s
                                 of footage to cut from: it already is a short. Pick a longer video.
                             </p>
                         ) : null}
                         {!file && (
-                            <label className="cursor-pointer block">
+                            <label className="cursor-pointer block w-full py-2">
                                 <input
                                     type="file"
                                     accept="video/*"
                                     onChange={(e) => setFile(e.target.files?.[0] || null)}
                                     className="hidden"
                                 />
-                                <Upload className="mx-auto mb-3 text-muted" size={18} />
-                                <p className="text-ink2 lowercase">Click to upload or drag and drop</p>
-                                <p className="readout mt-2">MP4, MOV up to 500MB · at least {MIN_SOURCE_SECONDS}s long</p>
+                                <div className="w-10 h-10 rounded-full bg-paper3 border border-rule mx-auto mb-3 flex items-center justify-center text-muted group-hover:text-brass">
+                                    <Upload size={18} />
+                                </div>
+                                <p className="text-ink2 lowercase text-sm font-medium">Click to upload or drag &amp; drop video</p>
+                                <p className="readout mt-1.5 text-[11px]">MP4, MOV up to 500MB · at least {MIN_SOURCE_SECONDS}s long</p>
                             </label>
                         )}
                     </div>
@@ -277,9 +330,9 @@ export default function MediaInput({ onProcess, isProcessing }) {
                     <p className="eyebrow mb-2">Output format</p>
                     <div className="grid grid-cols-3 gap-2">
                         {[
-                            { value: 'vertical', label: '9:16', hint: 'Shorts · Reels · TikTok', w: 18, h: 32 },
-                            { value: 'square', label: '1:1', hint: 'Feed posts', w: 28, h: 28 },
-                            { value: 'horizontal', label: '16:9', hint: 'Keep landscape · YouTube', w: 36, h: 20 },
+                            { value: 'vertical', label: '9:16', hint: 'Shorts · Reels · TikTok', w: 16, h: 28 },
+                            { value: 'square', label: '1:1', hint: 'Feed posts', w: 22, h: 22 },
+                            { value: 'horizontal', label: '16:9', hint: 'Landscape · YouTube', w: 28, h: 16 },
                         ].map((f) => {
                             const active = outputFormat === f.value;
                             return (
@@ -287,44 +340,42 @@ export default function MediaInput({ onProcess, isProcessing }) {
                                     key={f.value}
                                     type="button"
                                     onClick={() => setOutputFormat(f.value)}
-                                    className={`py-3 px-2 rounded-input border flex flex-col items-center gap-2 transition-colors
-                                        ${active ? 'border-[color:var(--color-accent)] text-ink' : 'border-rule2 text-muted hover:border-[color:var(--color-accent)]'}`}
+                                    className={`py-3 px-2 rounded-input border flex flex-col items-center justify-center gap-1.5 transition-all
+                                        ${active ? 'border-brass bg-brass/10 text-ink shadow-sm' : 'border-rule bg-paper text-muted hover:border-rule2 hover:text-ink2'}`}
                                 >
                                     {/* Aspect-ratio glyph */}
                                     <span
-                                        className="rounded-[3px] border-2 transition-colors"
+                                        className="rounded-[3px] border-2 transition-colors flex-shrink-0"
                                         style={{
                                             width: `${f.w}px`,
                                             height: `${f.h}px`,
                                             borderColor: active ? 'var(--color-accent)' : 'var(--color-rule-2)',
-                                            backgroundColor: active ? 'color-mix(in srgb, var(--color-accent) 22%, transparent)' : 'transparent',
+                                            backgroundColor: active ? 'color-mix(in srgb, var(--color-accent) 25%, transparent)' : 'transparent',
                                         }}
                                     />
-                                    <span className="block font-mono text-sm leading-none">{f.label}</span>
-                                    <span className="block text-[11px] sm:text-[10px] leading-tight text-center text-muted">{f.hint}</span>
+                                    <span className="block font-mono text-xs sm:text-sm font-semibold leading-none">{f.label}</span>
+                                    <span className="block text-[10px] leading-tight text-center text-muted truncate max-w-full">{f.hint}</span>
                                 </button>
                             );
                         })}
                     </div>
                 </div>
 
-                {/* Advanced generation controls — collapsed by default; blank = AI decides */}
+                {/* Advanced generation controls — collapsed by default */}
                 <div className="mt-4">
                     <button
                         type="button"
                         onClick={() => setShowAdvanced((v) => !v)}
-                        className="flex items-center gap-1.5 text-xs text-muted hover:text-ink2 lowercase transition-colors"
+                        className="flex items-center gap-1.5 text-xs text-muted hover:text-ink2 lowercase transition-colors py-1"
                     >
-                        <ChevronDown size={14} className={`transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
-                        advanced options
+                        <ChevronDown size={14} className={`transition-transform duration-200 ${showAdvanced ? 'rotate-180' : ''}`} />
+                        <span>advanced options</span>
                         {(targetClips || clipMinSeconds || clipMaxSeconds || !autoHook) && (
-                            <span className="text-brass">·</span>
+                            <span className="text-brass font-bold">· modified</span>
                         )}
                     </button>
                     {showAdvanced && (
-                        /* Stacked on a phone: three number fields side by side leaves
-                           ~100px each, which crushes both label and value. */
-                        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-2 animate-fade">
+                        <div className="mt-3 p-3.5 bg-paper/60 border border-rule rounded-input grid grid-cols-1 sm:grid-cols-3 gap-3 animate-fade">
                             <div>
                                 <p className="eyebrow mb-1.5">clips to aim for</p>
                                 <input
@@ -357,9 +408,9 @@ export default function MediaInput({ onProcess, isProcessing }) {
                             </div>
                             <p className="col-span-1 sm:col-span-3 text-[11px] leading-relaxed text-muted">
                                 Targets, not guarantees: the AI returns fewer clips when the
-                                material doesn't hold them. Leave blank to let it decide.
+                                material doesn&apos;t hold them. Leave blank to let it decide.
                             </p>
-                            <div className="col-span-1 sm:col-span-3 flex flex-wrap items-center justify-between gap-3 pt-3 sm:pt-1 border-t border-rule">
+                            <div className="col-span-1 sm:col-span-3 flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-rule">
                                 <span className="text-xs text-ink2">clipping mode</span>
                                 <select
                                     value={clippingProfile}
@@ -368,12 +419,12 @@ export default function MediaInput({ onProcess, isProcessing }) {
                                     aria-label="clipping mode"
                                 >
                                     <option value="gaming">Gaming (action, kills, hype)</option>
-                                    <option value="podcast">Podcast (quotes & conversations)</option>
+                                    <option value="podcast">Podcast (quotes &amp; conversations)</option>
                                     <option value="commentary">Commentary / Vlog / YouTube</option>
                                     <option value="generic">Generic (multi-modal)</option>
                                 </select>
                             </div>
-                            <div className="col-span-1 sm:col-span-3 flex flex-wrap items-center justify-between gap-3 pt-3 sm:pt-1 border-t border-rule">
+                            <div className="col-span-1 sm:col-span-3 flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-rule">
                                 <span className="text-xs text-ink2">vertical layout</span>
                                 <select
                                     value={layout}
@@ -387,7 +438,7 @@ export default function MediaInput({ onProcess, isProcessing }) {
                                     <option value="none">Single crop only</option>
                                 </select>
                             </div>
-                            <div className="col-span-1 sm:col-span-3 flex flex-wrap items-center justify-between gap-3 pt-3 sm:pt-1 border-t border-rule">
+                            <div className="col-span-1 sm:col-span-3 flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-rule">
                                 <label className="flex items-center gap-2 text-xs text-ink2 cursor-pointer select-none">
                                     <input
                                         type="checkbox"
@@ -395,7 +446,7 @@ export default function MediaInput({ onProcess, isProcessing }) {
                                         onChange={(e) => setAutoHook(e.target.checked)}
                                         className="w-4 h-4 shrink-0 accent-[var(--color-accent)] cursor-pointer"
                                     />
-                                    auto hook titles on clips
+                                    <span>auto hook titles on clips</span>
                                 </label>
                                 {autoHook && (
                                     <select
@@ -412,46 +463,56 @@ export default function MediaInput({ onProcess, isProcessing }) {
                                         <option value="outline_yellow">Outline+</option>
                                     </select>
                                 )}
-                                {autoHook && (
-                                    <p className="w-full text-[11px] leading-relaxed text-muted">
-                                        You can change each clip&apos;s hook text, style, position and size
-                                        afterwards with its hook button.
-                                    </p>
-                                )}
                             </div>
                         </div>
                     )}
                 </div>
 
-                <label className="flex items-start gap-2.5 mt-5 text-left text-[13px] sm:text-xs leading-relaxed text-muted cursor-pointer select-none">
+                {/* Rights confirmation - Interactive Card */}
+                <label className={`flex items-start gap-3 mt-5 p-3.5 rounded-input border transition-all cursor-pointer select-none text-left ${
+                    acknowledged ? 'bg-paper3/40 border-brass/50' : 'bg-paper border-rule hover:border-rule2'
+                }`}>
                     <input
                         type="checkbox"
                         checked={acknowledged}
                         onChange={(e) => setAcknowledged(e.target.checked)}
-                        className="mt-0.5 w-4 h-4 shrink-0 accent-[var(--color-accent)] cursor-pointer"
+                        className="mt-0.5 w-4 h-4 shrink-0 accent-[var(--color-accent)] cursor-pointer rounded"
                     />
-                    <span>
+                    <span className="text-[12px] sm:text-xs leading-relaxed text-muted">
                         I confirm I own this content or have the rights to process it. I am responsible for any content I submit. See our <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-ink2 underline underline-offset-2 hover:text-brass transition-colors" onClick={(e) => e.stopPropagation()}>Terms</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-ink2 underline underline-offset-2 hover:text-brass transition-colors" onClick={(e) => e.stopPropagation()}>Privacy Policy</a>.
                     </span>
                 </label>
 
+                {/* Primary Action Button */}
                 <button
                     type="submit"
                     data-tutorial="generate"
-                    disabled={isProcessing || !acknowledged || (mode === 'url' && !url) || (mode === 'file' && (!file || fileTooShort))}
-                    className="w-full btn-primary mt-4"
+                    disabled={!canSubmit}
+                    className="w-full btn-primary mt-4 py-3 sm:py-3.5 text-sm font-medium flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {isProcessing ? (
                         <>
-                            <Loader2 size={16} className="animate-spin" />
-                            Processing Video...
+                            <Loader2 size={16} className="animate-spin text-brassink" />
+                            <span>Processing Video...</span>
                         </>
                     ) : (
                         <>
-                            Generate Clips
+                            <Sparkles size={16} className="text-brassink" />
+                            <span>Generate Viral Shorts</span>
                         </>
                     )}
                 </button>
+
+                {/* Helper hint for disabled state */}
+                {!isProcessing && !canSubmit && (
+                    <p className="text-[11px] text-center text-muted mt-2">
+                        {!hasMedia
+                            ? 'Please provide a video file or link to continue'
+                            : !acknowledged
+                            ? 'Please confirm content rights above to generate clips'
+                            : ''}
+                    </p>
+                )}
             </form>
         </div>
     );
