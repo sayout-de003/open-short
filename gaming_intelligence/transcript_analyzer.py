@@ -65,6 +65,7 @@ class TranscriptAnalyzer:
             "stream": False,
         }
 
+        results = self._heuristic_score(segments)
         resp = httpx.post(url, json=payload, timeout=self.timeout)
         if resp.status_code == 200:
             content = resp.json()["choices"][0]["message"]["content"]
@@ -73,16 +74,12 @@ class TranscriptAnalyzer:
             if match:
                 data = json.loads(match.group(0))
                 score_map = {item["index"]: item for item in data.get("scores", [])}
-                for i, s in enumerate(segments):
-                    scored = score_map.get(i, {})
-                    raw_s = float(scored.get("score", 5)) / 10.0
-                    results.append({
-                        "start": s["start"],
-                        "end": s["end"],
-                        "text": s.get("text", ""),
-                        "transcript_score": min(1.0, max(0.0, raw_s)),
-                        "hook": scored.get("hook", "")
-                    })
+                for i, item in score_map.items():
+                    if 0 <= i < len(results):
+                        raw_s = float(item.get("score", 5)) / 10.0
+                        results[i]["transcript_score"] = min(1.0, max(0.0, raw_s))
+                        if item.get("hook"):
+                            results[i]["hook"] = item.get("hook")
                 return results
 
         return self._heuristic_score(segments)

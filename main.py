@@ -2440,20 +2440,23 @@ def _run_gemini_stage(client, model_name, prompt, schema):
             raise  # deterministic policy block — never retry
         except Exception as e:
             msg = str(e)
-            transient = any(tok in msg for tok in (
-                '503', 'UNAVAILABLE', '429', 'RESOURCE_EXHAUSTED',
-                '500', 'INTERNAL', 'overloaded', 'Deadline',
-                'empty response body', 'did not contain a JSON object',
-                'Failed to parse Gemini JSON response',
+            err_type = type(e).__name__
+            combined = f"{err_type}: {msg}".lower()
+            transient = any(tok in combined for tok in (
+                '503', 'unavailable', '429', 'resource_exhausted',
+                '500', 'internal', 'overloaded', 'deadline',
+                'empty response body', 'did not contain a json object',
+                'failed to parse gemini json response',
                 # OpenAI-compatible servers: model still loading, busy, or a
                 # small model that skipped a required field this time.
-                'ConnectError', 'ReadTimeout', 'RemoteProtocolError', '502', '504',
+                'connecterror', 'readtimeout', 'timeout', 'timed out',
+                'timeoutexception', 'connecttimeout', 'remoteprotocolerror', '502', '504',
                 'validation error'))
             if attempt == max_attempts or not transient:
                 raise
             wait = 5 * (2 ** (attempt - 1))
             who = "LLM server" if use_local else "Gemini"
-            print(f"⚠️ {who} transient error (attempt {attempt}/{max_attempts}), retrying in {wait}s: {msg[:150]}")
+            print(f"⚠️ {who} transient error ({err_type}, attempt {attempt}/{max_attempts}), retrying in {wait}s: {msg[:150]}")
             time.sleep(wait)
 
 
@@ -3289,11 +3292,12 @@ if __name__ == '__main__':
             try:
                 from gaming_intelligence.pipeline import LocalIntelligencePipeline
                 v_min_secs, v_max_secs = clip_duration_bounds()
+                target_clips = int(os.environ.get("TARGET_CLIP_COUNT") or os.environ.get("CLIP_TARGET_MAX") or 5)
                 local_pipe = LocalIntelligencePipeline(
-                    profile_name=os.getenv("CLIPPING_PROFILE", "podcast"),
+                    profile_name=os.getenv("CLIPPING_PROFILE", "generic"),
                     min_clip_sec=v_min_secs,
                     max_clip_sec=v_max_secs,
-                    max_clips=5,
+                    max_clips=target_clips,
                     llm_base_url=os.getenv("LLM_BASE_URL"),
                 )
                 local_shorts, local_meta = local_pipe.process_video(
@@ -3422,10 +3426,10 @@ if __name__ == '__main__':
                     if os.path.exists(clip_temp_path):
                         os.remove(clip_temp_path)
 
-            # 6, not 3: measured side by side on the GPU host at load 48-67, a 7-clip
-            # job finished 16% sooner with the same CPU, and the peak VRAM stayed
-            # at 12 GB of 20 (bench, 25-sep-2026).
-            clip_workers = max(int(os.environ.get("CLIP_WORKERS", "6")), 1)
+            # 6 on GPU host; on CPU-only machines, 2 concurrent encodes prevents
+            # pegging all cores and hypervisor CPU throttling (steal time).
+            default_workers = "6" if _has_cuda() else "2"
+            clip_workers = max(int(os.environ.get("CLIP_WORKERS", default_workers)), 1)
             shorts = clips_data['shorts']
             failed = []
             if os.environ.get("WATERMARK") == "1":

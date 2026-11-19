@@ -17,6 +17,7 @@ if ! docker ps | grep -q "ollama"; then
       -e OLLAMA_NUM_PARALLEL=1 \
       -e OLLAMA_MAX_LOADED_MODELS=1 \
       -e OLLAMA_CONTEXT_LENGTH=8192 \
+      -e OLLAMA_KEEP_ALIVE=-1 \
       ollama/ollama:latest
 fi
 

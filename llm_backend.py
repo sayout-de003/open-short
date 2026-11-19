@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DEFAULT_MODEL = "llama3.1:8b"
-DEFAULT_TIMEOUT = 120.0  # Allow local models on CPU sufficient time to load and evaluate
+DEFAULT_TIMEOUT = 180.0  # Allow local models on CPU sufficient time to load and evaluate
 
 
 def provider() -> str:

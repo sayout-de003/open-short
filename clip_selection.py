@@ -66,6 +66,15 @@ def clip_count_targets(n_windows):
 
     low = _override("CLIP_TARGET_MIN", low)
     high = _override("CLIP_TARGET_MAX", high)
+    target_env = os.environ.get("TARGET_CLIP_COUNT")
+    if target_env:
+        try:
+            target_val = int(target_env)
+            if target_val > 0:
+                low = min(low, target_val)
+                high = max(high, target_val)
+        except ValueError:
+            pass
     return low, max(low, high)
 
 

@@ -80,3 +80,28 @@ def test_gaming_prompts_format():
     )
     assert "gameplay" in visual_p.lower()
     assert "stunt" in visual_p.lower()
+
+
+def test_clip_selector_adaptive_backfill_short_video():
+    """Verify that a 120s video/live window requesting 5 clips delivers 5 clips instead of 2."""
+    from gaming_intelligence.clip_selector import ClipSelector
+    # Construct a 120s timeline
+    timeline = []
+    for sec in range(120):
+        # Add intermittent energy spikes
+        comp = 0.85 if sec in (15, 16, 45, 46, 75, 76, 100, 101) else 0.40
+        timeline.append({
+            "timestamp": float(sec),
+            "composite_score": comp,
+            "hook": f"Action moment at {sec}s" if comp > 0.5 else ""
+        })
+
+    selector = ClipSelector(min_duration=25.0, max_duration=60.0, max_clips=5, min_gap_sec=8.0)
+    shorts = selector.select_clips(timeline, profile_name="gaming")
+
+    # Before fix, it only returned 2 clips. With adaptive backfill, it delivers all 5!
+    assert len(shorts) == 5
+    for s in shorts:
+        assert s["end"] <= 120.0
+        assert s["start"] < s["end"]
+        assert (s["end"] - s["start"]) >= 15.0

@@ -61,13 +61,28 @@ class ClipSelector:
             }]
 
         step_sec = timeline[1]["timestamp"] - timeline[0]["timestamp"] if len(timeline) > 1 else 1.0
-        min_steps = max(1, int(self.min_duration / step_sec))
-        max_steps = max(min_steps, int(self.max_duration / step_sec))
+        total_duration = (timeline[-1]["timestamp"] - timeline[0]["timestamp"]) if timeline else 0.0
+
+        # Adjust duration window bounds if total video duration is tight for the requested max_clips
+        effective_min = self.min_duration
+        effective_max = self.max_duration
+        effective_gap = self.min_gap_sec
+        if total_duration > 0 and self.max_clips > 0:
+            avg_slot = total_duration / self.max_clips
+            if avg_slot < self.max_duration:
+                effective_max = max(15.0, min(self.max_duration, avg_slot * 1.15))
+            if avg_slot < self.min_duration:
+                effective_min = max(15.0, min(self.min_duration, avg_slot * 0.90))
+            if avg_slot < (self.min_duration + self.min_gap_sec):
+                effective_gap = max(1.0, min(self.min_gap_sec, avg_slot * 0.12))
+
+        min_steps = max(1, int(effective_min / step_sec))
+        max_steps = max(min_steps, int(effective_max / step_sec))
 
         scores = [t["composite_score"] for t in timeline]
         n = len(scores)
 
-        # Test candidate durations across the range (e.g. 25s, 35s, 45s, 60s)
+        # Test candidate durations across the range
         candidate_durations = sorted(list({
             min_steps,
             int(min_steps + (max_steps - min_steps) * 0.33),
@@ -99,6 +114,7 @@ class ClipSelector:
         # Sort candidates descending by score
         candidates.sort(key=lambda x: x[2], reverse=True)
 
+        # Pass 1: Select highest-scoring windows with standard min_gap_sec
         selected_windows = []
         for start_idx, end_idx, avg_score in candidates:
             start_ts = timeline[start_idx]["timestamp"]
@@ -110,8 +126,8 @@ class ClipSelector:
             # Overlap check
             overlap = False
             for s_start, s_end in selected_windows:
-                # Disallow overlap within min_gap_sec
-                if not (end_ts + self.min_gap_sec < s_start or start_ts > s_end + self.min_gap_sec):
+                # Disallow overlap within effective_gap
+                if not (end_ts + effective_gap < s_start or start_ts > s_end + effective_gap):
                     overlap = True
                     break
 
@@ -119,6 +135,62 @@ class ClipSelector:
                 selected_windows.append((start_ts, end_ts))
                 if len(selected_windows) >= self.max_clips:
                     break
+
+        # Pass 2: Adaptive filling with relaxed gaps (down to 2.0s and 0.5s) if quota not reached
+        if len(selected_windows) < self.max_clips:
+            for relaxed_gap in [2.0, 0.5]:
+                if len(selected_windows) >= self.max_clips:
+                    break
+                for start_idx, end_idx, avg_score in candidates:
+                    start_ts = timeline[start_idx]["timestamp"]
+                    end_idx_clamped = min(end_idx, n)
+                    end_ts = round(start_ts + (end_idx_clamped - start_idx) * step_sec, 2)
+                    if timeline and end_idx_clamped < n:
+                        end_ts = min(end_ts, timeline[-1]["timestamp"])
+
+                    overlap = False
+                    for s_start, s_end in selected_windows:
+                        if not (end_ts + relaxed_gap < s_start or start_ts > s_end + relaxed_gap):
+                            overlap = True
+                            break
+
+                    if not overlap:
+                        selected_windows.append((start_ts, end_ts))
+                        if len(selected_windows) >= self.max_clips:
+                            break
+
+        # Pass 3: Gap backfill with 15s-25s shorts to guarantee target clip count
+        if len(selected_windows) < self.max_clips and timeline:
+            selected_windows.sort(key=lambda x: x[0])
+            gaps = []
+            prev_end = timeline[0]["timestamp"]
+            for w_start, w_end in selected_windows:
+                if w_start - prev_end >= 15.0:
+                    gaps.append((prev_end, w_start))
+                prev_end = max(prev_end, w_end)
+            if timeline[-1]["timestamp"] - prev_end >= 15.0:
+                gaps.append((prev_end, timeline[-1]["timestamp"]))
+
+            for g_start, g_end in gaps:
+                if len(selected_windows) >= self.max_clips:
+                    break
+                gap_dur = g_end - g_start
+                clip_dur = min(gap_dur, max(15.0, min(self.min_duration, gap_dur)))
+                clip_steps = max(1, int(clip_dur / step_sec))
+                g_start_idx = max(0, int((g_start - timeline[0]["timestamp"]) / step_sec))
+                g_end_idx = min(n, int((g_end - timeline[0]["timestamp"]) / step_sec))
+                
+                best_sub_idx = g_start_idx
+                best_sub_sum = -1.0
+                for si in range(g_start_idx, max(g_start_idx + 1, g_end_idx - clip_steps + 1)):
+                    s_sum = sum(scores[si : si + clip_steps])
+                    if s_sum > best_sub_sum:
+                        best_sub_sum = s_sum
+                        best_sub_idx = si
+                
+                c_start = timeline[best_sub_idx]["timestamp"]
+                c_end = min(timeline[-1]["timestamp"], round(c_start + clip_dur, 2))
+                selected_windows.append((c_start, c_end))
 
         # Sort by chronological order
         selected_windows.sort(key=lambda x: x[0])

@@ -164,6 +164,43 @@ class GamingIntelligenceEngine:
             if len(raw_candidates) >= self.target_clip_count:
                 break
 
+        # Backfill if target count was not reached and timeline has space
+        if len(raw_candidates) < self.target_clip_count and timeline.duration > self.min_clip_sec:
+            selected_ranges.sort(key=lambda x: x[0])
+            gaps = []
+            prev_end = 0.0
+            for r_start, r_end in selected_ranges:
+                if r_start - prev_end >= self.min_clip_sec:
+                    gaps.append((prev_end, r_start))
+                prev_end = max(prev_end, r_end)
+            if timeline.duration - prev_end >= self.min_clip_sec:
+                gaps.append((prev_end, timeline.duration))
+
+            for g_start, g_end in gaps:
+                if len(raw_candidates) >= self.target_clip_count:
+                    break
+                clip_dur = min(self.max_clip_sec, g_end - g_start)
+                clip_start = round(g_start, 2)
+                clip_end = round(g_start + clip_dur, 2)
+                pk_time = round((clip_start + clip_end) / 2.0, 2)
+                raw_candidates.append(GameplayCandidate(
+                    candidate_id=f"gaming_clip_{len(raw_candidates) + 1:02d}",
+                    start=clip_start,
+                    end=clip_end,
+                    duration=round(clip_dur, 2),
+                    category=GamingEventCategory.VEHICLE_ACTION,
+                    score=0.70,
+                    setup_start=clip_start,
+                    climax_start=pk_time,
+                    payoff_end=clip_end,
+                    recommended_template="streamer_stacked_top" if has_streamer_webcam else "gaming_cinematic",
+                    recommended_layout="stacked_top_cam" if has_streamer_webcam else "gameplay_center",
+                    has_webcam=has_streamer_webcam,
+                    summary="High-energy gameplay sequence",
+                    evidence=["Adaptive timeline fill moment"],
+                ))
+                selected_ranges.append((clip_start, clip_end))
+
         return sorted(raw_candidates, key=lambda c: c.score, reverse=True)
 
     def _classify_event(

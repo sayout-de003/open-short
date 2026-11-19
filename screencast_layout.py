@@ -173,17 +173,27 @@ def detect_faces_full_res(frame):
     h, w, _ = frame.shape
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     with m.DETECT_LOCK:
-        results = m.face_detection.process(rgb)
-    if not results.detections:
-        return []
+        if getattr(m, 'face_detection', None) is not None:
+            try:
+                results = m.face_detection.process(rgb)
+                if results and getattr(results, 'detections', None):
+                    out = []
+                    for detection in results.detections:
+                        b = detection.location_data.relative_bounding_box
+                        box = [int(b.xmin * w), int(b.ymin * h),
+                               int(b.width * w), int(b.height * h)]
+                        out.append({'box': box, 'score': box[2] * box[3]})
+                    if out:
+                        return out
+            except Exception:
+                pass
 
-    out = []
-    for detection in results.detections:
-        b = detection.location_data.relative_bounding_box
-        box = [int(b.xmin * w), int(b.ymin * h),
-               int(b.width * w), int(b.height * h)]
-        out.append({'box': box, 'score': box[2] * box[3]})
-    return out
+    # Fallback to YuNet / Haar Cascade candidates from main
+    candidates = m.detect_face_candidates(frame)
+    if candidates:
+        return candidates
+
+    return []
 
 
 def _face_centre(candidates, frame_w):
