@@ -5498,6 +5498,38 @@ async def delete_template_endpoint(template_id: str):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("/api/templates/recommend")
+async def recommend_template_endpoint(request: Request):
+    data = await request.json()
+    from template_library.recommender import recommend_template
+    res = recommend_template(
+        content_profile=data.get("content_profile", "gaming"),
+        event_category=data.get("event_category"),
+        has_webcam=bool(data.get("has_webcam", False)),
+        speaker_count=int(data.get("speaker_count", 1)),
+        aspect_ratio=str(data.get("aspect_ratio", "9:16")),
+        duration=float(data.get("duration", 30.0)),
+    )
+    return res
+
+
+@app.post("/api/quality/validate")
+async def validate_clip_endpoint(request: Request):
+    data = await request.json()
+    clip_path = data.get("clip_path")
+    if not clip_path:
+        raise HTTPException(status_code=400, detail="Missing 'clip_path'")
+    from quality.clip_validator import validate_clip
+    report = validate_clip(
+        clip_path=clip_path,
+        min_duration=float(data.get("min_duration", 10.0)),
+        max_duration=float(data.get("max_duration", 90.0)),
+        expected_aspect_ratio=data.get("expected_aspect_ratio", "9:16"),
+        require_audio=bool(data.get("require_audio", True)),
+    )
+    return report
+
+
 @app.post("/api/content/classify")
 async def classify_content_endpoint(request: Request):
     data = await request.json()

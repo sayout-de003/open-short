@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Upload, Sparkles, Youtube, Instagram, Share2, ChevronDown, Check, Activity, LayoutDashboard, Settings, Plus, History, X, Terminal, Shield, LayoutGrid, Image, Globe, RotateCcw, Calendar, AlertTriangle, KeyRound, Bot, Users, Smartphone, ExternalLink, Copy, CheckCircle2, Mail, Loader2, Download, Menu, Lock, Rocket, Square } from 'lucide-react';
+import { Upload, Sparkles, Youtube, Instagram, Share2, ChevronDown, Check, Activity, LayoutDashboard, Settings, Plus, History, X, Terminal, Shield, LayoutGrid, Image, Globe, RotateCcw, Calendar, AlertTriangle, KeyRound, Bot, Users, Smartphone, ExternalLink, Copy, CheckCircle2, Mail, Loader2, Download, Menu, Lock, Rocket, Square, LayoutTemplate } from 'lucide-react';
 import KeyInput from './components/KeyInput';
 import MediaInput from './components/MediaInput';
 import McpConnectCard from './components/McpConnectCard';
@@ -7,6 +7,7 @@ import ResultCard from './components/ResultCard';
 import ProcessingAnimation from './components/ProcessingAnimation';
 // import Gallery from './components/Gallery';
 import ThumbnailStudio from './components/ThumbnailStudio';
+import TemplateStudio from './components/TemplateStudio';
 import SaaShortsTab from './components/SaaShortsTab';
 import UGCGallery from './components/UGCGallery';
 import ScheduleWeekModal from './components/ScheduleWeekModal';
@@ -1456,12 +1457,13 @@ function App() {
     { id: 'dashboard', ord: '01', icon: LayoutDashboard, label: 'Clip Generator', short: 'clips', primary: true },
     // Cloud only: it runs on the managed pipeline and the Upload-Post connection.
     ...(billingEnabled ? [{ id: 'autopilot', ord: '02', icon: Rocket, label: 'Autopilot', short: 'autopilot', isNew: true }] : []),
-    { id: 'saasshorts', ord: '03', icon: Sparkles, label: 'AI Shorts', short: 'ai shorts', byok: true, primary: true },
-    { id: 'ai-agent', ord: '04', icon: Bot, label: 'AI Agent', short: 'agent', byok: true },
-    { id: 'ugc-gallery', ord: '05', icon: LayoutGrid, label: 'UGC Gallery', short: 'gallery', primary: true },
-    { id: 'thumbnails', ord: '06', icon: Image, label: 'YouTube Studio', short: 'studio', primary: true },
-    { id: 'history', ord: '07', icon: History, label: 'Projects & Library', short: 'projects', primary: true },
-    { id: 'settings', ord: '08', icon: Settings, label: 'Settings', short: 'settings' },
+    { id: 'templates', ord: '03', icon: LayoutTemplate, label: 'Template Studio', short: 'templates', primary: true, isNew: true },
+    { id: 'saasshorts', ord: '04', icon: Sparkles, label: 'AI Shorts', short: 'ai shorts', byok: true, primary: true },
+    { id: 'ai-agent', ord: '05', icon: Bot, label: 'AI Agent', short: 'agent', byok: true },
+    { id: 'ugc-gallery', ord: '06', icon: LayoutGrid, label: 'UGC Gallery', short: 'gallery', primary: true },
+    { id: 'thumbnails', ord: '07', icon: Image, label: 'YouTube Studio', short: 'studio', primary: true },
+    { id: 'history', ord: '08', icon: History, label: 'Projects & Library', short: 'projects', primary: true },
+    { id: 'settings', ord: '09', icon: Settings, label: 'Settings', short: 'settings' },
   ];
   const activeNav = navItems.find((n) => n.id === activeTab);
 
@@ -2429,6 +2431,10 @@ function App() {
                 }} />
               </div>
             </div>
+          )}
+
+          {activeTab === 'templates' && (
+            <TemplateStudio />
           )}
 
           {activeTab === 'thumbnails' && (

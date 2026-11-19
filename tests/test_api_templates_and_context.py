@@ -105,3 +105,27 @@ def test_classify_endpoint(client):
     assert res["primary_profile"] == "gaming"
     assert res["confidence"] >= 0.70
     assert len(res["evidence"]) > 0
+
+
+def test_recommend_endpoint(client):
+    payload = {
+        "content_profile": "gaming",
+        "has_webcam": True,
+        "event_category": "vehicle_action",
+    }
+    resp = client.post("/api/templates/recommend", json=payload)
+    assert resp.status_code == 200
+    res = resp.json()
+    assert res["recommended_template_id"] == "streamer_stacked_top"
+    assert res["confidence"] >= 0.90
+
+
+def test_quality_validate_endpoint(client):
+    import os
+    demo_video = os.path.join(os.path.dirname(__file__), "..", "demo-openshorts.mp4")
+    if os.path.exists(demo_video):
+        resp = client.post("/api/quality/validate", json={"clip_path": demo_video, "expected_aspect_ratio": "16:9"})
+        assert resp.status_code == 200
+        res = resp.json()
+        assert res["status"] in ("passed", "warning")
+        assert res["quality_score"] > 0.70
