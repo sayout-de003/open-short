@@ -5,6 +5,7 @@ Standard-library only so both main.py and gemini_worker.py can import it and
 the logic stays unit-testable without the heavy video dependencies.
 """
 import math
+import os
 
 # USD per 1M tokens (input, output incl. thinking), from ai.google.dev pricing.
 MODEL_PRICES = {
@@ -204,7 +205,7 @@ def clip_duration_bounds():
         except ValueError:
             return default
 
-    lo = _read("CLIP_MIN_SECONDS", 15.0)
+    lo = _read("CLIP_MIN_SECONDS", 30.0)
     hi = _read("CLIP_MAX_SECONDS", 60.0)
     lo = min(max(lo, 5.0), 175.0)
     hi = min(max(hi, 10.0), 180.0)

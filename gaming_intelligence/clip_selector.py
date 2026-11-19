@@ -14,13 +14,13 @@ class ClipSelector:
 
     def __init__(
         self,
-        min_duration: float = 15.0,
-        max_duration: float = 59.0,
+        min_duration: float = 25.0,
+        max_duration: float = 60.0,
         max_clips: int = 5,
-        min_gap_sec: float = 10.0,
+        min_gap_sec: float = 8.0,
     ):
-        self.min_duration = min_duration
-        self.max_duration = max_duration
+        self.min_duration = float(min_duration)
+        self.max_duration = float(max_duration)
         self.max_clips = max_clips
         self.min_gap_sec = min_gap_sec
 
@@ -67,22 +67,34 @@ class ClipSelector:
         scores = [t["composite_score"] for t in timeline]
         n = len(scores)
 
+        # Test candidate durations across the range (e.g. 25s, 35s, 45s, 60s)
+        candidate_durations = sorted(list({
+            min_steps,
+            int(min_steps + (max_steps - min_steps) * 0.33),
+            int(min_steps + (max_steps - min_steps) * 0.66),
+            max_steps
+        }))
+        durations = [d for d in candidate_durations if d <= n]
+        if not durations:
+            durations = [min(n, min_steps)]
+
         # Sliding window evaluation for different candidate lengths
         candidates = []
-        # Test candidate durations: min, mid, max
-        durations = list({min_steps, (min_steps + max_steps) // 2, max_steps})
-
         for window_len in durations:
             if window_len > n:
                 continue
-            # Compute running sum
+            # Length-balanced scoring: reward sustained interest and context
+            # Pure average (sum / L) always selects the absolute minimum window.
+            # Scaling with (window_len / min_steps) ** 0.45 balances intensity with storytelling depth.
+            length_factor = (window_len / max(1, min_steps)) ** 0.45
             current_sum = sum(scores[:window_len])
-            candidates.append((0, window_len, current_sum / window_len))
+            balanced_score = (current_sum / window_len) * length_factor
+            candidates.append((0, window_len, balanced_score))
 
             for i in range(1, n - window_len + 1):
                 current_sum = current_sum - scores[i - 1] + scores[i + window_len - 1]
-                avg_score = current_sum / window_len
-                candidates.append((i, i + window_len, avg_score))
+                balanced_score = (current_sum / window_len) * length_factor
+                candidates.append((i, i + window_len, balanced_score))
 
         # Sort candidates descending by score
         candidates.sort(key=lambda x: x[2], reverse=True)
@@ -90,7 +102,10 @@ class ClipSelector:
         selected_windows = []
         for start_idx, end_idx, avg_score in candidates:
             start_ts = timeline[start_idx]["timestamp"]
-            end_ts = timeline[min(end_idx - 1, n - 1)]["timestamp"]
+            end_idx_clamped = min(end_idx, n)
+            end_ts = round(start_ts + (end_idx_clamped - start_idx) * step_sec, 2)
+            if timeline and end_idx_clamped < n:
+                end_ts = min(end_ts, timeline[-1]["timestamp"])
 
             # Overlap check
             overlap = False

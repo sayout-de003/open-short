@@ -38,6 +38,7 @@ import media_auth
 import remote_worker
 import yt_account
 import youtube_publisher
+import buffer_publisher
 import scheduler
 from jsonfile import write_json_atomic
 
@@ -3553,6 +3554,8 @@ def _should_auto_retry(job) -> bool:
     # here, whatever it printed: this host decides what a video's failure is.
     if not (job and job.get('status') == 'failed' and not _draining and job.get('cmd')):
         return False
+    if job.get('cancelled'):
+        return False
     # YouTube limiting the account is neither the video's fault nor a server
     # fault: the job waits out the cooldown, a few times at most, on its own
     # counter (it has not used its one retry for real failures).
@@ -4903,6 +4906,9 @@ def _finish_job(job_id, returncode, output_dir):
         jobs[job_id]['logs'].append(_scrub_secrets(f"Process failed with exit code {returncode}"))
 
 
+_running_processes: Dict[str, subprocess.Popen] = {}
+
+
 async def _run_main(job_id, cmd, env, tick=None):
     """Run a main.py command of ``job_id`` to its end and return its exit
     code: output lines into the job's log, the manifest heartbeated, ``tick``
@@ -4917,30 +4923,34 @@ async def _run_main(job_id, cmd, env, tick=None):
         cwd=os.getcwd(),
         preexec_fn=_lower_priority,
     )
+    _running_processes[job_id] = process
     # We need to capture logs in a thread because Popen isn't async
     t_log = threading.Thread(target=enqueue_output, args=(process.stdout, job_id))
     t_log.daemon = True
     t_log.start()
 
-    last_heartbeat = time.time()
-    while process.poll() is None:
-        try:
-            await asyncio.sleep(2)
-        except asyncio.CancelledError:
+    try:
+        last_heartbeat = time.time()
+        while process.poll() is None:
             try:
-                process.kill()
-            except Exception:
-                pass
-            raise
-        if time.time() - last_heartbeat >= HEARTBEAT_EVERY:
-            _touch_manifest(job_id)
-            last_heartbeat = time.time()
-        if tick is not None:
-            tick()
-    # The exit code can be read before the reader thread saw the last lines
-    # (SOURCE_READY is printed right before the exit).
-    await asyncio.to_thread(t_log.join, 5)
-    return process.returncode
+                await asyncio.sleep(2)
+            except asyncio.CancelledError:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+                raise
+            if time.time() - last_heartbeat >= HEARTBEAT_EVERY:
+                _touch_manifest(job_id)
+                last_heartbeat = time.time()
+            if tick is not None:
+                tick()
+        # The exit code can be read before the reader thread saw the last lines
+        # (SOURCE_READY is printed right before the exit).
+        await asyncio.to_thread(t_log.join, 5)
+        return process.returncode
+    finally:
+        _running_processes.pop(job_id, None)
 
 
 async def run_job(job_id, job_data):
@@ -5853,6 +5863,7 @@ async def process_endpoint(
     source_start: Optional[str] = Form(None),
     source_end: Optional[str] = Form(None),
     clipping_profile: Optional[str] = Form(None),
+    live_cut_seconds: Optional[str] = Form(None),
 ):
     api_key = await resolve_gemini(request)
     if not api_key and not (llm_backend.active() and not BILLING_ENABLED):
@@ -5888,6 +5899,7 @@ async def process_endpoint(
         source_start = body.get("source_start")
         source_end = body.get("source_end")
         clipping_profile = body.get("clipping_profile") or body.get("category") or body.get("profile")
+        live_cut_seconds = body.get("live_cut_seconds")
 
     # Normalize output format (auto = keep pipeline default).
     if output_format not in ("vertical", "horizontal", "square"):
@@ -6040,6 +6052,13 @@ async def process_endpoint(
     if captions is not None and str(captions).lower() in ("0", "false", "no"):
         env["AUTO_CAPTIONS"] = "0"
         print(f"[captions] job={job_id} auto-captions off")
+
+    if live_cut_seconds:
+        try:
+            env["LIVE_CUT_SECONDS"] = str(int(live_cut_seconds))
+            print(f"[live-controls] job={job_id} live_cut_seconds={int(live_cut_seconds)}")
+        except (ValueError, TypeError):
+            pass
 
     input_path = None
     if url:
@@ -6523,6 +6542,25 @@ async def get_source_video(job_id: str, request: Request,
     return FileResponse(source_path, media_type="video/mp4")
 
 
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job_endpoint(job_id: str):
+    """Stop and cancel an active video clipping job."""
+    proc = _running_processes.pop(job_id, None)
+    if proc:
+        try:
+            proc.terminate()
+            time.sleep(0.5)
+            if proc.poll() is None:
+                proc.kill()
+        except Exception as e:
+            logger.warning(f"Error terminating job process {job_id}: {e}")
+    if job_id in jobs:
+        jobs[job_id]["cancelled"] = True
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["logs"].append("🛑 Job cancelled by user.")
+    return {"ok": True, "message": "Job cancelled"}
+
+
 @app.get("/api/jobs/{job_id}/download-all")
 async def download_all_clips(job_id: str, request: Request):
     """Bundle the current version of every clip of a job into one ZIP."""
@@ -6645,12 +6683,15 @@ async def list_projects_endpoint():
                         size_mb = round(os.path.getsize(canon_path) / (1024 * 1024), 2)
                     except Exception:
                         size_mb = 0
+                    clip_url = f"/videos/{entry}/{canon_file}"
+                    shorts[idx]["video_url"] = clip_url
                     clip_list.append({
                         "filename": canon_file,
-                        "url": f"/videos/{entry}/{canon_file}",
+                        "url": clip_url,
                         "size_mb": size_mb
                     })
         if not clip_list:
+            clip_idx = 0
             for f in sorted(glob.glob(os.path.join(job_dir, "*.mp4"))):
                 fname = os.path.basename(f)
                 if fname.startswith("temp_") or fname.endswith(".temp.mp4"):
@@ -6661,11 +6702,15 @@ async def list_projects_endpoint():
                         size_mb = round(os.path.getsize(f) / (1024 * 1024), 2)
                     except Exception:
                         size_mb = 0
+                    clip_url = f"/videos/{entry}/{fname}"
+                    if shorts and clip_idx < len(shorts):
+                        shorts[clip_idx]["video_url"] = clip_url
                     clip_list.append({
                         "filename": fname,
-                        "url": f"/videos/{entry}/{fname}",
+                        "url": clip_url,
                         "size_mb": size_mb
                     })
+                    clip_idx += 1
 
         if entry in jobs:
             status = jobs[entry].get("status", "unknown")
@@ -9127,11 +9172,122 @@ async def publish_to_youtube(req: YouTubePublishRequest, request: Request):
         raise HTTPException(status_code=500, detail=f"YouTube API Error: {str(e)}")
 
 
+class BufferPublishRequest(BaseModel):
+    job_id: str
+    clip_index: int
+    channel_ids: Optional[List[str]] = None
+    title: Optional[str] = None
+    text: Optional[str] = None
+    due_at: Optional[str] = None
+
+
+class BufferTokenRequest(BaseModel):
+    token: str
+
+
+@app.get("/api/buffer/status")
+async def buffer_status():
+    """Check Buffer API configuration, account information, and connected channels."""
+    configured = buffer_publisher.is_buffer_configured()
+    account = None
+    channels = []
+    if configured:
+        try:
+            account = await asyncio.to_thread(buffer_publisher.get_account_info)
+            channels = await asyncio.to_thread(buffer_publisher.list_channels)
+        except Exception as e:
+            logger.warning(f"Error fetching Buffer status: {e}")
+    return {
+        "configured": configured,
+        "account": account,
+        "channels": channels,
+    }
+
+
+@app.get("/api/buffer/channels")
+async def buffer_channels():
+    """List connected social media channels in Buffer."""
+    if not buffer_publisher.is_buffer_configured():
+        return {"channels": []}
+    try:
+        channels = await asyncio.to_thread(buffer_publisher.list_channels)
+        return {"channels": channels}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Buffer API error: {str(e)}")
+
+
+@app.post("/api/buffer/token")
+async def set_buffer_token(req: BufferTokenRequest):
+    """Save or update the Buffer Access Token."""
+    if not req.token.strip():
+        raise HTTPException(status_code=400, detail="Token cannot be empty")
+    try:
+        # Validate token first
+        account = await asyncio.to_thread(buffer_publisher.get_account_info, token=req.token.strip())
+        buffer_publisher.save_buffer_token_to_env(req.token.strip())
+        return {"success": True, "account": account}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Buffer Token: {str(e)}")
+
+
+@app.post("/api/buffer/publish")
+async def publish_to_buffer(req: BufferPublishRequest, request: Request):
+    """Publish or schedule a clip to Buffer channels."""
+    if not buffer_publisher.is_buffer_configured():
+        raise HTTPException(status_code=400, detail="Buffer API is not configured. Set BUFFER_ACCESS_TOKEN in .env.")
+    
+    await _ensure_job_files(req.job_id, request)
+    if req.job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = jobs.get(req.job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    await _assert_job_owner(request, job)
+
+    clip, file_path, filename = _resolve_clip_video_file(job, req.job_id, req.clip_index)
+    title = req.title or clip.get("video_title_for_youtube_short") or "Short"
+    text = req.text or clip.get("video_description_for_instagram") or clip.get("video_description_for_tiktok") or title
+
+    all_channels = await asyncio.to_thread(buffer_publisher.list_channels)
+    if not all_channels:
+        raise HTTPException(
+            status_code=400, 
+            detail="No connected channels found in your Buffer organization. Please connect channels in buffer.com first."
+        )
+
+    if req.channel_ids:
+        target_channels = [c for c in all_channels if c.get("id") in req.channel_ids]
+    else:
+        target_channels = all_channels
+
+    if not target_channels:
+        raise HTTPException(status_code=400, detail="None of the specified channels were found in your Buffer account")
+
+    base_url = str(request.base_url).rstrip("/")
+    video_url = f"{base_url}/videos/{req.job_id}/{filename}"
+
+    try:
+        results = await asyncio.to_thread(
+            buffer_publisher.publish_to_buffer_channels,
+            channels=target_channels,
+            text=text,
+            video_url=video_url,
+            due_at=req.due_at,
+            title=title
+        )
+        return {"success": True, "results": results}
+    except Exception as e:
+        logger.error(f"Buffer publish failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Buffer error: {str(e)}")
+
+
 class ScheduleClipRequest(BaseModel):
     job_id: str
     clip_index: int
     scheduled_at: str  # ISO-8601 string
     platforms: Optional[List[str]] = None
+    provider: Optional[str] = "auto"
+    buffer_channels: Optional[List[str]] = None
     title: Optional[str] = None
     description: Optional[str] = None
     privacy_status: Optional[str] = "public"
@@ -9142,6 +9298,8 @@ class AutoScheduleProjectRequest(BaseModel):
     start_time: Optional[str] = None
     interval_hours: Optional[float] = 4.0
     platforms: Optional[List[str]] = None
+    provider: Optional[str] = "auto"
+    buffer_channels: Optional[List[str]] = None
     privacy_status: Optional[str] = "public"
 
 
@@ -9150,6 +9308,8 @@ async def api_schedule_clip(req: ScheduleClipRequest, request: Request):
     """Schedule a specific clip for automated publishing."""
     await _ensure_job_files(req.job_id, request)
     job = jobs.get(req.job_id)
+    if job is None:
+        job = _job_view_from_disk(req.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     await _assert_job_owner(request, job)
@@ -9164,6 +9324,8 @@ async def api_schedule_clip(req: ScheduleClipRequest, request: Request):
             clip_index=req.clip_index,
             scheduled_at=req.scheduled_at,
             platforms=req.platforms or ["youtube"],
+            provider=req.provider or "auto",
+            buffer_channels=req.buffer_channels,
             title=title,
             description=desc,
             privacy_status=req.privacy_status,
@@ -9178,6 +9340,8 @@ async def api_auto_schedule_project(req: AutoScheduleProjectRequest, request: Re
     """Automatically schedule all clips in a project spaced out over time."""
     await _ensure_job_files(req.job_id, request)
     job = jobs.get(req.job_id)
+    if job is None:
+        job = _job_view_from_disk(req.job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     await _assert_job_owner(request, job)
@@ -9192,6 +9356,8 @@ async def api_auto_schedule_project(req: AutoScheduleProjectRequest, request: Re
         start_time=req.start_time,
         interval_hours=req.interval_hours or 4.0,
         platforms=req.platforms or ["youtube"],
+        provider=req.provider or "auto",
+        buffer_channels=req.buffer_channels,
         privacy_status=req.privacy_status or "public",
     )
     return {"success": True, "count": len(entries), "schedules": entries}
@@ -9343,11 +9509,44 @@ async def post_to_socials(req: SocialPostRequest, request: Request):
         if not req.platforms:
             return direct_yt_result or {"success": True, "direct_youtube": True}
 
+    # Check if Buffer is configured and has channels for remaining platforms
+    if buffer_publisher.is_buffer_configured():
+        try:
+            all_buf_channels = await asyncio.to_thread(buffer_publisher.list_channels)
+            matching = [c for c in all_buf_channels if c.get("service", "").lower() in [p.lower() for p in req.platforms]]
+            if matching:
+                clip, file_path, filename = _resolve_clip_video_file(job, req.job_id, req.clip_index)
+                title = req.title or clip.get("video_title_for_youtube_short") or "Short"
+                text = req.description or clip.get("video_description_for_instagram") or title
+                base_url = str(request.base_url).rstrip("/")
+                video_url = f"{base_url}/videos/{req.job_id}/{filename}"
+                buf_results = await asyncio.to_thread(
+                    buffer_publisher.publish_to_buffer_channels,
+                    channels=matching,
+                    text=text,
+                    video_url=video_url,
+                    due_at=req.scheduled_date,
+                    title=title
+                )
+                handled_services = set(c.get("service", "").lower() for c in matching)
+                req.platforms = [p for p in req.platforms if p.lower() not in handled_services]
+                if not req.platforms:
+                    return {
+                        "success": True,
+                        "buffer": True,
+                        "results": buf_results,
+                        "direct_youtube": direct_yt_result is not None
+                    }
+        except Exception as be:
+            logger.warning(f"Buffer posting check failed: {be}")
+
     # Resolve the Upload-Post key + profile. For managed users the server key is
     # used and their own profile is forced (body api_key / user_id are ignored).
     upload_key, forced_profile = await resolve_upload_post(request, req.api_key)
     if not upload_key:
-        raise HTTPException(status_code=400, detail="Missing Upload-Post API key")
+        if direct_yt_result:
+            return direct_yt_result
+        raise HTTPException(status_code=400, detail="Missing Upload-Post API key or Buffer connected channels for selected platforms.")
     post_user = resolve_post_profile(forced_profile, req.user_id)
 
     if BILLING_ENABLED and forced_profile:

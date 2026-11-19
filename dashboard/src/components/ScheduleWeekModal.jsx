@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Loader2, Calendar, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Circle, ExternalLink } from 'lucide-react';
+import { Loader2, Calendar, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Circle, ExternalLink, Share2, Youtube } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { platformOptions, defaultPlatformFlags, flagsFromList } from '../lib/socialPlatforms';
 import Modal from './ui/Modal';
@@ -77,13 +77,32 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
     const [startOffset, setStartOffset] = useState(1);
     const [intervalHours, setIntervalHours] = useState(24);
     const [ytDirectConfigured, setYtDirectConfigured] = useState(false);
+    const [bufferConfigured, setBufferConfigured] = useState(false);
+    const [bufferChannels, setBufferChannels] = useState([]);
+    const [selectedProvider, setSelectedProvider] = useState('buffer');
 
     React.useEffect(() => {
+        let ytOk = false;
+        let bufOk = false;
         apiFetch('/api/youtube/config')
             .then(r => r.json())
             .then(data => {
                 if (data && data.configured) {
                     setYtDirectConfigured(true);
+                    ytOk = true;
+                    if (!bufOk) setSelectedProvider('youtube');
+                }
+            })
+            .catch(() => {});
+
+        apiFetch('/api/buffer/status')
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.configured) {
+                    setBufferConfigured(true);
+                    bufOk = true;
+                    setBufferChannels(data.channels || []);
+                    setSelectedProvider('buffer');
                 }
             })
             .catch(() => {});
@@ -105,6 +124,25 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
     const [progress, setProgress] = useState({ current: 0, total: 0, results: [] });
     const [done, setDone] = useState(false);
 
+    const [selectedClips, setSelectedClips] = useState(() => new Set((clips || []).map((_, i) => i)));
+
+    const toggleClip = (idx) => {
+        setSelectedClips(prev => {
+            const next = new Set(prev);
+            if (next.has(idx)) next.delete(idx);
+            else next.add(idx);
+            return next;
+        });
+    };
+
+    const toggleAllClips = () => {
+        if (selectedClips.size === (clips || []).length) {
+            setSelectedClips(new Set());
+        } else {
+            setSelectedClips(new Set((clips || []).map((_, i) => i)));
+        }
+    };
+
     // Reset state when modal reopens
     const prevOpen = React.useRef(false);
     React.useEffect(() => {
@@ -112,29 +150,37 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
             setScheduling(false);
             setDone(false);
             setProgress({ current: 0, total: 0, results: [] });
+            setSelectedClips(new Set((clips || []).map((_, i) => i)));
         }
         prevOpen.current = isOpen;
-    }, [isOpen]);
+    }, [isOpen, clips]);
 
     if (!isOpen) return null;
 
     const selectedPlatforms = Object.keys(platforms).filter(k => platforms[k]);
 
-    // Managed (cloud plan/trial) users post with the server-side key — no BYOK needed
-    const canPost = isManaged || (uploadPostKey && uploadUserId) || (ytDirectConfigured && platforms.youtube);
+    // Managed users, upload-post, direct YouTube, or Buffer
+    const canPost = isManaged ||
+        (uploadPostKey && uploadUserId) ||
+        (selectedProvider === 'buffer' && bufferConfigured) ||
+        (selectedProvider === 'youtube' && ytDirectConfigured) ||
+        (selectedProvider === 'both' && (bufferConfigured || ytDirectConfigured));
 
     const handleScheduleAll = async () => {
         if (!canPost) return;
         if (selectedPlatforms.length === 0) return;
 
+        const targets = schedule.filter(s => selectedClips.has(s.index));
+        if (targets.length === 0) return;
+
         setScheduling(true);
         setDone(false);
-        const total = schedule.length;
+        const total = targets.length;
         setProgress({ current: 0, total, results: [] });
 
         const results = [];
-        for (let i = 0; i < schedule.length; i++) {
-            const { clip, index, date } = schedule[i];
+        for (let i = 0; i < targets.length; i++) {
+            const { clip, index, date } = targets[i];
             const scheduledIso = date.toISOString();
 
             const payload = {
@@ -142,6 +188,7 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
                 clip_index: index,
                 scheduled_at: scheduledIso,
                 platforms: selectedPlatforms,
+                provider: selectedProvider,
                 title: clip.video_title_for_youtube_short || 'Viral Short',
                 description: clip.video_description_for_instagram || clip.video_description_for_tiktok || '',
                 privacy_status: 'public'
@@ -161,9 +208,9 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
                     throw new Error(detail);
                 }
 
-                results.push({ index: i, success: true });
+                results.push({ index, success: true });
             } catch (e) {
-                results.push({ index: i, success: false, error: e.message });
+                results.push({ index, success: false, error: e.message });
             }
 
             setProgress({ current: i + 1, total, results: [...results] });
@@ -188,7 +235,7 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
             {!done ? (
                 <button
                     onClick={handleScheduleAll}
-                    disabled={scheduling || !canPost || selectedPlatforms.length === 0}
+                    disabled={scheduling || !canPost || selectedPlatforms.length === 0 || selectedClips.size === 0}
                     className="btn-primary flex-1"
                 >
                     {scheduling ? (
@@ -199,7 +246,7 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
                     ) : (
                         <>
                             <Calendar size={16} />
-                            schedule {clips?.length || 0} clips
+                            schedule {selectedClips.size} selected {selectedClips.size === 1 ? 'clip' : 'clips'}
                         </>
                     )}
                 </button>
@@ -231,9 +278,56 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
             {!canPost && (
                 <div className="mb-4 p-3 bg-warn/10 text-warn text-xs rounded-input flex items-start gap-2">
                     <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                    <div>Connect your YouTube channel in clip post modal or set Upload-Post API key in Settings.</div>
+                    <div>Connect your YouTube channel, Buffer account, or set Upload-Post API key in Settings.</div>
                 </div>
             )}
+
+            {/* Publishing Service */}
+            <div className="mb-5 p-3 rounded-input bg-paper border border-rule space-y-2">
+                <div className="flex items-center justify-between">
+                    <label className="eyebrow block">PUBLISHING SERVICE</label>
+                    <span className="text-[11px] text-muted">
+                        {selectedProvider === 'buffer' ? (bufferConfigured ? `${bufferChannels.length} Buffer channels ready` : 'Buffer not connected') :
+                         selectedProvider === 'youtube' ? (ytDirectConfigured ? 'YouTube Direct ready' : 'YouTube OAuth required') :
+                         'Both services'}
+                    </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setSelectedProvider('buffer')}
+                        className={`py-2 px-2 text-xs rounded-input font-medium flex items-center justify-center gap-1.5 border transition-all ${
+                            selectedProvider === 'buffer'
+                                ? 'bg-brass/10 border-brass text-brass'
+                                : 'bg-paper hover:bg-hover border-rule text-muted hover:text-ink'
+                        }`}
+                    >
+                        <Share2 size={13} /> Buffer {bufferConfigured ? '✓' : ''}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSelectedProvider('youtube')}
+                        className={`py-2 px-2 text-xs rounded-input font-medium flex items-center justify-center gap-1.5 border transition-all ${
+                            selectedProvider === 'youtube'
+                                ? 'bg-red-500/10 border-red-500 text-red-500'
+                                : 'bg-paper hover:bg-hover border-rule text-muted hover:text-ink'
+                        }`}
+                    >
+                        <Youtube size={13} /> YouTube Direct {ytDirectConfigured ? '✓' : ''}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSelectedProvider('both')}
+                        className={`py-2 px-2 text-xs rounded-input font-medium flex items-center justify-center gap-1.5 border transition-all ${
+                            selectedProvider === 'both'
+                                ? 'bg-ink/10 border-ink text-ink font-semibold'
+                                : 'bg-paper hover:bg-hover border-rule text-muted hover:text-ink'
+                        }`}
+                    >
+                        Both / All
+                    </button>
+                </div>
+            </div>
 
             {/* Interval Spacing */}
             <div className="mb-5">
@@ -313,38 +407,58 @@ export default function ScheduleWeekModal({ isOpen, onClose, clips, jobId, uploa
             </div>
 
             {/* Calendar list */}
-            <div className="mb-5 border-y border-rule divide-y divide-rule">
-                {schedule.map(({ clip, index, date }) => (
-                    <div key={index} className="flex items-center gap-3 py-2.5">
-                        <div className="w-24 shrink-0">
-                            <span className="readout">{getDayLabel(date)} · {formatDate(date)}</span>
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                            <div className="text-xs text-ink truncate">
-                                {clip.video_title_for_youtube_short || 'Viral Short'}
+            <div className="mb-2 flex items-center justify-between text-xs">
+                <span className="eyebrow">SELECT CLIPS TO SCHEDULE</span>
+                <button
+                    type="button"
+                    onClick={toggleAllClips}
+                    className="text-brass hover:underline font-medium text-xs"
+                >
+                    {selectedClips.size === (clips || []).length ? 'Deselect All' : 'Select All'}
+                </button>
+            </div>
+            <div className="mb-5 border-y border-rule divide-y divide-rule max-h-60 overflow-y-auto custom-scrollbar">
+                {schedule.map(({ clip, index, date }) => {
+                    const isSelected = selectedClips.has(index);
+                    return (
+                        <div key={index} className={`flex items-center gap-3 py-2.5 px-1 rounded transition-colors ${isSelected ? 'bg-paper/40' : 'opacity-60'}`}>
+                            <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleClip(index)}
+                                disabled={scheduling}
+                                className="w-4 h-4 accent-brass cursor-pointer shrink-0"
+                            />
+                            <div className="w-24 shrink-0">
+                                <span className="readout">{getDayLabel(date)} · {formatDate(date)}</span>
                             </div>
-                            <div className="readout mt-0.5 truncate">
-                                {time} · {TIMEZONES.find(t => t.value === timezone)?.label || timezone}
+
+                            <div className="flex-1 min-w-0">
+                                <div className="text-xs text-ink truncate font-medium">
+                                    {clip.video_title_for_youtube_short || `Clip #${index + 1}`}
+                                </div>
+                                <div className="readout mt-0.5 truncate">
+                                    {time} · {TIMEZONES.find(t => t.value === timezone)?.label || timezone}
+                                </div>
+                            </div>
+
+                            <div className="shrink-0">
+                                {progress.results.find(r => r.index === index)?.success === true && (
+                                    <CheckCircle size={16} className="text-ok" />
+                                )}
+                                {progress.results.find(r => r.index === index)?.success === false && (
+                                    <AlertCircle size={16} className="text-danger" />
+                                )}
+                                {scheduling && progress.current === index && (
+                                    <Loader2 size={16} className="text-brass animate-spin" />
+                                )}
+                                {!scheduling && !progress.results.some(r => r.index === index) && (
+                                    <Circle size={16} className={isSelected ? "text-brass" : "text-muted"} />
+                                )}
                             </div>
                         </div>
-
-                        <div className="shrink-0">
-                            {progress.results[index]?.success === true && (
-                                <CheckCircle size={16} className="text-ok" />
-                            )}
-                            {progress.results[index]?.success === false && (
-                                <AlertCircle size={16} className="text-danger" />
-                            )}
-                            {scheduling && progress.current === index && (
-                                <Loader2 size={16} className="text-brass animate-spin" />
-                            )}
-                            {!scheduling && progress.results[index] === undefined && (
-                                <Circle size={16} className="text-muted" />
-                            )}
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
             {/* Platforms */}

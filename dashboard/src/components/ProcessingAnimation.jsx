@@ -84,9 +84,10 @@ const ProcessingAnimation = ({ media, isComplete, syncedTime, isSyncedPlaying, s
 
 
   const getYouTubeId = (url) => {
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    if (!url || typeof url !== 'string') return null;
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|live\/|shorts\/)([^#&?]*).*/;
     const match = url.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
+    return (match && match[2] && match[2].length === 11) ? match[2] : null;
   };
 
   const containerClasses = `relative w-full aspect-[2/1] sm:aspect-video rounded-card overflow-hidden bg-black border border-rule2 mb-4 sm:mb-8 group animate-fade transition-all duration-500

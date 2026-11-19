@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Upload, Sparkles, Youtube, Instagram, Share2, ChevronDown, Check, Activity, LayoutDashboard, Settings, Plus, History, X, Terminal, Shield, LayoutGrid, Image, Globe, RotateCcw, Calendar, AlertTriangle, KeyRound, Bot, Users, Smartphone, ExternalLink, Copy, CheckCircle2, Mail, Loader2, Download, Menu, Lock, Rocket } from 'lucide-react';
+import { Upload, Sparkles, Youtube, Instagram, Share2, ChevronDown, Check, Activity, LayoutDashboard, Settings, Plus, History, X, Terminal, Shield, LayoutGrid, Image, Globe, RotateCcw, Calendar, AlertTriangle, KeyRound, Bot, Users, Smartphone, ExternalLink, Copy, CheckCircle2, Mail, Loader2, Download, Menu, Lock, Rocket, Square } from 'lucide-react';
 import KeyInput from './components/KeyInput';
 import MediaInput from './components/MediaInput';
 import McpConnectCard from './components/McpConnectCard';
@@ -26,6 +26,7 @@ import TrialGate from './components/TrialGate';
 import AdvancedBanner from './components/AdvancedBanner';
 import HistoryTab from './components/HistoryTab';
 import AutopilotTab from './components/AutopilotTab';
+import ErrorBoundary from './components/ErrorBoundary';
 import ProfileMenu from './components/ProfileMenu';
 import Modal from './components/ui/Modal';
 import { useAuth } from './contexts/AuthContext';
@@ -284,6 +285,15 @@ const pollJob = async (jobId) => {
   return res.json();
 };
 
+const normalizeStatus = (s) => {
+  if (!s) return 'idle';
+  const str = String(s).toLowerCase();
+  if (str === 'completed' || str === 'complete') return 'complete';
+  if (str === 'failed' || str === 'error') return 'error';
+  if (str === 'processing' || str === 'queued' || str === 'running') return 'processing';
+  return 'idle';
+};
+
 function App() {
   // Cloud auth/billing session (inert when billing is disabled).
   const { billingEnabled, isManaged, isSignedIn, me, plan, refreshMe, jobRetentionSeconds, localLlm, loading: authLoading } = useAuth();
@@ -405,13 +415,17 @@ function App() {
   // Pre-flight quality gate: { info: {max_height, min_height, cookies_invalid}, data }
   const [qualityGate, setQualityGate] = useState(null);
   const [logs, setLogs] = useState([]);
+  const logsEndRef = useRef(null);
   // When each server log line arrived (epoch s, parallel to logs), from /api/status.
   const [logTimes, setLogTimes] = useState([]);
-  // Collapsed on phones: the log tail is the least useful thing on a 360px
-  // screen and it was pushing the actual clips a full scroll down.
-  const [logsVisible, setLogsVisible] = useState(() => {
-    try { return window.innerWidth >= 768; } catch { return true; }
-  });
+  const [logsVisible, setLogsVisible] = useState(true);
+
+  // Auto-scroll logs to bottom as they arrive
+  useEffect(() => {
+    if (logsVisible && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, logsVisible]);
   const [processingMedia, setProcessingMedia] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, settings
   // Mobile only: the full nav lives in a drawer behind the header's menu button.
@@ -743,7 +757,7 @@ function App() {
         if (session.projectState) setProjectState(session.projectState);
         if (session.activeTab) setActiveTab(session.activeTab);
         // If was processing, resume polling; if complete/error, just show results
-        setStatus(session.status === 'processing' ? 'processing' : session.status);
+        setStatus(normalizeStatus(session.status));
         setSessionRecovered(true);
         setTimeout(() => setSessionRecovered(false), 5000);
       }
@@ -816,6 +830,49 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uploadPostKey, isManaged]);
 
+  const [bufferInfo, setBufferInfo] = useState({ configured: false, account: null, channels: [] });
+  const [bufferTokenInput, setBufferTokenInput] = useState('');
+  const [bufferSaved, setBufferSaved] = useState(false);
+  const [savingBuffer, setSavingBuffer] = useState(false);
+
+  const fetchBufferStatus = async () => {
+    try {
+      const res = await apiFetch('/api/buffer/status');
+      if (res.ok) {
+        const data = await res.json();
+        setBufferInfo(data);
+      }
+    } catch (_) {}
+  };
+
+  useEffect(() => {
+    fetchBufferStatus();
+  }, []);
+
+  const handleSaveBufferToken = async () => {
+    if (!bufferTokenInput.trim()) return;
+    setSavingBuffer(true);
+    try {
+      const res = await apiFetch('/api/buffer/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: bufferTokenInput.trim() })
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err);
+      }
+      setBufferSaved(true);
+      setBufferTokenInput('');
+      await fetchBufferStatus();
+      setTimeout(() => setBufferSaved(false), 3000);
+    } catch (e) {
+      alert('Failed to save Buffer token: ' + e.message);
+    } finally {
+      setSavingBuffer(false);
+    }
+  };
+
   // For managed users, fetch the durable R2 URLs of the current job's clips. The
   // preview player prefers them (free egress, edge-served, and not competing with
   // the renders for the API process), and falls back to /videos when the local
@@ -881,24 +938,23 @@ function App() {
           if (data.partial) setPartialJob(data.partial);
           setQueueInfo(data.status === 'queued' && data.queue ? data.queue : null);
 
-          if (data.status === 'completed') {
+          // Always update logs if available
+          if (data.logs && data.logs.length > 0) {
+            setLogs(data.logs);
+            setLogTimes(data.log_times || []);
+          }
+
+          if (data.status === 'completed' || data.status === 'complete') {
             setQueueInfo(null);
             setStatus('complete');
             clearInterval(interval);
             refreshMe();
-          } else if (data.status === 'failed') {
+          } else if (data.status === 'failed' || data.status === 'error') {
             setStatus('error');
             const errorMsg = data.error || (data.logs && data.logs.length > 0 ? data.logs[data.logs.length - 1] : "Process failed");
             setJobError(readableError(errorMsg));
-            setLogs(prev => [...prev, "Error: " + errorMsg]);
             clearInterval(interval);
             refreshMe();
-          } else {
-            // Update logs if available
-            if (data.logs) {
-              setLogs(data.logs);
-              setLogTimes(data.log_times || []);
-            }
           }
         } catch (e) {
           console.error("Polling error", e);
@@ -965,7 +1021,7 @@ function App() {
         setJobId(urlJobId);
         pollJob(urlJobId).then((d) => {
           if (d?.result) setResults(d.result);
-          if (d?.status) setStatus(d.status === 'completed' ? 'complete' : d.status);
+          if (d?.status) setStatus(normalizeStatus(d.status));
         }).catch(() => {});
       }
       const qa = q.get('tutorial');
@@ -1218,6 +1274,7 @@ function App() {
         target_clips: data.targetClips || null,
         clip_min_seconds: data.clipMinSeconds || null,
         clip_max_seconds: data.clipMaxSeconds || null,
+        live_cut_seconds: data.liveCutSeconds || null,
         // Sent explicitly both ways: absent means off for raw API callers,
         // but the dashboard always states the user's choice.
         auto_hook: data.autoHook ? '1' : '0',
@@ -1374,6 +1431,18 @@ function App() {
     setJobError('');
     localStorage.removeItem(SESSION_KEY);
   };
+
+  const handleCancelJob = async () => {
+    if (!jobId) return;
+    if (!window.confirm("Stop and cancel this video clipping process?")) return;
+    try {
+      await apiFetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+    } catch (e) {
+      console.warn("Cancel request failed", e);
+    }
+    handleReset();
+  };
+
   useEffect(() => {
     handleResetRef.current = handleReset;
   });
@@ -1762,6 +1831,7 @@ function App() {
 
         {/* Main Workspace */}
         <div className="flex-1 overflow-hidden relative">
+          <ErrorBoundary onReset={handleReset}>
 
           {/* View: Settings */}
           {activeTab === 'settings' && (
@@ -1879,6 +1949,77 @@ function App() {
 
                 </>
               )}
+
+              {/* Buffer API Integration */}
+              <div className="card p-4 sm:p-6 mt-8">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-input bg-paper3 flex items-center justify-center shrink-0">
+                      <Share2 size={16} className="text-brass" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-medium text-ink lowercase">Buffer Integration</h2>
+                      <p className="text-[11px] text-muted">Post & schedule clips across social networks</p>
+                    </div>
+                  </div>
+                  {bufferInfo.configured ? (
+                    <span className="badge-ok flex items-center gap-1 text-xs">
+                      <Check size={12} /> Connected
+                    </span>
+                  ) : (
+                    <span className="badge-quiet text-xs">Not configured</span>
+                  )}
+                </div>
+
+                {bufferInfo.configured && (
+                  <div className="mb-4 p-3 bg-paper3 rounded-input text-xs space-y-2 border border-rule">
+                    <div className="flex items-center justify-between">
+                      <span className="text-ink font-medium">Account:</span>
+                      <span className="text-muted font-mono">{bufferInfo.account?.email || 'Authenticated'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-ink font-medium">Connected Channels:</span>
+                      <span className="text-brass font-medium">{bufferInfo.channels?.length || 0} channels</span>
+                    </div>
+                    {bufferInfo.channels && bufferInfo.channels.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {bufferInfo.channels.map(ch => (
+                          <span key={ch.id} className="badge-quiet text-[10px] px-1.5 py-0.5">
+                            {ch.service} ({ch.name || ch.type})
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-muted pt-1">
+                        No social channels linked on Buffer yet. Go to <a href="https://publish.buffer.com/channels" target="_blank" rel="noopener noreferrer" className="text-brass underline">buffer.com/channels</a> to connect your YouTube, TikTok, Instagram, or LinkedIn accounts.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <label className="block text-sm text-muted">Buffer API Access Token</label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="password"
+                      value={bufferTokenInput}
+                      onChange={(e) => setBufferTokenInput(e.target.value)}
+                      className="input-field"
+                      placeholder={bufferInfo.configured ? "••••••••••••••••••••••••••••••••" : "Paste Buffer token (e.g. NXIH...)"}
+                    />
+                    <button
+                      onClick={handleSaveBufferToken}
+                      disabled={savingBuffer || !bufferTokenInput.trim()}
+                      className={bufferSaved ? 'badge-ok px-4' : 'btn-quiet py-2 px-4 text-sm'}
+                    >
+                      {savingBuffer ? 'saving…' : bufferSaved ? <><Check size={12} /> saved</> : 'Update Token'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted leading-relaxed">
+                    Uses Buffer's official GraphQL API (<code>https://api.buffer.com</code>). Token is saved securely to your <code>.env</code> file.
+                  </p>
+                </div>
+              </div>
 
               <div className="card p-4 sm:p-6 mt-8">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
@@ -2154,13 +2295,66 @@ function App() {
           {activeTab === 'history' && (
             <div className="h-full overflow-y-auto custom-scrollbar animate-fade">
               <div className="max-w-6xl mx-auto p-4 sm:p-6 md:p-8">
-                <HistoryTab onReopenProject={(jid) => {
+                <HistoryTab onReopenProject={(jid, proj) => {
                   setJobId(jid);
-                  pollJob(jid).then((d) => {
-                    if (d?.result) setResults(d.result);
-                    if (d?.status) setStatus(d.status === 'completed' ? 'complete' : d.status);
+                  setJobGone(false);
+                  flushClipState();
+                  setNoSource(true);
+                  setProcessingMedia(null);
+
+                  // If project from HistoryTab already has clips, display them IMMEDIATELY!
+                  if (proj && proj.clips && proj.clips.length > 0) {
+                    const shorts = proj.clips.map((c, i) => {
+                      const meta = (proj.shorts && proj.shorts[i]) || {};
+                      return {
+                        ...meta,
+                        title: meta.title || `${proj.title || 'Clip'} #${i + 1}`,
+                        video_title_for_youtube_short: meta.video_title_for_youtube_short || meta.title || `${proj.title || 'Clip'} #${i + 1}`,
+                        video_url: c.url,
+                        start: meta.start || 0,
+                        end: meta.end || 0,
+                        virality_score: meta.virality_score || 5,
+                        hook: meta.hook || '',
+                        viral_hook_text: meta.viral_hook_text || meta.hook || '',
+                        video_description_for_tiktok: meta.video_description_for_tiktok || '',
+                        video_description_for_instagram: meta.video_description_for_instagram || '',
+                      };
+                    });
+                    setResults({ clips: shorts });
+                    setStatus('complete');
+                    setLogs(['♻️ Project loaded from your local library.']);
+                    setLogTimes([Date.now() / 1000]);
                     setActiveTab('dashboard');
-                  }).catch(() => {
+                  }
+
+                  // Also poll backend to sync freshest state
+                  pollJob(jid).then((d) => {
+                    if (d?.result?.clips?.length) {
+                      setResults(d.result);
+                    }
+                    if (d?.logs && d.logs.length > 0) {
+                      setLogs(d.logs);
+                      setLogTimes(d.log_times || []);
+                    }
+                    if (d?.status) {
+                      const norm = normalizeStatus(d.status);
+                      if (proj?.clips?.length && norm !== 'error') {
+                        setStatus('complete');
+                      } else {
+                        setStatus(norm);
+                      }
+                    }
+                    setNoSource(true);
+                    setProcessingMedia(null);
+                    setActiveTab('dashboard');
+                  }).catch((err) => {
+                    console.warn("Poll job on reopen:", err);
+                    if (!proj || !proj.clips || proj.clips.length === 0) {
+                      setStatus('error');
+                      setJobError("Could not retrieve project clips from server.");
+                    } else {
+                      setStatus('complete');
+                    }
                     setActiveTab('dashboard');
                   });
                 }} />
@@ -2189,7 +2383,7 @@ function App() {
           )} */}
 
           {/* View: Dashboard (Idle) */}
-          {activeTab === 'dashboard' && status === 'idle' && (
+          {activeTab === 'dashboard' && (status === 'idle' || !status) && (
             <div className="h-full overflow-y-auto custom-scrollbar animate-fade">
               <div className="min-h-full flex flex-col items-center justify-center px-4 py-5 sm:p-6">
               {/* On a phone the hero used to fill the fold on its own and push
@@ -2233,7 +2427,7 @@ function App() {
           )}
 
           {/* View: Processing / Results (Split View) */}
-          {activeTab === 'dashboard' && (status === 'processing' || status === 'complete' || status === 'error') && (
+          {activeTab === 'dashboard' && (status === 'processing' || status === 'complete' || status === 'completed' || status === 'error' || status === 'failed') && (
             <div className="h-full flex flex-col md:flex-row gap-3 md:gap-4 p-3 md:p-4 overflow-y-auto md:overflow-y-hidden custom-scrollbar animate-fade">
 
               {/* Left Panel: Preview & Status */}
@@ -2243,12 +2437,23 @@ function App() {
                     <Activity className={`text-brass ${status === 'processing' ? 'animate-pulse' : ''}`} size={18} />
                     Live Analysis
                   </h2>
-                  <span className={status === 'processing' ? 'badge-brass' :
-                    status === 'complete' ? 'badge-ok' :
-                      'badge-danger'
-                    }>
-                    {status.toUpperCase()}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {status === 'processing' && (
+                      <button
+                        onClick={handleCancelJob}
+                        className="py-1 px-2.5 rounded-input bg-danger/10 hover:bg-danger text-danger hover:text-white border border-danger/30 text-xs flex items-center gap-1 font-medium transition-colors"
+                        title="Stop and cancel current video clipping process"
+                      >
+                        <Square size={12} className="fill-current" /> Stop
+                      </button>
+                    )}
+                    <span className={status === 'processing' ? 'badge-brass' :
+                      status === 'complete' ? 'badge-ok' :
+                        'badge-danger'
+                      }>
+                      {status.toUpperCase()}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Trimmed run: say it while it renders, not only once the
@@ -2369,6 +2574,7 @@ function App() {
                       {status === 'processing' && (
                         <div className="animate-pulse text-brass">_</div>
                       )}
+                      <div ref={logsEndRef} />
                     </div>
                   )}
                 </div>
@@ -2582,9 +2788,27 @@ function App() {
                           They appear here one by one as each finishes rendering.
                         </p>
                       </div>
-                    ) : status === 'error' ? (
-                      <div className="h-full min-h-[120px] flex flex-col items-center justify-center text-danger space-y-2">
-                        <p>Generation failed.</p>
+                    ) : (status === 'error' || status === 'failed') ? (
+                      <div className="h-full min-h-[160px] flex flex-col items-center justify-center text-danger space-y-3 p-6 text-center animate-fade">
+                        <AlertCircle size={28} className="text-danger" />
+                        <p className="font-medium text-sm text-ink">{jobError || "Generation failed"}</p>
+                        <p className="text-xs text-muted max-w-sm leading-relaxed">
+                          An error occurred during video processing. You can try another video, check server logs on the left, or start fresh.
+                        </p>
+                        <div className="flex items-center gap-2 pt-2">
+                          <button
+                            onClick={handleReset}
+                            className="btn-primary py-2 px-4 text-xs flex items-center gap-1.5"
+                          >
+                            <Plus size={14} /> Start New Project
+                          </button>
+                          <button
+                            onClick={() => goToTab('history')}
+                            className="btn-quiet py-2 px-4 text-xs flex items-center gap-1.5"
+                          >
+                            <Film size={14} /> Back to History
+                          </button>
+                        </div>
                       </div>
                     ) : null
                   )}
@@ -2594,6 +2818,17 @@ function App() {
             </div>
           )}
 
+          {/* Fallback View for any unexpected status */}
+          {activeTab === 'dashboard' && status !== 'idle' && status !== 'processing' && status !== 'complete' && status !== 'completed' && status !== 'error' && status !== 'failed' && (
+            <div className="h-full min-h-[200px] flex flex-col items-center justify-center p-6 text-center space-y-3 animate-fade">
+              <p className="text-sm text-muted">No active project in progress.</p>
+              <button onClick={handleReset} className="btn-primary py-2 px-4 text-xs flex items-center gap-2">
+                <Plus size={14} /> Create Shorts
+              </button>
+            </div>
+          )}
+
+          </ErrorBoundary>
         </div>
 
         {/* Phone navigation. A flex sibling of the scrolling pane, not a fixed

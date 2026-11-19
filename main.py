@@ -97,8 +97,10 @@ OUTPUT — RETURN ONLY VALID JSON (no markdown, no comments). Order clips by pre
     {{
       "start": <number in seconds, e.g., 12.340>,
       "end": <number in seconds, e.g., 37.900>,
-      "video_description_for_tiktok": "<description for TikTok oriented to get views>",
-      "video_description_for_instagram": "<description for Instagram oriented to get views>",
+      "caption": "<engaging, punchy caption for the short clip>",
+      "hashtags": ["#shorts", "#viral", "#trending", "#fyp"],
+      "video_description_for_tiktok": "<description for TikTok with hashtags>",
+      "video_description_for_instagram": "<description for Instagram with hashtags>",
       "video_title_for_youtube_short": "<title for YouTube Short oriented to get views 100 chars max>",
       "viral_hook_text": "<SHORT punchy text overlay (max 10 words) with 1-2 fitting emojis. MUST BE IN THE SAME LANGUAGE AS THE VIDEO TRANSCRIPT. Examples: 'POV: You realized... 😳', 'Did you know? 🤯', 'Stop doing this! 🚫'>"
     }}
@@ -1274,6 +1276,7 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
                   f"transcribing once the video is in.")
 
     def _attempt(extractor_args, fmt, proxy, cookies=True):
+        nonlocal _range_cap
         _dl_bytes["total"] = 0
         _dl_bytes["partial"] = 0
         # Extracted ONCE, unprocessed, and handed to the download below: a
@@ -1299,34 +1302,62 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
         # Real-time live video cutting: do not wait for the stream to end.
         is_live = bool(info.get('is_live') or info.get('live_status') == 'is_live')
         if is_live:
-            live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "600"))  # 10 minutes default
-            print(f"🔴 Live video stream detected! Real-time live clipping active (capturing {live_seconds/60:.1f}m window without waiting for stream to finish)...")
-            stream_url = info.get('url')
-            if not stream_url and info.get('formats'):
-                for f in reversed(info['formats']):
-                    if f.get('url') and ('m3u8' in f.get('url') or 'mp4' in f.get('ext', '') or 'live' in str(f.get('format_note', '')).lower()):
-                        stream_url = f['url']
-                        break
-                if not stream_url and info['formats']:
-                    stream_url = info['formats'][-1].get('url')
+            # Default to 600s (10 min) rolling window (or LIVE_CUT_SECONDS) so big live streams yield multiple reels
+            live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "600"))
+            print(f"🔴 Live video stream detected! Real-time live clipping active (capturing {live_seconds/60:.1f}m rolling window)...")
+            os.environ["IS_LIVE_STREAM"] = "1"
+            if not os.environ.get("X264_PRESET"):
+                os.environ["X264_PRESET"] = "ultrafast"
+            if not os.environ.get("CLIP_TARGET_MAX"):
+                os.environ["CLIP_TARGET_MAX"] = "5"
+            if not os.environ.get("CLIP_TARGET_MIN"):
+                os.environ["CLIP_TARGET_MIN"] = "3"
 
+            v_url = None
+            a_url = None
+            if info.get('formats'):
+                # Extract best video and best audio HLS streams (YouTube separates them)
+                for f in reversed(info['formats']):
+                    if f.get('vcodec') != 'none' and not v_url and f.get('url'):
+                        v_url = f.get('url')
+                    if f.get('acodec') != 'none' and f.get('vcodec') == 'none' and not a_url and f.get('url'):
+                        a_url = f.get('url')
+
+            stream_url = info.get('url') or v_url
             if stream_url:
                 try:
-                    cmd = [
-                        'ffmpeg', '-y',
-                        '-reconnect', '1', '-reconnect_at_eof', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '2',
-                        '-i', stream_url,
-                        '-t', str(int(live_seconds)),
-                        '-c', 'copy',
-                        expected
-                    ]
-                    print(f"🎬 Capturing live stream via ffmpeg for {live_seconds}s...")
-                    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=int(live_seconds + 45))
-                    if os.path.exists(expected) and os.path.getsize(expected) > 512 * 1024:
+                    start_index = -int(max(10, live_seconds // 3))
+                    if v_url and a_url and v_url != a_url:
+                        cmd = [
+                            'ffmpeg', '-y',
+                            '-live_start_index', str(start_index),
+                            '-i', v_url,
+                            '-live_start_index', str(start_index),
+                            '-i', a_url,
+                            '-t', str(int(live_seconds)),
+                            '-c', 'copy',
+                            expected
+                        ]
+                    else:
+                        cmd = [
+                            'ffmpeg', '-y',
+                            '-live_start_index', str(start_index),
+                            '-i', stream_url,
+                            '-t', str(int(live_seconds)),
+                            '-c', 'copy',
+                            expected
+                        ]
+                    print(f"🎬 Capturing live stream via fast HLS demuxer for {live_seconds}s (start index {start_index})...")
+                    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=int(live_seconds + 60))
+                    if os.path.exists(expected) and os.path.getsize(expected) > 256 * 1024:
                         print(f"✅ Real-time live stream captured ({os.path.getsize(expected)} bytes). Cutting clips immediately!")
                         return sanitized
                 except Exception as e:
                     print(f"⚠️ Live ffmpeg capture error ({e}), falling back to bounded yt-dlp...")
+
+        # If live stream fell back to yt-dlp, ensure _range_cap is set to live_seconds
+        if is_live and not _range_cap:
+            _range_cap = float(os.environ.get("LIVE_CUT_SECONDS", "600"))
 
         # Only when the whole source is far bigger than what was paid for: a
         # ranged fetch goes through ffmpeg at ~1-2.5x realtime, while a native
@@ -1336,7 +1367,7 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
         ranged = False
         if _range_cap or is_live:
             _dur = info.get('duration')
-            ranged = is_live or not _dur or float(_dur) > max(3 * _range_cap, _range_cap + 2700)
+            ranged = is_live or not _dur or float(_dur) > max(3 * (_range_cap or 600), (_range_cap or 600) + 2700)
         # Once per download, and not on the per-GB proxy (that is paid bytes,
         # and it is the last resort anyway). Not for a ranged download either:
         # the early audio would be the whole source.
@@ -2654,7 +2685,8 @@ def get_viral_clips(transcript_result, video_duration, viewer_clips=None):
         print(f"🚫 {e}")
         raise
     except Exception as e:
-        print(f"❌ Gemini Error: {e}")
+        provider_name = "Local LLM" if llm_backend.active() else "Gemini"
+        print(f"❌ {provider_name} Error: {e}")
         return None
 
 
@@ -2814,7 +2846,7 @@ def get_visual_clips(video_path, video_duration, language="en", viewer_clips=Non
 
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        print("🎮 No Gemini API key detected — switching to 100% Local Intelligence Pipeline...")
+        print("🎮 Activating 100% Local Intelligence Pipeline...")
         from gaming_intelligence.pipeline import LocalIntelligencePipeline
         pipeline = LocalIntelligencePipeline(
             profile_name=os.getenv("CLIPPING_PROFILE", "gaming"),
