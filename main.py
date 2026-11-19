@@ -49,6 +49,7 @@ import yt_account
 import twitch_signals
 from clip_selection import (build_transcript_windows, clip_count_targets,
                             clip_duration_bounds, dedupe_overlapping,
+                            extract_action_peaks, fuse_action_peaks_into_windows,
                             score_batches, shortlist_target,
                             snap_clip_to_words, trim_to_best,
                             vision_segments)
@@ -2496,7 +2497,7 @@ def score_batch_size():
     return 3 if llm_backend.active() else 8
 
 
-def get_viral_clips(transcript_result, video_duration, viewer_clips=None):
+def get_viral_clips(transcript_result, video_duration, viewer_clips=None, input_video=None):
     """Two-pass clip selection: score transcript windows, then detail the best.
 
     Windowing gives even coverage on long videos (a single call over the whole
@@ -2543,6 +2544,15 @@ def get_viral_clips(transcript_result, video_duration, viewer_clips=None):
         print(f"   Built {len(windows)} scoring window(s).")
         costs = []
 
+        profile = os.getenv("CLIPPING_PROFILE", "auto").lower()
+        is_gaming = (profile == "gaming")
+        if is_gaming and input_video and os.path.exists(input_video):
+            print("   🎮 Extracting multi-modal gameplay action peaks (motion & audio energy)...")
+            peaks = extract_action_peaks(input_video, video_duration)
+            if peaks:
+                print(f"   ⚡ Detected {len(peaks)} action moment(s) from gameplay footage.")
+                fuse_action_peaks_into_windows(windows, peaks)
+
         # --- Pass 1: score windows in batches, keep the highest-scoring ---
         scored = []
         # Local models usually run with a 4-8k context (Ollama defaults to
@@ -2563,6 +2573,10 @@ def get_viral_clips(transcript_result, video_duration, viewer_clips=None):
             out = []
             for w in ws:
                 item = {"id": w["id"], "start": w["start"], "end": w["end"], "text": w["text"]}
+                if w.get("action_moments"):
+                    item["action_moments"] = w["action_moments"]
+                if "action_intensity" in w:
+                    item["action_intensity"] = w["action_intensity"]
                 h = heat.get(w["id"])
                 if h:
                     item["viewers_clipped"] = h["clips"]
@@ -2572,7 +2586,8 @@ def get_viral_clips(transcript_result, video_duration, viewer_clips=None):
             return out
 
         def _score_prompt(ws):
-            return gemini_worker.SCORE_PROMPT_TEMPLATE.format(
+            template = gemini_worker.GAMING_SCORE_PROMPT_TEMPLATE if is_gaming else gemini_worker.SCORE_PROMPT_TEMPLATE
+            return template.format(
                 video_duration=video_duration, language=language,
                 windows_json=json.dumps(_payload(ws), ensure_ascii=False))
 
@@ -2603,8 +2618,9 @@ def get_viral_clips(transcript_result, video_duration, viewer_clips=None):
         def _detail_prompt_for(lo, hi):
             # A split batch keeps the full clip-count band: a short list can
             # still hold the best clips, and the model returns fewer anyway.
+            template = gemini_worker.GAMING_DETAIL_PROMPT_TEMPLATE if is_gaming else gemini_worker.DETAIL_PROMPT_TEMPLATE
             def build(ws):
-                return gemini_worker.DETAIL_PROMPT_TEMPLATE.format(
+                return template.format(
                     video_duration=video_duration, language=language,
                     min_clips=lo, max_clips=hi,
                     min_secs=min_secs, max_secs=max_secs,
@@ -2773,7 +2789,7 @@ def _viewer_hint(viewer_clips, offset, duration):
 
 
 def _visual_pass(client, model_name, video_path, duration, language,
-                 min_clips, max_clips, min_secs, max_secs, hint=""):
+                 min_clips, max_clips, min_secs, max_secs, hint="", is_gaming=False):
     """One vision call over one file. Returns ``(shorts, cost)``; ``shorts``
     are clamped to ``[0, duration]`` of THAT file. Returns ``(None, None)``
     when Gemini could not take the file; raises GeminiBlockedError."""
@@ -2794,7 +2810,8 @@ def _visual_pass(client, model_name, video_path, duration, language,
                 return None, None
             time.sleep(2)
 
-        prompt = gemini_worker.VISUAL_PROMPT_TEMPLATE.format(
+        v_template = gemini_worker.GAMING_VISUAL_PROMPT_TEMPLATE if is_gaming else gemini_worker.VISUAL_PROMPT_TEMPLATE
+        prompt = v_template.format(
             video_duration=duration, language=language,
             min_clips=min_clips, max_clips=max_clips,
             min_secs=min_secs, max_secs=max_secs) + (hint or "")
@@ -2843,6 +2860,8 @@ def get_visual_clips(video_path, video_duration, language="en", viewer_clips=Non
     v_min_clips = _env_int("CLIP_TARGET_MIN", 3)
     v_max_clips = max(v_min_clips, _env_int("CLIP_TARGET_MAX", 15))
     v_min_secs, v_max_secs = clip_duration_bounds()
+    profile = os.getenv("CLIPPING_PROFILE", "auto").lower()
+    is_gaming = (profile == "gaming")
 
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -2894,7 +2913,7 @@ def get_visual_clips(video_path, video_duration, language="en", viewer_clips=Non
                     shorts, cost = _visual_pass(
                         client, model_name, proxy, round(s1 - s0, 3), language,
                         per_min, v_max_clips, v_min_secs, v_max_secs,
-                        hint=_viewer_hint(viewer_clips, s0, s1 - s0))
+                        hint=_viewer_hint(viewer_clips, s0, s1 - s0), is_gaming=is_gaming)
                 except gemini_worker.GeminiBlockedError:
                     raise
                 except Exception as e:
@@ -3051,7 +3070,8 @@ if __name__ == '__main__':
             try:
                 t = transcribe_video(audio_path)
                 early["transcript"] = t
-                if audio_duration and not speech_is_sparse(t, audio_duration):
+                if (audio_duration and not speech_is_sparse(t, audio_duration)
+                        and os.getenv("CLIPPING_PROFILE", "auto").lower() != "gaming"):
                     early["clips"] = get_viral_clips(t, audio_duration,
                                                      viewer_clips=viewer_clips)
             except Exception as e:
@@ -3253,12 +3273,14 @@ if __name__ == '__main__':
 
         # 4. Gemini Analysis (transcript-driven, or vision for silent videos)
         early_clips = (early_state or {}).get("clips") if early_state else None
+        profile = os.getenv("CLIPPING_PROFILE", "auto").lower()
         if (transcript is not None and early_clips
-                and transcript is early_state["transcript"]):
+                and transcript is early_state["transcript"]
+                and profile != "gaming"):
             print("♻️ Using the clips Gemini picked while the video downloaded.")
             clips_data = early_clips
         elif transcript is not None:
-            clips_data = get_viral_clips(transcript, duration, viewer_clips=viewer_clips)
+            clips_data = get_viral_clips(transcript, duration, viewer_clips=viewer_clips, input_video=input_video)
         else:
             clips_data = get_visual_clips(input_video, duration, viewer_clips=viewer_clips)
 

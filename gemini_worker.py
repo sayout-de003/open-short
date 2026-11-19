@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import json
 import mimetypes
@@ -6,8 +8,12 @@ import sys
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types as genai_types
+try:
+    from google import genai
+    from google.genai import types as genai_types
+except Exception:
+    genai = None
+    genai_types = None
 from pydantic import BaseModel
 
 from clip_selection import (clip_count_targets, clip_duration_bounds,
@@ -377,6 +383,107 @@ Return only:
     }}
   ]
 }}
+"""
+
+GAMING_SCORE_PROMPT_TEMPLATE = """
+You are a senior gaming content strategist and viral short-form editor specializing in gameplay (GTA, open-world action, shooters, racing, streams).
+RANK these candidate windows by how well each would work as a standalone gaming viral short (TikTok, YouTube Shorts, Reels).
+
+GAMING SELECTION CRITERIA:
+- HIGH ACTION & STUNTS: prioritize high-speed car chases, impossible stunts, ramp jumps, airborne acrobatics, high-heat police getaways, combat clutches, explosions, and game physics glitches/fails.
+- AUDIO & REACTION SPIKES: gaming videos often have informal speech ("wait wait wait", "oh no", "watch this") or screams/laughter. Weigh windows carrying high `action_intensity` or `action_moments` (motion peaks + audio spikes) heavily, even if the transcript words look sparse!
+- STREAMER REACTIONS: hype commentary, genuine panic, laughter, or rage quitting combined with action moments make top-tier shorts.
+- DROP FILLER: wandering around with no combat or speed, driving in straight lines with no dialogue, inventory management, menu screens, or quiet loading segments must score below 30.
+- Reserve 75+ for high-adrenaline moments, funny ragdoll fails, clutch plays, or chaotic multi-car pileups.
+
+TRANSCRIPT_LANGUAGE: {language}
+VIDEO_DURATION_SECONDS: {video_duration}
+WINDOWS_JSON:
+{windows_json}
+
+Return only:
+{{
+  "windows": [
+    {{
+      "id": "<window id>",
+      "start": <number>,
+      "end": <number>,
+      "score": <integer 0-100>,
+      "reason": "<very short reason highlighting action, stunt, fail, or reaction>"
+    }}
+  ]
+}}
+"""
+
+GAMING_DETAIL_PROMPT_TEMPLATE = """
+You are a viral gaming video editor. Choose the BEST gameplay clips from these shortlisted candidate windows.
+
+GAMING PACING & TIMING CONTRACT:
+- Return only valid JSON.
+- Each clip must be {min_secs:g} to {max_secs:g} seconds long, in absolute seconds from the start of the source video.
+- Stay within the candidate window boundaries.
+- THE ACTION ARC:
+  1. SETUP (start 2–4s before the action): include the build-up (accelerating towards a ramp, police sirens blaring, initiating the duel/heist, saying "watch this"). Do NOT cut straight to the explosion without context.
+  2. CLIMAX: keep the full stunt, crash, mid-air flip, clutch kill, or ridiculous ragdoll moment intact.
+  3. PAYOFF & REACTION (end 2–3s after the action): keep the aftermath (landing, car exploding, streamer laughing/shouting, "Wasted" screen, escaping the 5 stars).
+- If a window has `action_moments` ([start, end] peaks of motion/audio), ensure the clip captures the highest intensity moment with its build-up and payoff.
+- STANDS ALONE: A viewer watching on TikTok must instantly understand what is at stake within the first 2 seconds.
+- HOW MANY: return {min_clips} to {max_clips} clips. Work through EVERY candidate window.
+
+GAMING HOOK PLAYBOOK — pick an engaging viral gaming hook for `viral_hook_text` (max 10 words):
+- Disbelief/Fail: "Bro thought he could escape 5 stars 💀" / "Never let him drive again 😭"
+- Challenge/Stunt: "Wait for the landing..." / "1 in a million stunt jump"
+- Game Physics: "GTA physics never fail to amaze me" / "How did he survive this?!"
+- Clutch/Hype: "The cleanest getaway you will ever see" / "He actually pulled it off..."
+(Always write the actual hook in TRANSCRIPT_LANGUAGE: {language}.)
+
+COPY RULES — ALL text fields MUST be in TRANSCRIPT_LANGUAGE ({language}):
+- `caption`: 1-2 punchy sentences teasing the stunt/fail/clutch.
+- `hashtags`: 5-10 gaming hashtags (e.g. ["#gaming", "#gtaclips", "#gamingfails", "#viralgaming", "#shorts"]).
+- `video_title_for_youtube_short`: max 100 chars, click-worthy gaming title.
+- `predicted_score`: 0-100 viral rating.
+- `why`: one sentence naming the specific action/stunt/fail.
+
+TRANSCRIPT_LANGUAGE: {language}
+VIDEO_DURATION_SECONDS: {video_duration}
+CANDIDATE_WINDOWS_JSON:
+{windows_json}
+
+Return only:
+{{
+  "shorts": [
+    {{
+      "start": <number>,
+      "end": <number>,
+      "source_window_id": "<window id>",
+      "predicted_score": <integer 0-100>,
+      "caption": "<engaging punchy caption>",
+      "hashtags": ["#gaming", "#viral", "#shorts"],
+      "video_description_for_tiktok": "<description + hashtags>",
+      "video_description_for_instagram": "<description + hashtags>",
+      "video_title_for_youtube_short": "<title max 100 chars>",
+      "viral_hook_text": "<short overlay max 10 words>",
+      "why": "<one sentence, max 20 words>"
+    }}
+  ]
+}}
+"""
+
+GAMING_VISUAL_PROMPT_TEMPLATE = """
+You are a senior short-form gaming video editor. This gameplay video has NO speech/commentary — judge
+it purely by what you SEE on screen (action, car chases, impossible stunt jumps, police escapes, explosions, combat kills, physics glitches and ragdoll fails).
+Watch the whole gameplay footage and pick the {min_clips}–{max_clips} MOST exciting moments for TikTok / Reels / Shorts.
+
+GAMING TIMING CONTRACT — STRICT:
+- Timestamps in ABSOLUTE SECONDS from the start (usable with ffmpeg -ss/-to).
+- Only numbers with up to 3 decimals (e.g. 0, 12.5, 47.250).
+- 0 <= start < end <= {video_duration}.
+- Each clip {min_secs:g} to {max_secs:g} seconds long.
+- START 2–4s BEFORE the action climax (the approach to the jump ramp, police chase escalating, gunfight starting).
+- KEEP the full action climax (the stunt, crash, mid-air spin, explosion).
+- END 2–3s AFTER the payoff (the vehicle landing, escape, "Wasted" screen). Never cut mid-air or mid-motion!
+
+For each clip write viral gaming copy in {language} (a scroll-stopping gaming hook e.g. "Wait for the landing 💀" or "GTA physics gone wrong", TikTok/IG descriptions, and a click-worthy YouTube title ≤100 chars).
 """
 
 

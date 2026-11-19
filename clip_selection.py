@@ -389,3 +389,123 @@ def snap_clip_to_words(start, end, words, video_duration,
     if new_end <= new_start or new_end - new_start < min_duration:
         return original
     return (round(new_start, 3), round(new_end, 3))
+
+
+def extract_action_peaks(video_path, duration=None, sample_fps=1.0, threshold=0.45):
+    """
+    Extract high-energy action intervals (motion peaks and audio spikes/reactions)
+    from video using gaming_intelligence detectors.
+    Returns list of dicts: [{'start': float, 'end': float, 'intensity': float, 'type': str}]
+    """
+    if not video_path or not os.path.isfile(video_path):
+        return []
+
+    try:
+        from gaming_intelligence.frame_sampler import FrameSampler
+        from gaming_intelligence.motion_detector import MotionDetector
+        from gaming_intelligence.audio_event_detector import AudioEventDetector
+    except Exception:
+        return []
+
+    try:
+        sampler = FrameSampler(target_fps=sample_fps)
+        sampled = list(sampler.sample_generator(video_path, end_sec=duration))
+        motion_events = MotionDetector().analyze_frames(sampled) if sampled else []
+    except Exception:
+        motion_events = []
+
+    try:
+        audio_events = AudioEventDetector().analyze_audio(video_path)
+    except Exception:
+        audio_events = []
+
+    if not motion_events and not audio_events:
+        return []
+
+    motion_by_sec = {int(round(e["timestamp"])): float(e.get("motion_score", 0.0)) for e in motion_events}
+    audio_by_sec = {int(round(e["timestamp"])): float(e.get("peak_score", 0.0)) for e in audio_events}
+
+    all_secs = sorted(set(motion_by_sec.keys()) | set(audio_by_sec.keys()))
+    if not all_secs:
+        return []
+
+    peaks = []
+    current_start = None
+    current_end = None
+    max_intensity = 0.0
+    dominant_type = "action_moment"
+
+    for sec in all_secs:
+        m_val = motion_by_sec.get(sec, 0.0)
+        a_val = audio_by_sec.get(sec, 0.0)
+        composite = 0.55 * m_val + 0.45 * a_val
+        is_peak = composite >= threshold or m_val >= 0.70 or a_val >= 0.70
+
+        if is_peak:
+            action_type = "action_climax" if (m_val >= 0.65 and a_val >= 0.65) else ("motion_peak" if m_val > a_val else "audio_spike")
+            intensity = max(composite, m_val, a_val)
+            if current_start is None:
+                current_start = sec
+                current_end = sec + 1.0
+                max_intensity = intensity
+                dominant_type = action_type
+            else:
+                if sec <= current_end + 2.0:
+                    current_end = max(current_end, sec + 1.0)
+                    if intensity > max_intensity:
+                        max_intensity = intensity
+                        dominant_type = action_type
+                else:
+                    peaks.append({
+                        "start": round(float(current_start), 2),
+                        "end": round(float(current_end), 2),
+                        "intensity": round(float(max_intensity), 2),
+                        "type": dominant_type
+                    })
+                    current_start = sec
+                    current_end = sec + 1.0
+                    max_intensity = intensity
+                    dominant_type = action_type
+
+    if current_start is not None:
+        peaks.append({
+            "start": round(float(current_start), 2),
+            "end": round(float(current_end), 2),
+            "intensity": round(float(max_intensity), 2),
+            "type": dominant_type
+        })
+
+    peaks.sort(key=lambda p: p["intensity"], reverse=True)
+    return peaks
+
+
+def fuse_action_peaks_into_windows(windows, action_peaks):
+    """
+    Attaches overlapping action moments and composite action intensity
+    to each candidate scoring window.
+    """
+    if not windows:
+        return windows
+
+    peaks = list(action_peaks or [])
+
+    for w in windows:
+        w_start = float(w.get("start", 0))
+        w_end = float(w.get("end", 0))
+
+        matching = []
+        for p in peaks:
+            p_start = float(p.get("start", 0))
+            p_end = float(p.get("end", 0))
+            overlap = min(w_end, p_end) - max(w_start, p_start)
+            if overlap > 0:
+                matching.append(p)
+
+        if matching:
+            w["action_moments"] = matching[:5]
+            w["action_intensity"] = round(max(float(p.get("intensity", 0.0)) for p in matching), 2)
+        else:
+            w["action_moments"] = []
+            w["action_intensity"] = 0.0
+
+    return windows

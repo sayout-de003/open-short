@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link2, Upload, FileVideo, X, Info, Loader2, ChevronDown, ClipboardPaste, Check, Sparkles } from 'lucide-react';
+import { Link2, Upload, FileVideo, X, Info, Loader2, ChevronDown, ClipboardPaste, Check, Sparkles, Gamepad2, Mic, GraduationCap, MessageSquare } from 'lucide-react';
 import { track } from '../lib/analytics';
 import { getApiUrl } from '../config';
 import SourceCost from './SourceCost';
@@ -29,6 +29,14 @@ const readVideoDuration = (file) => new Promise((resolve) => {
         v.src = url;
     } catch { resolve(null); }
 });
+
+const CONTENT_PROFILES = [
+    { value: 'auto', label: 'Auto AI', hint: 'Smart detect', Icon: Sparkles },
+    { value: 'gaming', label: 'Gameplay', hint: 'GTA, FPS & action', Icon: Gamepad2 },
+    { value: 'podcast', label: 'Podcast', hint: 'Talks & interviews', Icon: Mic },
+    { value: 'educational', label: 'Explainer', hint: 'Tutorials & coding', Icon: GraduationCap },
+    { value: 'commentary', label: 'Vlog / Show', hint: 'Reactions & review', Icon: MessageSquare },
+];
 
 export default function MediaInput({ onProcess, isProcessing }) {
     const [youtubeUrlEnabled, setYoutubeUrlEnabled] = useState(true);
@@ -65,7 +73,7 @@ export default function MediaInput({ onProcess, isProcessing }) {
         try { return localStorage.getItem('os_layout') || 'auto'; } catch { return 'auto'; }
     });
     const [clippingProfile, setClippingProfile] = useState(() => {
-        try { return localStorage.getItem('os_clipping_profile') || 'gaming'; } catch { return 'gaming'; }
+        try { return localStorage.getItem('os_clipping_profile') || 'auto'; } catch { return 'auto'; }
     });
     const [pasteFeedback, setPasteFeedback] = useState(false);
     const infoRef = useRef(null);
@@ -325,6 +333,34 @@ export default function MediaInput({ onProcess, isProcessing }) {
                     onRangeChange={setRange}
                 />
 
+                {/* Content type / Style selector */}
+                <div className="mt-5" data-tutorial="content-type">
+                    <div className="flex items-center justify-between mb-2">
+                        <p className="eyebrow">Content Type</p>
+                        <span className="text-[11px] text-muted">
+                            {clippingProfile === 'auto' ? 'AI automatically detects genre' : `Optimized for ${clippingProfile}`}
+                        </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        {CONTENT_PROFILES.map(({ value, label, hint, Icon }) => {
+                            const active = clippingProfile === value;
+                            return (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    onClick={() => setClippingProfile(value)}
+                                    className={`py-2.5 px-2 rounded-input border flex flex-col items-center justify-center gap-1.5 transition-all text-center
+                                        ${active ? 'border-brass bg-brass/10 text-ink shadow-sm ring-1 ring-brass/30' : 'border-rule bg-paper text-muted hover:border-rule2 hover:text-ink2'}`}
+                                >
+                                    <Icon size={17} className={active ? 'text-brass' : 'text-muted'} />
+                                    <span className="block text-xs font-medium leading-none">{label}</span>
+                                    <span className="block text-[10px] text-muted truncate max-w-full">{hint}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
                 {/* Output format selector */}
                 <div className="mt-5" data-tutorial="output-format">
                     <p className="eyebrow mb-2">Output format</p>
@@ -418,10 +454,11 @@ export default function MediaInput({ onProcess, isProcessing }) {
                                     className="input-field !w-auto text-xs py-1.5"
                                     aria-label="clipping mode"
                                 >
-                                    <option value="gaming">Gaming (action, kills, hype)</option>
-                                    <option value="podcast">Podcast (quotes &amp; conversations)</option>
+                                    <option value="auto">Auto AI (Smart Detection)</option>
+                                    <option value="gaming">Gaming &amp; Action (GTA, FPS, etc.)</option>
+                                    <option value="podcast">Podcast (conversations &amp; interviews)</option>
+                                    <option value="educational">Educational (tutorials &amp; explainers)</option>
                                     <option value="commentary">Commentary / Vlog / YouTube</option>
-                                    <option value="generic">Generic (multi-modal)</option>
                                 </select>
                             </div>
                             <div className="col-span-1 sm:col-span-3 flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-rule">

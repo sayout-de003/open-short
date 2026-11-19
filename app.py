@@ -5981,8 +5981,17 @@ async def process_endpoint(
     # probe above already gets this right.
     cmd = [sys.executable, "-u", "main.py"] # -u for unbuffered
     env = child_env()
-    if clipping_profile:
-        env["CLIPPING_PROFILE"] = str(clipping_profile).strip().lower()
+
+    # Content profile (Gaming, Podcast, Educational, Commentary, Generic, or Auto-detect)
+    effective_profile = str(clipping_profile or "auto").strip().lower()
+    if effective_profile == "auto":
+        from content_classifier import detect_content_type
+        sample_title = (thumb_session.get("title") if thumb_session else None) or (os.path.basename(file.filename) if file and file.filename else None) or url
+        detected_info = detect_content_type(title=sample_title)
+        effective_profile = detected_info["profile"]
+        print(f"🎮 [Auto AI Classifier] Detected profile: {effective_profile} (confidence: {detected_info['confidence']}) - {detected_info['reason']}")
+
+    env["CLIPPING_PROFILE"] = effective_profile
     if api_key:
         env["GEMINI_API_KEY"] = api_key # Override with key from request
     else:
@@ -6209,6 +6218,7 @@ async def process_endpoint(
         'reservation_id': reservation_id,
         'watermark': env.get("WATERMARK") == "1",
         'partial': partial,
+        'clipping_profile': env.get("CLIPPING_PROFILE"),
         'webhook_url': webhook_url,
         'webhook_secret': webhook_secret,
         'base_url': api_base,
@@ -6351,6 +6361,7 @@ async def get_status(job_id: str, request: Request):
         # Set when only the first part of the source was clipped (quota wall
         # offer), so the dashboard can say so next to the clips.
         "partial": job.get('partial'),
+        "clipping_profile": job.get('clipping_profile'),
     }
 
 

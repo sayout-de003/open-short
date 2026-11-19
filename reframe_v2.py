@@ -750,12 +750,15 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
     # asking Gemini: offered as a fourth choice it answered "screencast" on all
     # five clips that had one, while camera_inset.detect finds all five with no
     # false positives. The box is fixed for the whole video, so it is found once.
+    profile = os.getenv("CLIPPING_PROFILE", "auto").lower()
+    is_gaming = (profile == "gaming")
+
     inset = None
-    if content_ranges and screencast_layout.ENABLED:
+    if is_gaming or (content_ranges and screencast_layout.ENABLED):
         try:
             inset = camera_inset.detect(input_video)
         except Exception as e:
-            print(f"   ⚠️ Inset check failed ({e}) — using the screen layouts.")
+            print(f"   ⚠️ Inset check failed ({e}) — using standard layout.")
         if inset:
             print(f"   📹 Webcam inset at {inset}")
 
@@ -764,7 +767,19 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
     insets = {}
     wide_count = 0
     inset_count = 0
-    if content_ranges:
+
+    if is_gaming and inset:
+        # Gaming with streamer webcam: reframe all scenes into stacked INSET layout
+        # (gameplay full-width on top, streamer facecam enlarged on bottom)
+        for scene_idx in range(len(scenes)):
+            start_f, end_f = scene_boundaries[scene_idx]
+            strategies[scene_idx] = 'INSET'
+            splits.pop(start_f, None)
+            alternates.pop(start_f, None)
+            insets[start_f] = inset
+            inset_count += 1
+        print(f"   🎮 Streamer webcam detected: routed {inset_count} gaming scene(s) to stacked INSET layout")
+    elif content_ranges:
         for scene_idx, (plan, centre) in screencast_layout.detect_screencast_scenes(
                 input_video, scenes, strategies, content_ranges).items():
             # An inset beats both screen plans: it is the only one that can show
@@ -816,8 +831,17 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
     cameraman = m.SmoothedCameraman(out_w, out_h, orig_w, orig_h, aspect_ratio=aspect_ratio)
     tracker = m.SpeakerTracker(cooldown_frames=30)
 
-    xs = _analyze_trajectory(input_video, scene_boundaries, strategies, fps,
-                             orig_w, orig_h, cameraman, tracker)
+    if is_gaming and not inset:
+        # Pure gameplay (e.g. GTA 6, action games without facecam):
+        # Center-lock the framing so the tracker does not erratically whip to pedestrian NPCs or billboards.
+        crop_w = cameraman.crop_width
+        center_x = max(0, int((orig_w - crop_w) / 2))
+        total_frames = scene_boundaries[-1][1] if scene_boundaries else 0
+        xs = [center_x] * total_frames
+        print(f"   🎮 Pure gameplay framing: stabilized center lock ({center_x}px, no NPC face hunting)")
+    else:
+        xs = _analyze_trajectory(input_video, scene_boundaries, strategies, fps,
+                                 orig_w, orig_h, cameraman, tracker)
     if not xs:
         raise RuntimeError("analysis produced no frames")
 
