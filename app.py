@@ -1,5 +1,8 @@
 import os
+import logging
 import llm_backend
+
+logger = logging.getLogger("openshorts")
 import re
 import sys
 import uuid
