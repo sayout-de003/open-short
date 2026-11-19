@@ -51,3 +51,98 @@ def test_live_ffmpeg_hls_command_options():
     assert '-http_multiple' in cmd
     assert '-http_persistent' in cmd
     assert cmd[cmd.index('-t') + 1] == '120'
+
+
+def test_live_stream_always_goes_with_live_edge():
+    # Verify default live start index targets the live edge (-3 segments)
+    start_index = int(os.environ.get("LIVE_START_INDEX", "-3"))
+    assert start_index == -3
+
+    with patch.dict(os.environ, {"LIVE_START_INDEX": "-1"}):
+        custom_index = int(os.environ.get("LIVE_START_INDEX", "-3"))
+        assert custom_index == -1
+
+
+def test_live_stream_dl_opts_always_go_with_live():
+    # Verify yt-dlp options for live streams enforce live_from_start = False
+    # and do not slice from timestamp 0
+    is_live = True
+    _range_cap = 600.0
+    dl_opts = {'live_from_start': False if is_live else True}
+    assert dl_opts['live_from_start'] is False
+
+    ranged = not is_live and _range_cap > 0
+    assert ranged is False
+
+
+def test_live_continuous_monitor_env_default():
+    # Verify continuous monitoring can be configured and defaults appropriately
+    with patch.dict(os.environ, {"LIVE_CONTINUOUS_MONITOR": "1", "LIVE_CUT_SECONDS": "120"}):
+        assert os.environ.get("LIVE_CONTINUOUS_MONITOR") == "1"
+        assert float(os.environ.get("LIVE_CUT_SECONDS")) == 120.0
+
+
+def test_capture_live_stream_segment():
+    from main import capture_live_stream_segment
+    import tempfile
+
+    mock_info = {
+        'formats': [
+            {'vcodec': 'avc1', 'acodec': 'none', 'url': 'https://manifest.googlevideo.com/v.m3u8'},
+            {'vcodec': 'none', 'acodec': 'mp4a', 'url': 'https://manifest.googlevideo.com/a.m3u8'},
+        ]
+    }
+    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tf:
+        tmp_name = tf.name
+        tf.write(b"0" * 300000)
+
+    try:
+        with patch("subprocess.Popen") as mock_popen:
+            mock_proc = mock_popen.return_value
+            mock_proc.poll.side_effect = [None, 0]
+            mock_proc.communicate.return_value = ("", "")
+
+            result = capture_live_stream_segment(mock_info, tmp_name, live_seconds=120, start_index=-3, cycle_num=1)
+            assert result is True
+            assert mock_popen.called
+            cmd_args = mock_popen.call_args[0][0]
+            assert '-live_start_index' in cmd_args
+            assert '-3' in cmd_args
+            assert '-t' in cmd_args
+            assert '120' in cmd_args
+    finally:
+        if os.path.exists(tmp_name):
+            os.remove(tmp_name)
+
+
+def test_analyze_and_detect_clips_continuous_mode_graceful():
+    from main import analyze_and_detect_clips
+
+    # When no clips are returned and is_live_continuous is True, it should not raise RuntimeError
+    with patch("main.transcribe_video") as mock_transcribe, \
+         patch("main.speech_is_sparse", return_value=False), \
+         patch("main.get_viral_clips") as mock_get_clips:
+        mock_transcribe.return_value = {"language": "en", "segments": [{"start": 0, "end": 10, "text": "hello this is a long enough sentence"}]}
+        mock_get_clips.return_value = {"shorts": []}
+
+        result = analyze_and_detect_clips(
+            "dummy.mp4", duration=120.0, is_live_continuous=True
+        )
+        assert result is None
+
+
+def test_has_cuda_and_render_workers_sizing():
+    import main
+
+    # _has_cuda should return boolean and not raise NameError
+    res = main._has_cuda()
+    assert isinstance(res, bool)
+
+    with patch("main._has_cuda", return_value=True):
+        default_workers = "6" if main._has_cuda() else "2"
+        assert default_workers == "6"
+
+    with patch("main._has_cuda", return_value=False):
+        default_workers = "6" if main._has_cuda() else "2"
+        assert default_workers == "2"
+

@@ -6069,6 +6069,8 @@ async def process_endpoint(
     url: Optional[str] = Form(None),
     acknowledged: Optional[str] = Form(None),
     output_format: Optional[str] = Form(None),
+    aspect_ratio: Optional[str] = Form(None),
+    template_id: Optional[str] = Form(None),
     layouts: Optional[str] = Form(None),
     force_low_quality: Optional[str] = Form(None),
     webhook_url: Optional[str] = Form(None),
@@ -6086,6 +6088,7 @@ async def process_endpoint(
     source_end: Optional[str] = Form(None),
     clipping_profile: Optional[str] = Form(None),
     live_cut_seconds: Optional[str] = Form(None),
+    live_continuous: Optional[str] = Form(None),
     autopost_buffer: Optional[str] = Form(None),
     buffer_platforms: Optional[str] = Form(None),
     scheduling_mode: Optional[str] = Form(None),
@@ -6111,6 +6114,8 @@ async def process_endpoint(
         ack_flag = bool(body.get("acknowledged"))
         force_low = bool(body.get("force_low_quality"))
         output_format = body.get("output_format")
+        aspect_ratio = body.get("aspect_ratio") or aspect_ratio
+        template_id = body.get("template_id") or body.get("template") or template_id
         layouts = body.get("layouts")
         webhook_url = body.get("webhook_url")
         webhook_secret = body.get("webhook_secret")
@@ -6127,6 +6132,7 @@ async def process_endpoint(
         source_end = body.get("source_end")
         clipping_profile = body.get("clipping_profile") or body.get("category") or body.get("profile")
         live_cut_seconds = body.get("live_cut_seconds")
+        live_continuous = body.get("live_continuous") or body.get("continuous_live") or live_continuous
         autopost_buffer = body.get("autopost_buffer")
         buffer_platforms = body.get("buffer_platforms")
         scheduling_mode = body.get("scheduling_mode")
@@ -6147,9 +6153,24 @@ async def process_endpoint(
     except Exception:
         parsed_daily_posts = 1
 
-    # Normalize output format (auto = keep pipeline default).
+    # Normalize output format (auto = keep pipeline default) and aspect ratio.
     if output_format not in ("vertical", "horizontal", "square"):
         output_format = "auto"
+
+    if not aspect_ratio:
+        if output_format == "horizontal":
+            aspect_ratio = "16:9"
+        elif output_format == "square":
+            aspect_ratio = "1:1"
+        else:
+            aspect_ratio = "9:16"
+    elif output_format == "auto":
+        if aspect_ratio == "16:9":
+            output_format = "horizontal"
+        elif aspect_ratio == "1:1":
+            output_format = "square"
+        elif aspect_ratio == "9:16":
+            output_format = "vertical"
 
     # Accepts a JSON list or a comma-separated form field.
     if isinstance(layouts, str):
@@ -6357,6 +6378,14 @@ async def process_endpoint(
             print(f"[live-controls] job={job_id} live_cut_seconds={int(live_cut_seconds)}")
         except (ValueError, TypeError):
             pass
+
+    if live_continuous is not None:
+        if str(live_continuous).lower() in ("1", "true", "yes"):
+            env["LIVE_CONTINUOUS_MONITOR"] = "1"
+            print(f"[live-controls] job={job_id} live_continuous_monitor=1")
+        else:
+            env["LIVE_CONTINUOUS_MONITOR"] = "0"
+            print(f"[live-controls] job={job_id} live_continuous_monitor=0")
 
     input_path = None
     if url:

@@ -445,7 +445,7 @@ def is_whole_free_download(route):
     """Whether a finished download (its ``PROXY_ROUTE`` summary) is the whole
     source at full quality: not a ranged fetch (only the paid minutes) and
     not won on the per-GB proxy (capped at 720p to save its bandwidth)."""
-    if not isinstance(route, dict) or route.get("ranged") or not route.get("winner"):
+    if not isinstance(route, dict) or route.get("ranged") or route.get("is_live") or not route.get("winner"):
         return False
     won = [a for a in (route.get("attempts") or []) if isinstance(a, dict) and a.get("ok")]
     return bool(won) and not won[-1].get("paid")
