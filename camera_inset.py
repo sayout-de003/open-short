@@ -392,17 +392,15 @@ def present_in_scene(video_path, box, start_f, end_f, samples=3):
 MAX_CAMERA_RATIO = 0.40
 
 
-def inset_filtergraph(orig_w, orig_h, out_w, out_h, box, camera_ratio=None):
-    """Screen on top at full width, the webcam inset below.
+def inset_filtergraph(orig_w, orig_h, out_w, out_h, box, camera_ratio=None, cam_position="bottom", add_divider=False):
+    """Screen and webcam inset composited for vertical 9:16 layout.
+
+    When cam_position is "bottom" (default): screen on top at full width, webcam inset below.
+    When cam_position is "top": webcam inset at the top (~25-30% height), gameplay/screen below.
 
     The screen keeps its whole width, which is the point: a game HUD or a
     desktop puts what matters at the edges. The inset is scaled up so the person
     reads at a size the source never gave them.
-
-    The camera band takes its height from the INSET'S OWN aspect ratio rather
-    than a fixed share of the frame. A fixed share was tried first and stretched
-    every face sideways: a 16:9 inset forced into a 2:1 band is a 12% horizontal
-    stretch, and it is immediately visible on a face.
     """
     box_w = max(2, box[2])
     box_h = max(2, box[3])
@@ -441,11 +439,25 @@ def inset_filtergraph(orig_w, orig_h, out_w, out_h, box, camera_ratio=None):
 
     filler_h = out_h - screen_h - cam_h
 
+    if str(cam_position).lower() == "top":
+        base_graph = (
+            f"[0:v]split=3[bga][sa][ca];"
+            f"[bga]{blurred_backdrop(out_w, out_h, 14)}[bg];"
+            f"[sa]scale={out_w}:{screen_h}[screen];"
+            f"[ca]crop=w={w}:h={h}:x={x}:y={y},scale={out_w}:{cam_h}[cam];"
+            f"[bg][cam]overlay=x=0:y={filler_h // 2}[withcam];"
+            f"[withcam][screen]overlay=x=0:y={filler_h // 2 + cam_h}"
+        )
+        if add_divider:
+            return (
+                f"{base_graph}[stacked];"
+                f"[stacked]drawbox=x=0:y={filler_h // 2 + cam_h - 1}:w={out_w}:h=2:color=white@0.5:t=fill,"
+                f"setsar=1[v]"
+            )
+        return f"{base_graph},setsar=1[v]"
+
     return (
         f"[0:v]split=3[bga][sa][ca];"
-        # Blurred backdrop so the leftover strip is not a black bar. Scaled by
-        # HEIGHT: scaling a 16:9 source to 1080 wide gives 608 tall, and there
-        # is no 1920-tall crop to take out of that.
         f"[bga]{blurred_backdrop(out_w, out_h, 14)}[bg];"
         f"[sa]scale={out_w}:{screen_h}[screen];"
         f"[ca]crop=w={w}:h={h}:x={x}:y={y},scale={out_w}:{cam_h}[cam];"

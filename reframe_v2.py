@@ -272,7 +272,7 @@ def apply_crop_overrides(xs, strategies, scene_boundaries, overrides,
 
 
 # Layouts whose crop is fixed for the whole scene: no camera trajectory.
-_STATIC_LAYOUTS = ('GENERAL', 'SPLIT', 'SCREENCAST', 'WIDE', 'INSET', 'ALTERNATE')
+_STATIC_LAYOUTS = ('GENERAL', 'SPLIT', 'SCREENCAST', 'WIDE', 'INSET', 'TOP_INSET', 'ALTERNATE')
 
 # Decode only the frames the trajectory runs a detector on (see
 # _detection_frames). SPARSE_TRAJECTORY=0 pipes every frame again.
@@ -769,16 +769,21 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
     inset_count = 0
 
     if is_gaming and inset:
-        # Gaming with streamer webcam: reframe all scenes into stacked INSET layout
-        # (gameplay full-width on top, streamer facecam enlarged on bottom)
+        # Gaming with streamer webcam: reframe scenes into stacked INSET layout
+        # (defaults to TOP_INSET if requested by streamer_stacked_top template or STREAMER_CAM_POSITION=top)
+        top_cam = (
+            os.environ.get("STREAMER_CAM_POSITION", "").strip().lower() == "top"
+            or os.environ.get("TEMPLATE_ID", "").strip().lower() in ("streamer_stacked_top", "stacked_top_cam")
+        )
+        target_strategy = 'TOP_INSET' if top_cam else 'INSET'
         for scene_idx in range(len(scenes)):
             start_f, end_f = scene_boundaries[scene_idx]
-            strategies[scene_idx] = 'INSET'
+            strategies[scene_idx] = target_strategy
             splits.pop(start_f, None)
             alternates.pop(start_f, None)
             insets[start_f] = inset
             inset_count += 1
-        print(f"   🎮 Streamer webcam detected: routed {inset_count} gaming scene(s) to stacked INSET layout")
+        print(f"   🎮 Streamer webcam detected: routed {inset_count} gaming scene(s) to stacked {target_strategy} layout")
     elif content_ranges:
         for scene_idx, (plan, centre) in screencast_layout.detect_screencast_scenes(
                 input_video, scenes, strategies, content_ranges).items():
@@ -894,9 +899,12 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
             dur = (end_f - start_f) / fps
             boxes = None
 
-            if strategy == 'INSET':
+            if strategy in ('INSET', 'TOP_INSET'):
+                cam_pos = "top" if strategy == 'TOP_INSET' else "bottom"
                 graph = camera_inset.inset_filtergraph(
-                    orig_w, orig_h, out_w, out_h, insets.get(start_f, inset))
+                    orig_w, orig_h, out_w, out_h, insets.get(start_f, inset),
+                    cam_position=cam_pos, add_divider=(cam_pos == "top"),
+                )
             elif strategy == 'SCREENCAST':
                 graph = screencast_layout.screencast_filtergraph(
                     orig_w, orig_h, out_w, out_h, *screencasts[start_f])

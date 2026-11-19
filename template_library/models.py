@@ -78,6 +78,21 @@ BUILTIN_TEMPLATES: List[Dict[str, Any]] = [
         "editable": True,
     },
     {
+        "id": "streamer_stacked_top",
+        "name": "Streamer Top Cam (Stacked)",
+        "category": "gaming",
+        "style": "top_cam_split",
+        "layout": "stacked_top_cam",
+        "caption_preset": "highlight",
+        "transition_preset": "action_cuts",
+        "audio_preset": "streamer_dynamic",
+        "aspect_ratios": ["9:16"],
+        "duration_range": [15, 60],
+        "effects": ["top_cam_crop", "bottom_gameplay", "divider_accent"],
+        "is_builtin": True,
+        "editable": True,
+    },
+    {
         "id": "gta_story",
         "name": "GTA Story",
         "category": "gaming",
@@ -562,37 +577,48 @@ class TemplateStore:
     def _seed_builtins(self) -> None:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM template_presets WHERE is_builtin = 1")
-            count = cursor.fetchone()[0]
-            if count == 0:
-                now = time.time()
-                for t in BUILTIN_TEMPLATES:
-                    cursor.execute("""
-                        INSERT INTO template_presets (
-                            id, name, category, style, layout,
-                            caption_preset, transition_preset, audio_preset,
-                            aspect_ratios_json, duration_min, duration_max,
-                            effects_json, is_builtin, editable, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        t["id"],
-                        t["name"],
-                        t["category"],
-                        t["style"],
-                        t["layout"],
-                        t["caption_preset"],
-                        t["transition_preset"],
-                        t["audio_preset"],
-                        json.dumps(t.get("aspect_ratios", ["9:16"])),
-                        float(t.get("duration_range", [15, 60])[0]),
-                        float(t.get("duration_range", [15, 60])[1]),
-                        json.dumps(t.get("effects", [])),
-                        1 if t.get("is_builtin") else 0,
-                        1 if t.get("editable", True) else 0,
-                        now,
-                        now,
-                    ))
-                conn.commit()
+            now = time.time()
+            for t in BUILTIN_TEMPLATES:
+                cursor.execute("""
+                    INSERT INTO template_presets (
+                        id, name, category, style, layout,
+                        caption_preset, transition_preset, audio_preset,
+                        aspect_ratios_json, duration_min, duration_max,
+                        effects_json, is_builtin, editable, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        name = excluded.name,
+                        category = excluded.category,
+                        style = excluded.style,
+                        layout = excluded.layout,
+                        caption_preset = excluded.caption_preset,
+                        transition_preset = excluded.transition_preset,
+                        audio_preset = excluded.audio_preset,
+                        aspect_ratios_json = excluded.aspect_ratios_json,
+                        duration_min = excluded.duration_min,
+                        duration_max = excluded.duration_max,
+                        effects_json = excluded.effects_json,
+                        updated_at = excluded.updated_at
+                    WHERE is_builtin = 1
+                """, (
+                    t["id"],
+                    t["name"],
+                    t["category"],
+                    t["style"],
+                    t["layout"],
+                    t["caption_preset"],
+                    t["transition_preset"],
+                    t["audio_preset"],
+                    json.dumps(t.get("aspect_ratios", ["9:16"])),
+                    float(t.get("duration_range", [15, 60])[0]),
+                    float(t.get("duration_range", [15, 60])[1]),
+                    json.dumps(t.get("effects", [])),
+                    1,
+                    1 if t.get("editable", True) else 0,
+                    now,
+                    now,
+                ))
+            conn.commit()
 
     def list_templates(self, category: Optional[str] = None) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:

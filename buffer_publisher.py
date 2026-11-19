@@ -216,21 +216,22 @@ def create_post(
 
     # Prepare service-specific metadata
     metadata = {}
-    if service == "youtube":
+    svc = (service or "").lower()
+    if svc == "youtube":
         metadata["youtube"] = {
             "title": title or (text[:60] if text else "Viral Short"),
             "privacy": "public"
         }
-    elif service == "instagram":
+    elif svc == "instagram":
         metadata["instagram"] = {
             "type": "reel",
             "shouldShareToFeed": True
         }
-    elif service == "tiktok":
+    elif svc == "tiktok":
         metadata["tiktok"] = {
             "title": title or (text[:60] if text else "Viral Clip")
         }
-    elif service == "facebook":
+    elif svc == "facebook":
         metadata["facebook"] = {
             "type": "reel"
         }
@@ -265,11 +266,25 @@ def create_post(
         raise RuntimeError(err_msg)
 
 
+def filter_channels_for_services(channels: List[Dict[str, Any]], services: List[str]) -> List[Dict[str, Any]]:
+    """Return active connected channels matching requested services (e.g. ['instagram', 'youtube'])."""
+    service_set = set(s.lower().strip() for s in services if s)
+    matched = []
+    for ch in channels:
+        if ch.get("isDisconnected") or ch.get("isLocked"):
+            continue
+        svc = (ch.get("service") or "").lower().strip()
+        if svc in service_set:
+            matched.append(ch)
+    return matched
+
+
 def publish_to_buffer_channels(
     channels: List[Dict[str, Any]],
     text: str,
     video_url: Optional[str] = None,
     due_at: Optional[str] = None,
+    mode: str = "customScheduled",
     title: Optional[str] = None,
     token: Optional[str] = None
 ) -> List[Dict[str, Any]]:
@@ -284,6 +299,7 @@ def publish_to_buffer_channels(
                 channel_id=ch_id,
                 text=text,
                 video_url=video_url,
+                mode=mode,
                 due_at=due_at,
                 service=ch_service,
                 title=title,

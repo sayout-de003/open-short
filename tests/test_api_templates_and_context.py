@@ -49,6 +49,13 @@ def test_get_single_template(client):
     assert tmpl["layout"] == "gameplay_center"
     assert tmpl["is_builtin"] is True
 
+    # Test streamer top cam
+    resp_top = client.get("/api/templates/streamer_stacked_top")
+    assert resp_top.status_code == 200
+    top_tmpl = resp_top.json()
+    assert top_tmpl["id"] == "streamer_stacked_top"
+    assert top_tmpl["layout"] == "stacked_top_cam"
+
     # 404 for unknown
     resp_404 = client.get("/api/templates/unknown_template_123")
     assert resp_404.status_code == 404

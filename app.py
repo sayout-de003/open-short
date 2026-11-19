@@ -4898,6 +4898,26 @@ def _finish_job(job_id, returncode, output_dir):
                     jobs[job_id]['logs'].append(
                         f"⚠️ {missing} of {len(clips)} clips failed to render.")
                 jobs[job_id]['result'] = {'clips': rendered, 'cost_analysis': cost_analysis}
+
+                # Zero-Touch Autonomous Buffer Publishing
+                if jobs[job_id].get('autopost_buffer'):
+                    try:
+                        platforms = jobs[job_id].get('buffer_platforms') or ["instagram", "youtube"]
+                        mode = jobs[job_id].get('scheduling_mode') or "smart_jitter"
+                        daily = jobs[job_id].get('posts_per_day') or 1
+                        sched_entries = scheduler.auto_schedule_project(
+                            job_id=job_id,
+                            clips=rendered,
+                            platforms=platforms,
+                            provider="buffer",
+                            scheduling_mode=mode,
+                            posts_per_day=daily,
+                        )
+                        jobs[job_id]['logs'].append(
+                            f"🚀 Zero-Touch: Automatically scheduled {len(sched_entries)} clips to Buffer ({', '.join(platforms)}) using mode '{mode}'."
+                        )
+                    except Exception as auto_sched_err:
+                        jobs[job_id]['logs'].append(f"⚠️ Zero-Touch auto-schedule warning: {auto_sched_err}")
         else:
             jobs[job_id]['status'] = 'failed'
             jobs[job_id]['logs'].append("No metadata file generated.")
@@ -5923,6 +5943,10 @@ async def process_endpoint(
     source_end: Optional[str] = Form(None),
     clipping_profile: Optional[str] = Form(None),
     live_cut_seconds: Optional[str] = Form(None),
+    autopost_buffer: Optional[str] = Form(None),
+    buffer_platforms: Optional[str] = Form(None),
+    scheduling_mode: Optional[str] = Form(None),
+    posts_per_day: Optional[str] = Form(None),
 ):
     api_key = await resolve_gemini(request)
     if not api_key and not (llm_backend.active() and not BILLING_ENABLED):
@@ -5959,6 +5983,24 @@ async def process_endpoint(
         source_end = body.get("source_end")
         clipping_profile = body.get("clipping_profile") or body.get("category") or body.get("profile")
         live_cut_seconds = body.get("live_cut_seconds")
+        autopost_buffer = body.get("autopost_buffer")
+        buffer_platforms = body.get("buffer_platforms")
+        scheduling_mode = body.get("scheduling_mode")
+        posts_per_day = body.get("posts_per_day")
+
+    # Autopost and scheduling settings
+    autopost_enabled = str(autopost_buffer).lower() in ("1", "true", "yes") if autopost_buffer is not None else False
+    if isinstance(buffer_platforms, str):
+        parsed_buffer_platforms = [p.strip() for p in buffer_platforms.split(",") if p.strip()]
+    elif isinstance(buffer_platforms, list):
+        parsed_buffer_platforms = buffer_platforms
+    else:
+        parsed_buffer_platforms = ["instagram", "youtube"]
+    parsed_sched_mode = scheduling_mode if scheduling_mode in ("smart_jitter", "buffer_queue", "fixed_interval") else "smart_jitter"
+    try:
+        parsed_daily_posts = max(1, int(posts_per_day)) if posts_per_day else 1
+    except Exception:
+        parsed_daily_posts = 1
 
     # Normalize output format (auto = keep pipeline default).
     if output_format not in ("vertical", "horizontal", "square"):
@@ -6310,6 +6352,11 @@ async def process_endpoint(
         'submitted_at': _arrival_now(),
         # A free-plan job paid with top-up minutes queues with the paid plans.
         'topup': bool(getattr(request.state, "queue_topup", False)),
+        # Autonomous Zero-Touch Buffer Publishing settings
+        'autopost_buffer': autopost_enabled,
+        'buffer_platforms': parsed_buffer_platforms,
+        'scheduling_mode': parsed_sched_mode,
+        'posts_per_day': parsed_daily_posts,
     }
     _end_job_dir(job_id)  # `jobs` keeps it live now
 
@@ -9382,12 +9429,15 @@ class ScheduleClipRequest(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     privacy_status: Optional[str] = "public"
+    scheduling_mode: Optional[str] = "smart_jitter"
 
 
 class AutoScheduleProjectRequest(BaseModel):
     job_id: str
     start_time: Optional[str] = None
     interval_hours: Optional[float] = 4.0
+    scheduling_mode: Optional[str] = "smart_jitter"
+    posts_per_day: Optional[int] = 1
     platforms: Optional[List[str]] = None
     provider: Optional[str] = "auto"
     buffer_channels: Optional[List[str]] = None
@@ -9414,12 +9464,13 @@ async def api_schedule_clip(req: ScheduleClipRequest, request: Request):
             job_id=req.job_id,
             clip_index=req.clip_index,
             scheduled_at=req.scheduled_at,
-            platforms=req.platforms or ["youtube"],
+            platforms=req.platforms or ["instagram", "youtube"],
             provider=req.provider or "auto",
             buffer_channels=req.buffer_channels,
             title=title,
             description=desc,
             privacy_status=req.privacy_status,
+            scheduling_mode=req.scheduling_mode or "smart_jitter",
         )
         return {"success": True, "schedule": entry}
     except Exception as e:
@@ -9439,14 +9490,22 @@ async def api_auto_schedule_project(req: AutoScheduleProjectRequest, request: Re
 
     clips = (job.get("result") or {}).get("clips") or []
     if not clips:
-        raise HTTPException(status_code=400, detail="No clips available in project")
+        # Fallback: check job directory for rendered clip files
+        target_dir = os.path.join(OUTPUT_DIR, req.job_id)
+        clip_files = sorted(glob.glob(os.path.join(target_dir, "clip_*.mp4")))
+        if clip_files:
+            clips = [{"video_url": f"/videos/{req.job_id}/{os.path.basename(f)}"} for f in clip_files]
+        else:
+            raise HTTPException(status_code=400, detail="No clips available in project")
 
     entries = scheduler.auto_schedule_project(
         job_id=req.job_id,
         clips=clips,
         start_time=req.start_time,
         interval_hours=req.interval_hours or 4.0,
-        platforms=req.platforms or ["youtube"],
+        scheduling_mode=req.scheduling_mode or "smart_jitter",
+        posts_per_day=req.posts_per_day or 1,
+        platforms=req.platforms or ["instagram", "youtube"],
         provider=req.provider or "auto",
         buffer_channels=req.buffer_channels,
         privacy_status=req.privacy_status or "public",

@@ -37,6 +37,13 @@ def test_get_template(temp_store):
     assert tmpl["layout"] == "gameplay_center"
     assert "impact_zoom" in tmpl["effects"]
 
+    # Verify new top-cam streamer template
+    top_cam = temp_store.get_template("streamer_stacked_top")
+    assert top_cam is not None
+    assert top_cam["name"] == "Streamer Top Cam (Stacked)"
+    assert top_cam["layout"] == "stacked_top_cam"
+    assert "top_cam_crop" in top_cam["effects"]
+
 
 def test_filter_by_category(temp_store):
     gaming_tmpls = temp_store.list_templates(category="gaming")

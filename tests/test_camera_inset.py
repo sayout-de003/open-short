@@ -142,3 +142,15 @@ class TestInsetFiltergraph:
         cam = graph.split("[ca]")[-1].split("[cam]")[0]
         for key in ("w=", "h=", "x=", "y="):
             assert int(cam.split(key)[1].split(":")[0].split(",")[0]) % 2 == 0
+
+    def test_top_cam_position_and_divider(self):
+        # Top camera: camera placed above, gameplay screen placed below
+        graph = inset_filtergraph(
+            1920, 1080, 1080, 1920, (1500, 880, 350, 200),
+            cam_position="top", add_divider=True
+        )
+        assert "[bg][cam]overlay=x=0" in graph
+        assert "[withcam][screen]overlay=x=0" in graph
+        assert "drawbox=x=0" in graph
+        assert "color=white@0.5" in graph
+        assert graph.endswith("[v]")
