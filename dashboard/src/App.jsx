@@ -429,21 +429,80 @@ function App() {
     }
   }, [logs, logsVisible]);
   const [processingMedia, setProcessingMedia] = useState(null);
+
+  const VALID_TABS = ['dashboard', 'autopilot', 'templates', 'saasshorts', 'ai-agent', 'ugc-gallery', 'thumbnails', 'history', 'settings'];
+
+  const TAB_ALIASES = {
+    clips: 'dashboard',
+    clip: 'dashboard',
+    generator: 'dashboard',
+    home: 'dashboard',
+    app: 'dashboard',
+    autopilo: 'autopilot',
+    autopilot: 'autopilot',
+    auto: 'autopilot',
+    automode: 'autopilot',
+    'auto-mode': 'autopilot',
+    radar: 'autopilot',
+    live: 'autopilot',
+    livestream: 'autopilot',
+    template: 'templates',
+    templates: 'templates',
+    studio: 'templates',
+    saas: 'saasshorts',
+    saasshorts: 'saasshorts',
+    'ai-shorts': 'saasshorts',
+    aishorts: 'saasshorts',
+    agent: 'ai-agent',
+    'ai-agent': 'ai-agent',
+    aiagent: 'ai-agent',
+    ugc: 'ugc-gallery',
+    'ugc-gallery': 'ugc-gallery',
+    gallery: 'ugc-gallery',
+    thumbnail: 'thumbnails',
+    thumbnails: 'thumbnails',
+    youtube: 'thumbnails',
+    yt: 'thumbnails',
+    projects: 'history',
+    project: 'history',
+    library: 'history',
+    history: 'history',
+    setting: 'settings',
+    settings: 'settings',
+  };
+
+  const resolveTab = (raw) => {
+    if (!raw || typeof raw !== 'string') return 'dashboard';
+    const clean = raw.trim().toLowerCase();
+    if (TAB_ALIASES[clean]) return TAB_ALIASES[clean];
+    if (VALID_TABS.includes(clean)) return clean;
+    if (clean.startsWith('auto') || clean.startsWith('radar')) return 'autopilot';
+    return 'dashboard';
+  };
+
   const getInitialTab = () => {
     try {
       const hash = window.location.hash || '';
-      if (hash.startsWith('#app?') || hash.startsWith('#/app?')) {
+      if (hash.includes('?')) {
         const q = hash.slice(hash.indexOf('?') + 1);
         const params = new URLSearchParams(q);
         const tab = params.get('tab');
-        if (tab) {
-          return tab === 'clips' ? 'dashboard' : tab;
+        if (tab) return resolveTab(tab);
+      }
+      const searchParams = new URLSearchParams(window.location.search || '');
+      const searchTab = searchParams.get('tab');
+      if (searchTab) return resolveTab(searchTab);
+
+      const cleanHash = hash.replace(/^[#/]+/, '').trim().toLowerCase();
+      if (cleanHash && cleanHash !== 'app' && cleanHash !== 'landing') {
+        const resolved = resolveTab(cleanHash);
+        if (resolved !== 'dashboard' || cleanHash === 'dashboard' || cleanHash === 'clips') {
+          return resolved;
         }
       }
+
       const saved = localStorage.getItem('creovis_last_tab') || localStorage.getItem('os_last_active_tab');
-      if (saved) {
-        return saved === 'clips' ? 'dashboard' : saved;
-      }
+      if (saved) return resolveTab(saved);
     } catch (_) {}
     return 'dashboard';
   };
@@ -1135,28 +1194,33 @@ function App() {
   // dropped so a reload does not keep forcing the tab.
   const [autopilotConnected, setAutopilotConnected] = useState(null); // connect outcome, see lib/connectReturn.js
   useEffect(() => {
-    const DEEP_LINK_TABS = ['dashboard', 'clips', 'autopilot', 'history', 'settings', 'thumbnails', 'saasshorts', 'ai-agent', 'ugc-gallery', 'templates'];
     const apply = () => {
       const hash = window.location.hash || '';
-      if (!hash.startsWith('#app?') && !hash.startsWith('#/app?')) return;
-      const q = hash.slice(hash.indexOf('?') + 1);
-      const params = new URLSearchParams(q);
-      const tab = params.get('tab');
-      if (!tab) return;
-      const resolvedTab = tab === 'clips' ? 'dashboard' : tab;
-      if (!DEEP_LINK_TABS.includes(resolvedTab)) return;
-      setActiveTab(resolvedTab);
-      // The connect outcome rides in the query string, not in the hash
-      // (lib/connectReturn.js): a cancel also comes back with connected=1.
-      if (resolvedTab === 'autopilot' && params.get('connected') === '1') {
-        setAutopilotConnected(readConnectReturn(window.location.search));
+      let targetTab = null;
+      if (hash.includes('?')) {
+        const q = hash.slice(hash.indexOf('?') + 1);
+        const params = new URLSearchParams(q);
+        const tab = params.get('tab');
+        if (tab) targetTab = resolveTab(tab);
+        if (params.get('connected') === '1') {
+          setAutopilotConnected(readConnectReturn(window.location.search));
+        }
+      } else {
+        const cleanHash = hash.replace(/^[#/]+/, '').trim().toLowerCase();
+        if (cleanHash && cleanHash !== 'app' && cleanHash !== 'landing') {
+          targetTab = resolveTab(cleanHash);
+        }
       }
-      try {
-        const remainingParams = new URLSearchParams(hash.slice(hash.indexOf('?') + 1));
-        remainingParams.delete('connected');
-        remainingParams.set('tab', resolvedTab);
-        window.history.replaceState(null, '', `${window.location.pathname}${stripConnectReturn(window.location.search)}#app?${remainingParams.toString()}`);
-      } catch (_) { /* ignore */ }
+      if (targetTab) {
+        setActiveTab(targetTab);
+        try {
+          const q = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+          const remainingParams = new URLSearchParams(q);
+          remainingParams.delete('connected');
+          remainingParams.set('tab', targetTab);
+          window.history.replaceState(null, '', `${window.location.pathname}${stripConnectReturn(window.location.search)}#app?${remainingParams.toString()}`);
+        } catch (_) { /* ignore */ }
+      }
     };
     apply();
     window.addEventListener('hashchange', apply);
@@ -1517,8 +1581,7 @@ function App() {
   // wraps to two lines in a 5-up bar on a 360px phone.
   const navItems = [
     { id: 'dashboard', ord: '01', icon: LayoutDashboard, label: 'Clip Generator', short: 'clips', primary: true },
-    // Cloud only: it runs on the managed pipeline and the Upload-Post connection.
-    ...(billingEnabled ? [{ id: 'autopilot', ord: '02', icon: Rocket, label: 'Autopilot', short: 'autopilot', isNew: true }] : []),
+    { id: 'autopilot', ord: '02', icon: Rocket, label: 'Autopilot', short: 'autopilot', primary: true, isNew: true },
     { id: 'templates', ord: '03', icon: LayoutTemplate, label: 'Template Studio', short: 'templates', primary: true, isNew: true },
     { id: 'saasshorts', ord: '04', icon: Sparkles, label: 'AI Shorts', short: 'ai shorts', byok: true, primary: true },
     { id: 'ai-agent', ord: '05', icon: Bot, label: 'AI Agent', short: 'agent', byok: true },
@@ -3008,9 +3071,14 @@ function App() {
           {!['settings', 'saasshorts', 'ai-agent', 'ugc-gallery', 'autopilot', 'history', 'templates', 'thumbnails', 'dashboard', 'clips'].includes(activeTab) && (
             <div className="h-full min-h-[200px] flex flex-col items-center justify-center p-6 text-center space-y-3 animate-fade">
               <p className="text-sm text-muted">Page not found.</p>
-              <button onClick={() => goToTab('dashboard')} className="btn-primary py-2 px-4 text-xs flex items-center gap-2">
-                <LayoutDashboard size={14} /> Return to Clip Generator
-              </button>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button onClick={() => goToTab('dashboard')} className="btn-primary py-2 px-4 text-xs flex items-center gap-2">
+                  <LayoutDashboard size={14} /> Return to Clip Generator
+                </button>
+                <button onClick={() => goToTab('autopilot')} className="btn-secondary py-2 px-4 text-xs flex items-center gap-2">
+                  <Rocket size={14} /> Go to Autopilot
+                </button>
+              </div>
             </div>
           )}
 
