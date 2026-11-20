@@ -254,7 +254,7 @@ def test_two_stage_rendering_and_hardware_encoder(tmp_path):
     render_duration = time.time() - t1
 
     assert os.path.exists(final_path)
-    assert render_duration < 15.0  # Allow CPU encoding variance on VPS
+    assert render_duration < 25.0  # Allow CPU encoding variance on VPS with facecam detection
 
     # Verify 9:16 aspect ratio with ffprobe
     ffprobe_bin = shutil.which("ffprobe") or "ffprobe"

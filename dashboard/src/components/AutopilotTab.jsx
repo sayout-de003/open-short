@@ -1,525 +1,522 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Rocket, Youtube, Twitch, Loader2, RefreshCw, Play, CheckCircle2, AlertTriangle,
-  Clock, Scissors, Send, ExternalLink, FolderOpen, Lock,
+  Clock, Scissors, Send, ExternalLink, FolderOpen, Lock, Radio, Gamepad2, Search,
+  Download, Sparkles, Check, ChevronRight, Eye, ShieldCheck, Flame, ArrowUpRight
 } from 'lucide-react';
 import { apiJson, openQuotaWall } from '../lib/api';
+import { getApiUrl } from '../config';
 import { PLATFORM_VALUES, platformLabel } from '../lib/socialPlatforms';
 import { track } from '../lib/analytics';
 import { connectNotice } from '../lib/connectReturn';
 
-// Autopilot: every new video on the user's connected YouTube channel is turned
-// into shorts automatically, and optionally the best ones are scheduled on
-// their socials, one a day. The channel comes from the Upload-Post connection
-// the app already uses for posting (GET /api/uploadposts/media under the hood),
-// so there is nothing to paste: connect once, switch it on.
-
-const PLATFORM_LABELS = Object.fromEntries(
-  PLATFORM_VALUES.map((v) => [v, v === 'youtube' ? 'YouTube Shorts' : platformLabel(v)]));
-
-const ERROR_TEXT = {
-  plan_required: 'Autopilot is paused: it needs an active Starter, Creator or Pro plan.',
-  youtube_not_connected: 'Connect your YouTube channel so Autopilot can see your new videos.',
-  youtube_reauth_required: 'YouTube asked to reconnect your channel. Reconnect it to keep Autopilot running.',
-  twitch_not_connected: 'Connect your Twitch account so Autopilot can see your past broadcasts.',
-  twitch_reauth_required: 'Twitch asked to reconnect your account. Reconnect it to keep Autopilot running.',
-  channel_unavailable: 'We could not read your channel on the last check. We will try again shortly.',
-};
-
-const REASON_TEXT = {
-  youtube_short: 'already a short',
-  private_video: 'private on YouTube — set it to Unlisted to clip it',
-  out_of_minutes: 'out of minutes',
-  too_short: 'too short to clip',
-  unavailable: 'not available yet (private or processing)',
-  low_quality: 'only low quality available',
-  timeout: 'did not finish',
-  processing_failed: 'processing failed',
-  publish_partial: 'some clips could not be scheduled',
-  url_ingest_disabled: 'links are disabled on this server',
-  still_live: 'still live: clipped once the broadcast ends',
-};
-
-const fmtDate = (iso) => (iso
-  ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-  : '');
-
-// ApiError.detail is a string or {error, message}; never hand an object to JSX.
-const errText = (e, fallback) => {
-  const d = e?.detail;
-  if (typeof d === 'string' && d) return d;
-  if (d && typeof d.message === 'string') return d.message;
-  return fallback;
-};
-
-const browserTimezone = () => {
-  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
-};
-
-function Switch({ checked, onChange, disabled, label }) {
-  return (
-    <span className="relative inline-flex items-center shrink-0">
-      <input
-        type="checkbox"
-        role="switch"
-        aria-label={label}
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-        className="sr-only peer"
-      />
-      <span className="w-11 h-6 rounded-full bg-paper3 border border-rule2 peer-checked:bg-brass peer-disabled:opacity-40 transition-colors after:content-[''] after:absolute after:left-1 after:top-1 after:w-4 after:h-4 after:rounded-full after:bg-ink after:transition-transform peer-checked:after:translate-x-5" />
-    </span>
-  );
-}
-
-function StatusBadge({ run }) {
-  if (!run) return <span className="readout">not clipped</span>;
-  const { status } = run;
-  if (status === 'completed') {
-    return (
-      <span className="badge-ok inline-flex items-center gap-1">
-        <CheckCircle2 size={11} /> {run.clips_count || 0} clips
-        {run.posted_count ? ` · ${run.posted_count} scheduled` : ''}
-      </span>
-    );
-  }
-  if (status === 'processing' || status === 'queued') {
-    return <span className="badge-brass inline-flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> clipping</span>;
-  }
-  if (status === 'skipped') return <span className="badge-warn">{REASON_TEXT[run.reason] || 'skipped'}</span>;
-  return <span className="badge-danger">{REASON_TEXT[run.reason] || 'failed'}</span>;
-}
+const POPULAR_GAMES = [
+  'GTA 5', 'Valorant', 'Minecraft', 'Call of Duty', 'Fortnite', 'League of Legends', 'Apex Legends', 'Counter-Strike 2'
+];
 
 export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }) {
-  const [data, setData] = useState(null);          // GET /api/autopilot
-  const [videos, setVideos] = useState(null);      // GET /api/autopilot/videos
-  const [videosError, setVideosError] = useState(null);
+  const [activeSubTab, setActiveSubTab] = useState('radar'); // 'radar' | 'channel'
+  
+  // Radar state (Discover top streams across YouTube & Twitch)
+  const [searchQuery, setSearchQuery] = useState('GTA 5');
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveredSources, setDiscoveredSources] = useState([]);
+  const [discoveryError, setDiscoveryError] = useState(null);
+  
+  // Clips state (Right panel: generated reels & auto-post status)
+  const [clips, setClips] = useState([]);
+  const [loadingClips, setLoadingClips] = useState(false);
+  const [publishingClipId, setPublishingClipId] = useState(null);
+  const [publishFeedback, setPublishFeedback] = useState({});
+  const [clippingSourceId, setClippingSourceId] = useState(null);
+  const [clipFeedback, setClipFeedback] = useState(null);
+
+  // Status & channel config
+  const [overview, setOverview] = useState(null);
+  const [ytConfig, setYtConfig] = useState(null);
   const [loadError, setLoadError] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [running, setRunning] = useState(null);    // video id being submitted
-  const [notice, setNotice] = useState('');
-  // Feedback for "clip it", shown next to the list: the page-level notice sits
-  // at the top of the tab, off screen from the button, so a click looked dead.
-  const [listNotice, setListNotice] = useState('');
-  const [opening, setOpening] = useState(null);
-  const pollRef = useRef(null);
 
-  const load = useCallback(async () => {
+  // Fetch YouTube configuration (Direct 10k/day OAuth)
+  const fetchYtConfig = useCallback(async () => {
     try {
-      const d = await apiJson('/api/autopilot');
-      setData(d);
-      setLoadError('');
-      if (d.youtube || d.twitch) {
-        const v = await apiJson('/api/autopilot/videos');
-        setVideos(v.videos || []);
-        setVideosError(v.error || null);
-      } else {
-        setVideos([]);
-      }
-    } catch (e) {
-      setLoadError(errText(e, 'Could not load Autopilot. Please try again.'));
+      const cfg = await apiJson('/api/youtube/config');
+      setYtConfig(cfg);
+    } catch (_) {}
+  }, []);
+
+  // Fetch rendered clips & auto-post status
+  const fetchClips = useCallback(async () => {
+    setLoadingClips(true);
+    try {
+      const res = await apiJson('/api/autopilot/clips?limit=50');
+      setClips(res.clips || []);
+    } catch (_) {}
+    finally {
+      setLoadingClips(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
-
-  // Coming back from the connect page (#app?tab=autopilot&connected=1). The
-  // outcome decides the notice: a cancel or a failure also comes back here,
-  // and the page's own back button carries no outcome (no notice then).
-  useEffect(() => {
-    if (!justConnected) return;
-    setNotice(connectNotice(justConnected));
-    const props = { platform: justConnected.platform || 'unknown' };
-    if (justConnected.status === 'success') {
-      track('AutopilotChannelConnected', { props });
-    } else {
-      track('AutopilotConnectFailed', {
-        props: { ...props, status: justConnected.status, error_code: justConnected.errorCode || 'none' },
-      });
-    }
-  }, [justConnected]);
-
-  // Refresh while something is being clipped, so the badge flips on its own.
-  const busy = (data?.runs || []).some((r) => r.status === 'processing' || r.status === 'queued');
-  useEffect(() => {
-    clearInterval(pollRef.current);
-    if (busy) pollRef.current = setInterval(load, 20000);
-    return () => clearInterval(pollRef.current);
-  }, [busy, load]);
-
-  const save = useCallback(async (patch) => {
-    setSaving(true);
-    setNotice('');
+  // Discover top live streams across YouTube & Twitch
+  const discoverStreams = useCallback(async (queryToUse) => {
+    const q = queryToUse !== undefined ? queryToUse : searchQuery;
+    setDiscovering(true);
+    setDiscoveryError(null);
     try {
-      const d = await apiJson('/api/autopilot', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ timezone: browserTimezone(), ...patch }),
-      });
-      setData((prev) => ({ ...prev, settings: d.settings }));
-      return d.settings;
+      const res = await apiJson(`/api/autopilot/discover?query=${encodeURIComponent(q)}`);
+      setDiscoveredSources(res.sources || []);
     } catch (e) {
-      setNotice(errText(e, 'Could not save. Please try again.'));
-      return null;
+      setDiscoveryError('Discovery failed. Verify your YouTube API key or Twitch credentials in settings.');
     } finally {
-      setSaving(false);
+      setDiscovering(false);
     }
-  }, []);
+  }, [searchQuery]);
 
-  const connect = useCallback(async () => {
-    track('AutopilotConnectClick');
+  // Initial load
+  useEffect(() => {
+    fetchYtConfig();
+    fetchClips();
+    discoverStreams('GTA 5');
+    
+    // Auto-poll clips every 15s to update status when background workers finish
+    const interval = setInterval(fetchClips, 15000);
+    return () => clearInterval(interval);
+  }, [fetchYtConfig, fetchClips, discoverStreams]);
+
+  // Trigger cutting reels from a discovered live stream or VOD
+  const handleCutReels = async (source) => {
+    setClippingSourceId(source.source_id);
+    setClipFeedback(null);
     try {
-      const { access_url } = await apiJson('/api/social/connect?return_to=autopilot', { method: 'POST' });
-      if (access_url) window.location.href = access_url;
-    } catch (e) {
-      setNotice(errText(e, 'Could not open the connection page. Please try again.'));
-    }
-  }, []);
-
-  const toggleEnabled = useCallback(async (on) => {
-    const s = await save(on ? { enabled: true, rights_ack: true } : { enabled: false });
-    if (s) {
-      track(on ? 'AutopilotEnabled' : 'AutopilotDisabled', { props: { autopublish: String(!!s.autopublish) } });
-      setNotice(on ? 'Autopilot is on. Your next video will be clipped automatically.' : 'Autopilot paused.');
-    }
-  }, [save]);
-
-  const togglePlatform = useCallback((p) => {
-    const cur = data?.settings?.publish_platforms || [];
-    const next = cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p];
-    save({ publish_platforms: next });
-  }, [data, save]);
-
-  const runNow = useCallback(async (video) => {
-    setRunning(video.id);
-    setListNotice('');
-    try {
-      const r = await apiJson('/api/autopilot/run', {
+      const res = await apiJson('/api/autopilot/clip-source', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ video_id: video.id }),
+        body: JSON.stringify({
+          url: source.url,
+          title: source.title,
+          platform: source.platform,
+          source_id: source.source_id,
+          source_type: source.source_type,
+          channel_id: source.channel_id,
+          channel_name: source.channel_name,
+          game_name: source.game_name || searchQuery,
+        }),
       });
-      track('AutopilotManualRun', { props: { status: r.status } });
-      if (r.status === 'processing') setListNotice(`Clipping “${video.title || 'your video'}”. We will email you when the clips are ready.`);
-      else setListNotice(`Not clipped: ${REASON_TEXT[r.reason] || r.reason || r.status}.`);
+      setClipFeedback({
+        id: source.source_id,
+        type: 'success',
+        text: `⚡ Clipping started for "${source.title.slice(0, 45)}...". Reels will appear on the right!`,
+      });
+      // Refresh clips list after a brief pause
+      setTimeout(fetchClips, 3000);
     } catch (e) {
-      if (e?.name === 'QuotaError') {
-        setListNotice('You are out of minutes for this period.');
-        openQuotaWall(e, 'autopilot_run');
-      }
-      else setListNotice(errText(e, 'Could not start the job.'));
+      setClipFeedback({
+        id: source.source_id,
+        type: 'error',
+        text: 'Failed to start clipping. Please check the backend connection.',
+      });
     } finally {
-      setRunning(null);
-      load();
+      setClippingSourceId(null);
     }
-  }, [load]);
+  };
 
-  const openProject = useCallback(async (jobId) => {
-    if (!onOpenProject || opening) return;
-    setOpening(jobId);
-    try { await onOpenProject(jobId); } catch { setNotice('Could not open this project yet. Find it in History.'); }
-    setOpening(null);
-  }, [onOpenProject, opening]);
-
-  if (!data && !loadError) {
-    return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-brass" /></div>;
-  }
-
-  const s = data?.settings || {};
-  const yt = data?.youtube;
-  const tw = data?.twitch;
-  const twitchAvailable = !!data?.twitch_available;
-  const accounts = data?.accounts || {};
-  const eligible = true; // Fully unlocked for self-hosted instances
-  const limits = data?.limits || { max_minutes_choices: [10, 20, 30, 45, 60, 90], max_clips_to_publish: 5, platforms: PLATFORM_VALUES };
-  const runs = data?.runs || [];
-  const errorText = s.enabled && s.last_error ? ERROR_TEXT[s.last_error] : null;
+  // Publish a reel to YouTube Shorts manually / on demand
+  const handlePublishClip = async (clipId) => {
+    setPublishingClipId(clipId);
+    try {
+      const res = await apiJson(`/api/autopilot/publish-clip/${clipId}`, { method: 'POST' });
+      if (res.success) {
+        setPublishFeedback((prev) => ({
+          ...prev,
+          [clipId]: { type: 'success', text: '🎉 Published directly to YouTube Shorts!' },
+        }));
+        fetchClips();
+      } else {
+        setPublishFeedback((prev) => ({
+          ...prev,
+          [clipId]: { type: 'error', text: res.error || 'Upload error. Ensure YouTube OAuth is connected.' },
+        }));
+      }
+    } catch (e) {
+      setPublishFeedback((prev) => ({
+        ...prev,
+        [clipId]: { type: 'error', text: 'Publishing failed. Please connect YouTube account first.' },
+      }));
+    } finally {
+      setPublishingClipId(null);
+    }
+  };
 
   return (
-    <div className="max-w-4xl mx-auto animate-fade">
-      <p className="eyebrow mb-1.5">02 · AUTOPILOT</p>
-      <h1 className="font-display lowercase text-3xl text-ink mb-2">your channel, clipped on its own</h1>
-      <p className="text-muted text-sm mb-8 max-w-2xl">
-        Publish on YouTube as usual. Autopilot notices every new video, turns it into shorts
-        and emails you when they are ready. Switch on autopublish and the best ones go out on
-        TikTok, Instagram and YouTube Shorts, one a day.
-      </p>
-
-      {loadError && <p className="text-danger text-sm mb-4">{loadError}</p>}
-      {notice && (
-        <div className="mb-6 rounded-card border border-brass/40 bg-brass/5 px-4 py-3 text-sm text-ink2">{notice}</div>
-      )}
-
-      {/* 1 · channel */}
-      <div className="card p-6 mb-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-full bg-paper3 border border-rule flex items-center justify-center shrink-0">
-              <Youtube size={18} className={yt ? 'text-brass' : 'text-muted'} />
+    <div className="max-w-7xl mx-auto p-2 sm:p-4 animate-fade">
+      {/* Top Banner / Auto-Mode Badges */}
+      <div className="mb-6 bg-paper2 border border-rule rounded-card p-4 sm:p-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <p className="eyebrow !text-emerald-400">Zero-Touch Auto-Mode Active</p>
             </div>
-            <div className="min-w-0">
-              <p className="eyebrow">01 · CHANNEL</p>
-              {yt ? (
-                <p className="text-ink truncate">{yt.display_name || yt.handle} <span className="readout ml-1">{yt.handle}</span></p>
+            <h1 className="font-display lowercase text-2xl sm:text-3xl text-ink">
+              Live Stream Radar &amp; Autonomous Clipping
+            </h1>
+            <p className="text-muted text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
+              OpenShorts automatically scans top live gaming streams on YouTube &amp; Twitch, tracks sentiment spikes in real-time, stacks streamer webcams in full-bleed 20/80 vertical layout, and publishes directly to YouTube Shorts.
+            </p>
+          </div>
+
+          {/* YouTube Connection status & 10k quota notice */}
+          <div className="shrink-0 flex flex-col sm:flex-row md:flex-col items-start md:items-end gap-2 bg-paper/60 p-3.5 rounded-card border border-rule">
+            <div className="flex items-center gap-2">
+              <Youtube size={16} className={ytConfig?.configured ? "text-emerald-400" : "text-red-500"} />
+              <span className="text-xs font-medium text-ink">
+                {ytConfig?.configured ? "Direct YouTube Auto-Post: Connected" : "Direct YouTube Auto-Post"}
+              </span>
+              {ytConfig?.configured ? (
+                <span className="badge-ok text-[10px]">10k/day Active</span>
               ) : (
-                <p className="text-muted text-sm">no YouTube channel connected yet</p>
+                <span className="badge-quiet text-[10px] text-amber-400">1 Step Needed</span>
               )}
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <a
-              href="/api/youtube/auth/login"
-              className="btn-primary text-xs py-2 px-3.5 flex items-center gap-1.5"
-              title="Connect YouTube directly using Google Cloud OAuth (Free 10,000 units/day)"
-            >
-              <Youtube size={14} /> Connect YouTube (10k/day)
-            </a>
-            {(!yt || yt.reauth_required) && (
-              <button onClick={connect} className="btn-ghost text-xs py-2 px-3">
-                Connect Socials
-              </button>
-            )}
-            {yt && !yt.reauth_required && (
-              <button onClick={connect} className="btn-quiet text-xs">manage accounts</button>
-            )}
-          </div>
-        </div>
-        {yt?.reauth_required && (
-          <p className="text-warn text-sm mt-3 flex items-center gap-2"><AlertTriangle size={14} /> YouTube needs you to reconnect this channel.</p>
-        )}
-        {/* Twitch: past broadcasts are a second source. Read-only: nothing is
-            ever posted to Twitch. The stretch viewers clipped most is clipped. */}
-        {twitchAvailable && (
-          <div className="flex flex-wrap items-center justify-between gap-4 mt-5 pt-5 border-t border-rule">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-full bg-paper3 border border-rule flex items-center justify-center shrink-0">
-                <Twitch size={18} className={tw ? 'text-brass' : 'text-muted'} />
-              </div>
-              <div className="min-w-0">
-                {tw ? (
-                  <p className="text-ink truncate">{tw.display_name || tw.handle} <span className="readout ml-1">{tw.handle}</span></p>
-                ) : (
-                  <p className="text-muted text-sm">stream on Twitch? connect it and every past broadcast is clipped once it ends, starting from the part your viewers clipped</p>
-                )}
-              </div>
+            <div className="flex items-center gap-2">
+              <a
+                href="/api/youtube/auth/login"
+                className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5"
+                title="1-Click Connect YouTube using Google OAuth (10,000 units/day)"
+              >
+                <Youtube size={13} />
+                {ytConfig?.configured ? "Reconnect / Change Channel" : "1-Click Connect YouTube (10k/day)"}
+              </a>
             </div>
-            {(!tw || tw.reauth_required) && (
-              <button onClick={connect} className="btn-ghost px-4 py-2 text-sm" disabled={!eligible}>
-                <Twitch size={16} /> {tw ? 'reconnect twitch' : 'connect twitch'}
+          </div>
+        </div>
+
+        {/* Feature Pills */}
+        <div className="mt-4 pt-3 border-t border-rule flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-muted">
+          <span className="flex items-center gap-1.5 bg-paper px-2.5 py-1 rounded-full border border-rule">
+            <Check size={12} className="text-emerald-400" /> Watchdog &amp; Auto-Healing (5m)
+          </span>
+          <span className="flex items-center gap-1.5 bg-paper px-2.5 py-1 rounded-full border border-rule">
+            <Check size={12} className="text-emerald-400" /> 20/80 Streamer Cam + Gameplay Stacking
+          </span>
+          <span className="flex items-center gap-1.5 bg-paper px-2.5 py-1 rounded-full border border-rule">
+            <Check size={12} className="text-emerald-400" /> Live Chat Hype Clipping (Zero API Quota)
+          </span>
+          <span className="flex items-center gap-1.5 bg-paper px-2.5 py-1 rounded-full border border-rule">
+            <Check size={12} className="text-emerald-400" /> 10,000 YouTube Units/Day Direct Upload
+          </span>
+        </div>
+      </div>
+
+      {/* Main Two-Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* LEFT COLUMN: Live Stream Radar (7 cols) */}
+        <div className="lg:col-span-7 space-y-4">
+          <div className="card p-4 sm:p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Radio size={16} className="text-brass animate-pulse" />
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-ink">
+                  Live Stream Scanner &amp; Discovery
+                </h2>
+              </div>
+              <button
+                onClick={() => discoverStreams()}
+                disabled={discovering}
+                className="btn-ghost text-xs py-1.5 px-3 flex items-center gap-1.5 self-start sm:self-auto"
+              >
+                <RefreshCw size={13} className={discovering ? "animate-spin text-brass" : ""} />
+                {discovering ? "Scanning Streams..." : "Refresh Scanner"}
               </button>
-            )}
-          </div>
-        )}
-        {tw?.reauth_required && (
-          <p className="text-warn text-sm mt-3 flex items-center gap-2"><AlertTriangle size={14} /> Twitch needs you to reconnect this account.</p>
-        )}
-      </div>
+            </div>
 
-      {/* 2 · switch */}
-      <div className="card p-6 mb-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="eyebrow mb-1">02 · AUTOPILOT</p>
-            <p className="text-ink">{s.enabled ? 'on: new videos are clipped automatically' : 'off'}</p>
-            <p className="text-muted text-sm mt-1">
-              Only videos you publish from now on. Up to {limits.daily_auto || 1} video a day, the first
-              {' '}{s.max_minutes || 30} minutes of each. Shorts are skipped.
-            </p>
-            {s.enabled && s.last_checked_at && (
-              <p className="readout mt-2 flex items-center gap-1"><Clock size={11} /> last check {fmtDate(s.last_checked_at)} · every hour</p>
-            )}
-          </div>
-          <Switch
-            label="autopilot"
-            checked={!!s.enabled}
-            disabled={saving || !eligible || !(yt || tw)}
-            onChange={toggleEnabled}
-          />
-        </div>
+            {/* Quick Game Chips */}
+            <div className="flex flex-wrap items-center gap-1.5 mb-3">
+              {POPULAR_GAMES.map((game) => (
+                <button
+                  key={game}
+                  onClick={() => {
+                    setSearchQuery(game);
+                    discoverStreams(game);
+                  }}
+                  className={`text-[11px] py-1 px-2.5 rounded-full border transition-all ${
+                    searchQuery === game
+                      ? 'bg-brass text-black border-brass font-medium'
+                      : 'bg-paper text-muted border-rule hover:text-ink hover:border-rule2'
+                  }`}
+                >
+                  {game}
+                </button>
+              ))}
+            </div>
 
-        {errorText && (
-          <p className="text-warn text-sm mt-4 flex items-center gap-2"><AlertTriangle size={14} /> {errorText}</p>
-        )}
-
-        <div className="grid sm:grid-cols-2 gap-4 mt-6">
-          <label className="block">
-            <span className="eyebrow block mb-2">minutes per video</span>
-            <select
-              className="input-field"
-              value={s.max_minutes || 30}
-              disabled={saving || !eligible}
-              onChange={(e) => save({ max_minutes: Number(e.target.value) })}
+            {/* Search Input Bar */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                discoverStreams();
+              }}
+              className="flex gap-2 mb-4"
             >
-              {limits.max_minutes_choices.map((m) => <option key={m} value={m}>first {m} min</option>)}
-            </select>
-          </label>
-        </div>
-      </div>
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search stream, game or creator (e.g. GTA 5, IShowSpeed, Shroud)..."
+                  className="input-field !pl-9 text-xs"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={discovering}
+                className="btn-primary text-xs px-4 flex items-center gap-1.5 shrink-0"
+              >
+                {discovering ? <Loader2 size={13} className="animate-spin" /> : <Flame size={13} />}
+                Scan
+              </button>
+            </form>
 
-      {/* 3 · autopublish */}
-      <div className="card p-6 mb-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="eyebrow mb-1">03 · AUTOPUBLISH</p>
-            <p className="text-ink">{s.autopublish ? 'the best clips are scheduled for you' : 'off: you review and post the clips yourself'}</p>
-            <p className="text-muted text-sm mt-1">
-              Picks the {s.clips_to_publish || 3} highest-scoring clips of each video and schedules
-              them one a day at {String(s.publish_hour ?? 17).padStart(2, '0')}:00 ({s.timezone || browserTimezone()}).
-            </p>
+            {/* Global Clip Feedback */}
+            {clipFeedback && (
+              <div
+                className={`p-3 rounded-card text-xs mb-4 flex items-center justify-between gap-2 animate-fade ${
+                  clipFeedback.type === 'success'
+                    ? 'bg-emerald-950/40 border border-emerald-500/40 text-emerald-300'
+                    : 'bg-red-950/40 border border-red-500/40 text-red-300'
+                }`}
+              >
+                <span>{clipFeedback.text}</span>
+                <button onClick={() => setClipFeedback(null)} className="text-muted hover:text-ink">✕</button>
+              </div>
+            )}
+
+            {/* Discovered Stream Cards */}
+            {discovering ? (
+              <div className="py-16 flex flex-col items-center justify-center text-muted space-y-3">
+                <Loader2 size={24} className="animate-spin text-brass" />
+                <p className="text-xs">Scanning YouTube Live and Twitch for top {searchQuery} streams...</p>
+              </div>
+            ) : discoveryError ? (
+              <div className="p-4 bg-paper rounded border border-rule text-xs text-warn">
+                {discoveryError}
+              </div>
+            ) : discoveredSources.length === 0 ? (
+              <div className="py-12 text-center text-muted text-xs bg-paper/40 rounded border border-rule/50">
+                No active streams found for &quot;{searchQuery}&quot;. Try selecting another game chip above.
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[640px] overflow-y-auto custom-scrollbar pr-1">
+                {discoveredSources.map((src, i) => (
+                  <div
+                    key={`${src.platform}-${src.source_id}-${i}`}
+                    className="p-3.5 bg-paper/60 hover:bg-paper border border-rule hover:border-brass/40 rounded-card transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span
+                          className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                            src.platform === 'twitch' ? 'bg-purple-900/60 text-purple-300 border border-purple-700/50' : 'bg-red-900/60 text-red-300 border border-red-700/50'
+                          }`}
+                        >
+                          {src.platform === 'twitch' ? <Twitch size={10} /> : <Youtube size={10} />}
+                          {src.platform}
+                        </span>
+                        {src.source_type === 'live' && (
+                          <span className="badge-danger text-[9px] px-1.5 py-0.2 animate-pulse">LIVE</span>
+                        )}
+                        {src.concurrent_viewers > 0 && (
+                          <span className="text-[11px] text-muted flex items-center gap-1">
+                            <Eye size={11} /> {src.concurrent_viewers.toLocaleString()} watching
+                          </span>
+                        )}
+                        {src.score > 0 && (
+                          <span className="text-[10px] font-mono text-brass font-bold ml-auto sm:ml-0">
+                            ★ {Math.round(src.score)} Virality
+                          </span>
+                        )}
+                      </div>
+
+                      <h3 className="text-xs font-medium text-ink line-clamp-1 group-hover:text-brass transition-colors">
+                        {src.title}
+                      </h3>
+                      <p className="text-[11px] text-muted truncate mt-0.5">
+                        <strong className="text-ink2">{src.channel_name}</strong> · {src.game_name || searchQuery}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                      <a
+                        href={src.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-ghost p-2 text-xs"
+                        title="View stream in new tab"
+                      >
+                        <ArrowUpRight size={14} />
+                      </a>
+                      <button
+                        onClick={() => handleCutReels(src)}
+                        disabled={clippingSourceId === src.source_id}
+                        className="btn-primary text-xs py-2 px-3.5 flex items-center gap-1.5 font-medium shadow-sm hover:shadow-brass/20"
+                        title="Cut 9:16 Shorts with 20/80 layout & live sentiment highlights"
+                      >
+                        {clippingSourceId === src.source_id ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin" /> Clipping…
+                          </>
+                        ) : (
+                          <>
+                            <Scissors size={13} /> Cut Reels Now
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <Switch
-            label="autopublish"
-            checked={!!s.autopublish}
-            disabled={saving || !eligible}
-            onChange={(on) => { track('AutopilotAutopublish', { props: { on: String(on) } }); save({ autopublish: on }); }}
-          />
         </div>
 
-        {s.autopublish && (
-          <>
-            <div className="mt-5">
-              <span className="eyebrow block mb-2">publish to</span>
-              <div className="flex flex-wrap gap-2">
-                {limits.platforms.map((p) => {
-                  const connected = !!accounts[p];
-                  const on = (s.publish_platforms || []).includes(p);
-                  return connected ? (
-                    <button
-                      key={p}
-                      onClick={() => togglePlatform(p)}
-                      disabled={saving}
-                      aria-pressed={on}
-                      className={`px-4 py-2 rounded-full text-sm lowercase border transition-colors ${on ? 'border-brass bg-brass/10 text-ink' : 'border-rule2 text-muted hover:text-ink2'}`}
+        {/* RIGHT COLUMN: Generated Reels & Auto-Post Monitor (5 cols) */}
+        <div className="lg:col-span-5 space-y-4">
+          <div className="card p-4 sm:p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-brass" />
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-ink">
+                  Generated Reels &amp; Auto-Posting
+                </h2>
+              </div>
+              <button
+                onClick={fetchClips}
+                disabled={loadingClips}
+                className="btn-quiet p-1.5 text-xs text-muted hover:text-ink"
+                title="Refresh clips"
+              >
+                <RefreshCw size={13} className={loadingClips ? "animate-spin text-brass" : ""} />
+              </button>
+            </div>
+
+            {loadingClips && clips.length === 0 ? (
+              <div className="py-16 flex flex-col items-center justify-center text-muted space-y-2">
+                <Loader2 size={24} className="animate-spin text-brass" />
+                <p className="text-xs">Loading cut reels...</p>
+              </div>
+            ) : clips.length === 0 ? (
+              <div className="py-14 text-center text-muted space-y-3 bg-paper/40 rounded border border-rule/50 p-4">
+                <Scissors size={28} className="mx-auto text-muted/60" />
+                <p className="text-xs text-ink font-medium">No reels cut yet</p>
+                <p className="text-[11px] leading-relaxed max-w-xs mx-auto text-muted">
+                  Click <strong>&quot;Cut Reels Now&quot;</strong> on any stream on the left. The AI will extract viral moments, apply the 20/80 layout, and list them here ready to post.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4 max-h-[640px] overflow-y-auto custom-scrollbar pr-1">
+                {clips.map((clip) => {
+                  const isPosted = clip.posted || clip.publication_status === 'sent';
+                  const isPublishing = publishingClipId === clip.id;
+                  const feedback = publishFeedback[clip.id];
+
+                  return (
+                    <div
+                      key={clip.id}
+                      className="p-3 bg-paper/80 border border-rule rounded-card flex flex-col gap-2.5 transition-all hover:border-rule2"
                     >
-                      {on && <CheckCircle2 size={13} className="inline mr-1.5 -mt-0.5 text-brass" />}{PLATFORM_LABELS[p]}
-                    </button>
-                  ) : (
-                    <button key={p} onClick={connect} className="px-4 py-2 rounded-full text-sm lowercase border border-dashed border-rule2 text-muted hover:text-ink2">
-                      + connect {PLATFORM_LABELS[p]}
-                    </button>
+                      {/* Video Player Preview */}
+                      <div className="relative aspect-[9/16] w-full max-h-[260px] bg-black rounded overflow-hidden border border-rule/80 group">
+                        <video
+                          src={clip.video_url ? getApiUrl(clip.video_url) : ''}
+                          controls
+                          playsInline
+                          preload="metadata"
+                          className="w-full h-full object-contain"
+                        />
+                        <div className="absolute top-2 left-2 pointer-events-none">
+                          <span className="bg-black/80 backdrop-blur-sm text-[10px] text-white px-2 py-0.5 rounded font-mono">
+                            {clip.duration_sec ? `${Math.round(clip.duration_sec)}s` : '9:16'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Clip Info */}
+                      <div>
+                        <h4 className="text-xs font-medium text-ink line-clamp-1">
+                          {clip.source_title || 'Gaming Reel'}
+                        </h4>
+                        <p className="text-[11px] text-muted truncate mt-0.5">
+                          {clip.channel_name ? `${clip.channel_name} · ` : ''}
+                          {clip.created_at ? new Date(clip.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Ready'}
+                        </p>
+                      </div>
+
+                      {/* Auto-Post Status Badge & Feedback */}
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-rule/60">
+                        <div className="flex items-center gap-1.5">
+                          {isPosted ? (
+                            <span className="badge-ok text-[10px] flex items-center gap-1 font-medium">
+                              <CheckCircle2 size={12} className="text-emerald-400" /> Posted to YouTube Shorts
+                            </span>
+                          ) : (
+                            <span className="badge-quiet text-[10px] text-amber-400 flex items-center gap-1 font-medium">
+                              <Clock size={11} /> Ready to Post
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-2">
+                          <a
+                            href={clip.video_url ? getApiUrl(clip.video_url) : '#'}
+                            download={`short_${clip.id}.mp4`}
+                            className="btn-ghost p-1.5 text-xs text-muted hover:text-ink"
+                            title="Download MP4 Reel"
+                          >
+                            <Download size={13} />
+                          </a>
+
+                          {!isPosted && (
+                            <button
+                              onClick={() => handlePublishClip(clip.id)}
+                              disabled={isPublishing}
+                              className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1 font-medium"
+                              title="Post immediately to YouTube Shorts via Direct YouTube API"
+                            >
+                              {isPublishing ? (
+                                <>
+                                  <Loader2 size={12} className="animate-spin" /> Uploading…
+                                </>
+                              ) : (
+                                <>
+                                  <Send size={12} /> Post to YouTube
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Publish Feedback Message */}
+                      {feedback && (
+                        <p
+                          className={`text-[11px] mt-1 ${
+                            feedback.type === 'success' ? 'text-emerald-400' : 'text-danger'
+                          }`}
+                        >
+                          {feedback.text}
+                        </p>
+                      )}
+                    </div>
                   );
                 })}
               </div>
-              {(s.publish_platforms || []).length === 0 && (
-                <p className="text-warn text-sm mt-3">Pick at least one account, or nothing gets published.</p>
-              )}
-              {(s.publish_platforms || []).includes('tiktok') && (
-                <p className="text-muted text-xs mt-3">TikTok clips arrive as drafts in your TikTok inbox: open the app to post them.</p>
-              )}
-            </div>
-            <div className="grid sm:grid-cols-2 gap-4 mt-5">
-              <label className="block">
-                <span className="eyebrow block mb-2">clips per video</span>
-                <select
-                  className="input-field"
-                  value={s.clips_to_publish || 3}
-                  disabled={saving}
-                  onChange={(e) => save({ clips_to_publish: Number(e.target.value) })}
-                >
-                  {Array.from({ length: limits.max_clips_to_publish || 5 }, (_, i) => i + 1).map((n) => (
-                    <option key={n} value={n}>{n} {n === 1 ? 'clip' : 'clips'} (one a day)</option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="eyebrow block mb-2">time of day</span>
-                <select
-                  className="input-field"
-                  value={s.publish_hour ?? 17}
-                  disabled={saving}
-                  onChange={(e) => save({ publish_hour: Number(e.target.value) })}
-                >
-                  {Array.from({ length: 24 }, (_, h) => h).map((h) => (
-                    <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="mt-4 p-3 bg-paper3/60 rounded border border-rule/50 text-xs text-muted leading-relaxed">
-              💡 <strong>YouTube Quota Policy:</strong> Uses up to <strong>10,000 free YouTube Data API units/day</strong>. Once the daily quota is reached, OpenShorts will continue generating clips uninterrupted and save them locally so you can review and post them manually.
-            </div>
-          </>
-        )}
+            )}
+          </div>
+        </div>
+
       </div>
-
-      {/* 4 · channel videos */}
-      {(yt || tw) && (
-        <div className="card p-6 mb-6">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <div>
-              <p className="eyebrow mb-1">04 · YOUR LATEST VIDEOS</p>
-              <p className="text-muted text-sm">Clip any of them now, or let Autopilot handle the next one.</p>
-            </div>
-            <button onClick={load} className="btn-quiet text-xs" aria-label="refresh"><RefreshCw size={13} /> refresh</button>
-          </div>
-          {listNotice && (
-            <div className="mb-4 rounded-card border border-brass/40 bg-brass/5 px-4 py-3 text-sm text-ink2" role="status">{listNotice}</div>
-          )}
-          {videosError && <p className="text-warn text-sm mb-3">{ERROR_TEXT[videosError] || 'Could not read your channel.'}</p>}
-          {videos === null && <div className="flex justify-center py-6"><Loader2 className="animate-spin text-brass" size={18} /></div>}
-          {videos && videos.length === 0 && !videosError && (
-            <p className="text-muted text-sm">No videos on this channel yet.</p>
-          )}
-
-          <div className="divide-y divide-rule">
-            {(videos || []).map((v) => {
-              const run = v.run;
-              // Skipped runs can be retried too: private videos used to be
-              // misread as Shorts, and a real Short just skips again.
-              const canRun = eligible && !v.is_live && (!run || run.status === 'failed' || run.status === 'skipped');
-              return (
-                <div key={v.id} className="flex items-center gap-3 py-3">
-                  {v.thumbnail_url ? (
-                    <img src={v.thumbnail_url} alt="" className="w-20 sm:w-24 h-[45px] sm:h-[54px] object-cover rounded-input border border-rule shrink-0" loading="lazy" />
-                  ) : (
-                    <div className="w-20 sm:w-24 h-[45px] sm:h-[54px] rounded-input bg-paper3 shrink-0" />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <a href={v.url} target="_blank" rel="noopener noreferrer" className="text-sm text-ink2 hover:text-ink line-clamp-2">
-                      {v.title || v.id} <ExternalLink size={11} className="inline -mt-0.5 text-muted" />
-                    </a>
-                    <div className="flex flex-wrap items-center gap-2 mt-1">
-                      {v.source === 'twitch' && <Twitch size={12} className="text-muted" aria-label="Twitch broadcast" />}
-                      <span className="readout">{fmtDate(v.published_at)}</span>
-                      {v.is_live && !run ? <span className="badge-warn">live now</span> : <StatusBadge run={run} />}
-                    </div>
-                  </div>
-                  {run?.status === 'completed' && run.job_id ? (
-                    <button onClick={() => openProject(run.job_id)} className="btn-quiet text-xs shrink-0" disabled={opening === run.job_id}>
-                      {opening === run.job_id ? <Loader2 size={13} className="animate-spin" /> : <FolderOpen size={13} />} open
-                    </button>
-                  ) : canRun ? (
-                    <button onClick={() => runNow(v)} className="btn-ghost px-4 py-2 text-xs shrink-0" disabled={!!running}>
-                      {running === v.id ? <Loader2 size={13} className="animate-spin" /> : <Scissors size={13} />} clip it
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* 5 · activity */}
-      {runs.length > 0 && (
-        <div className="card p-6 mb-10">
-          <p className="eyebrow mb-4">05 · ACTIVITY</p>
-          <div className="space-y-3">
-            {runs.map((r) => (
-              <div key={r.id} className="flex items-center gap-3 text-sm">
-                {r.status === 'completed' ? <CheckCircle2 size={15} className="text-ok shrink-0" />
-                  : (r.status === 'processing' || r.status === 'queued') ? <Loader2 size={15} className="animate-spin text-brass shrink-0" />
-                    : r.status === 'skipped' ? <Play size={15} className="text-muted shrink-0" />
-                      : <AlertTriangle size={15} className="text-danger shrink-0" />}
-                <span className="text-ink2 truncate flex-1">{r.video_title || r.video_id}</span>
-                {r.posted_count ? <span className="readout hidden sm:inline-flex items-center gap-1"><Send size={11} /> {r.posted_count} scheduled</span> : null}
-                <span className="readout shrink-0">{r.trigger === 'manual' ? 'manual' : 'auto'} · {fmtDate(r.created_at)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -12269,6 +12269,34 @@ def _require_autopilot_auth(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Unauthorized autopilot access")
 
 
+@app.get("/api/autopilot")
+async def api_autopilot_overview(request: Request):
+    """General status and configuration for frontend autopilot tab."""
+    orch = _get_autopilot_orch()
+    status = orch.status()
+    has_yt = bool(os.getenv("YOUTUBE_REFRESH_TOKEN"))
+    has_tw = bool(os.getenv("TWITCH_CLIENT_ID"))
+    return {
+        "eligible": True,
+        "youtube": {"connected": has_yt, "reauth_required": False} if has_yt else None,
+        "twitch": {"connected": has_tw, "reauth_required": False} if has_tw else None,
+        "twitch_available": has_tw,
+        "settings": {"enabled": not orch._paused, "publish_platforms": ["youtube"]},
+        "runs": [],
+        "limits": {"max_minutes_choices": [10, 20, 30, 45, 60, 90], "max_clips_to_publish": 5, "platforms": ["youtube", "tiktok", "instagram"]},
+        **status,
+    }
+
+
+@app.get("/api/autopilot/discover")
+async def api_autopilot_discover(request: Request, query: Optional[str] = "GTA 5"):
+    """Discover and rank top live streams and VODs across YouTube and Twitch."""
+    _require_autopilot_auth(request)
+    orch = _get_autopilot_orch()
+    sources = await asyncio.to_thread(orch.discover_and_rank, query=query)
+    return {"sources": [s.__dict__ for s in sources]}
+
+
 @app.get("/api/autopilot/status")
 async def api_autopilot_status(request: Request):
     _require_autopilot_auth(request)
@@ -12286,8 +12314,109 @@ async def api_autopilot_jobs(request: Request, limit: int = 50):
 @app.get("/api/autopilot/clips")
 async def api_autopilot_clips(request: Request, limit: int = 50):
     _require_autopilot_auth(request)
-    from autopilot.metrics import list_recent_clips
-    return {"clips": list_recent_clips(_get_autopilot_orch().db, limit=limit)}
+    orch = _get_autopilot_orch()
+    with orch.db.transaction() as conn:
+        rows = conn.execute("""
+            SELECT 
+                c.id, c.job_id, c.local_path, c.duration_sec, c.width, c.height,
+                c.quality_status, c.created_at,
+                j.platform, j.source_id,
+                s.title AS source_title, s.channel_name, s.url AS source_url,
+                p.publication_status, p.platform AS post_platform, p.published_at AS posted_at,
+                p.last_error AS post_error, p.buffer_post_id AS yt_video_id
+            FROM rendered_clips c
+            LEFT JOIN processing_jobs j ON c.job_id = j.id
+            LEFT JOIN discovered_sources s ON j.source_pk = s.id
+            LEFT JOIN published_posts p ON p.rendered_clip_id = c.id
+            ORDER BY c.created_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        clips = []
+        for r in rows:
+            d = dict(r)
+            d["video_url"] = f"/videos/autopilot/{d['id']}"
+            d["posted"] = d.get("publication_status") in ("sent", "published")
+            clips.append(d)
+        return {"clips": clips}
+
+
+@app.post("/api/autopilot/publish-clip/{clip_id}")
+async def api_autopilot_publish_clip(clip_id: str, request: Request):
+    """Directly publish an autopilot short to YouTube Shorts using YouTube Data API v3."""
+    _require_autopilot_auth(request)
+    orch = _get_autopilot_orch()
+    with orch.db.transaction() as conn:
+        row = conn.execute("SELECT * FROM rendered_clips WHERE id = ?", (clip_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Clip not found")
+        clip = dict(row)
+        source_row = conn.execute("""
+            SELECT s.title, s.channel_name, s.url 
+            FROM processing_jobs j 
+            JOIN discovered_sources s ON j.source_pk = s.id 
+            WHERE j.id = ?
+        """, (clip["job_id"],)).fetchone()
+        source_title = source_row["title"] if source_row else "Gaming Reel"
+        channel_name = source_row["channel_name"] if source_row else "Streamer"
+
+    file_path = clip["local_path"]
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Clip file missing on disk")
+
+    title = f"{source_title[:60]} #Shorts"
+    desc = f"Best clip from {channel_name}!\n\n#gaming #shorts #viral #reels"
+
+    res = await asyncio.to_thread(
+        youtube_publisher.upload_video_to_youtube,
+        file_path=file_path,
+        title=title,
+        description=desc,
+        tags=["gaming", "shorts", "viral", channel_name]
+    )
+
+    if res.get("success"):
+        import uuid
+        post_id = f"post_{uuid.uuid4().hex[:12]}"
+        with orch.db.transaction() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO published_posts 
+                (id, rendered_clip_id, buffer_channel_id, platform, operation_id, buffer_post_id, publication_status, published_at, created_at, updated_at)
+                VALUES (?, ?, 'youtube_direct', 'youtube', ?, ?, 'sent', datetime('now'), datetime('now'), datetime('now'))
+            """, (post_id, clip_id, res.get("video_id", post_id), res.get("video_id")))
+    return res
+
+
+@app.post("/api/autopilot/clip-source")
+async def api_autopilot_clip_source(req: Dict[str, Any], request: Request):
+    """Enqueue a discovered live stream or VOD for instant clipping."""
+    _require_autopilot_auth(request)
+    url = req.get("url")
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+    title = req.get("title", "Live Stream")
+    platform = req.get("platform", "youtube")
+    source_id = req.get("source_id") or hashlib.md5(url.encode()).hexdigest()[:12]
+    game_name = req.get("game_name", "Gaming")
+
+    orch = _get_autopilot_orch()
+    import uuid
+    job_id = f"job_{uuid.uuid4().hex[:12]}"
+    with orch.db.transaction() as conn:
+        conn.execute("""
+            INSERT OR IGNORE INTO discovered_sources 
+            (platform, source_id, source_type, url, title, channel_id, channel_name, game_name, eligible, discovered_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+        """, (platform, source_id, req.get("source_type", "live"), url, title, req.get("channel_id", "ch"), req.get("channel_name", "Streamer"), game_name))
+        src_row = conn.execute("SELECT id FROM discovered_sources WHERE platform=? AND source_id=?", (platform, source_id)).fetchone()
+        src_pk = src_row["id"] if src_row else 1
+        conn.execute("""
+            INSERT INTO processing_jobs (id, source_pk, platform, source_id, job_type, status, priority, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'vod_clip', 'queued', 10.0, datetime('now'), datetime('now'))
+        """, (job_id, src_pk, platform, source_id))
+
+    # Trigger orchestrator run in background
+    asyncio.create_task(asyncio.to_thread(orch.run_once, query=game_name))
+    return {"job_id": job_id, "status": "queued", "message": f"Clipping initiated for '{title}'"}
 
 
 @app.get("/api/autopilot/metrics")
