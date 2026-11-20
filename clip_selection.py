@@ -49,10 +49,10 @@ def clip_count_targets(n_windows):
     import os
 
     n = max(1, int(n_windows or 1))
-    # Floor grows with the material: 3 windows -> 3, 5 -> 4, 10+ -> 6.
-    low = max(2, min(6, n // 2 + 2))
-    # Ceiling allows a rich window to yield more than one without inviting padding.
-    high = min(12, max(4, n * 2))
+    # Floor grows with material and duration: scales up to 15 for long sources
+    low = max(2, min(15, n // 2 + 2))
+    # Ceiling allows rich material across long videos to yield more clips without padding
+    high = min(30, max(4, n * 2))
     low = min(low, high)
 
     def _override(name, current):
@@ -89,7 +89,8 @@ def shortlist_target(video_duration):
         seconds = float(video_duration or 0)
     except (TypeError, ValueError):
         seconds = 0.0
-    return max(3, min(10, int(seconds // 90) + 2))
+    # Scaled up to 35 for multi-hour streams and longform content
+    return max(3, min(35, int(seconds // 90) + 2))
 
 
 def score_batches(windows, batch_size):
@@ -293,19 +294,19 @@ def build_transcript_windows(transcript_result, video_duration,
     return windows
 
 
-def dedupe_overlapping(shorts, ratio=0.25):
+def dedupe_overlapping(shorts, ratio=None):
     """Drop clips that overlap an already-kept clip by ``ratio`` of the
     shorter one, keeping the higher ``predicted_score`` (earlier on a tie).
 
-    0.25, not 0.5: two clips sharing 25 s of 59 s (42%) both survived the old
-    bar and the same punchline came out twice in one batch.
-
-    The detail prompt's DIVERSITY rule is the only thing that stopped two
-    clips from sharing the same seconds, and a rule is not a guarantee: two
-    picks from one window can cover the same moment with different edges,
-    and the user then downloads the same short twice. Survivors come back in
-    transcript order, like ``trim_to_best``.
+    Default ratio 0.40 allows distinct clips that share context (e.g. action
+    followed by reaction) to survive while still dropping near-duplicate cuts.
+    Can be adjusted via CLIP_DEDUPE_RATIO.
     """
+    if ratio is None:
+        try:
+            ratio = float(os.environ.get("CLIP_DEDUPE_RATIO", "0.40"))
+        except (ValueError, TypeError):
+            ratio = 0.40
     def _score(c):
         try:
             return float(c.get("predicted_score") or 0)
@@ -335,18 +336,34 @@ def dedupe_overlapping(shorts, ratio=0.25):
     return [c for _, c in sorted(kept, key=lambda p: p[0])]
 
 
+def _clean_word_text(w):
+    return str(w or "").strip().lower()
+
+
+def _is_sentence_terminal(w):
+    clean = str(w or "").strip()
+    return clean.endswith(('.', '!', '?', '."', '!"', '?"', '…', '—'))
+
+
+def _is_clause_terminal(w):
+    clean = str(w or "").strip()
+    return clean.endswith((',', ';', ':', ',"', ';"'))
+
+
+def _is_conjunction_or_filler(w):
+    clean = "".join(ch for ch in str(w or "").lower() if ch.isalnum())
+    return clean in {"and", "but", "so", "or", "because", "well", "like", "uh", "um", "actually"}
+
+
 def snap_clip_to_words(start, end, words, video_duration,
                        min_duration=15.0, max_duration=60.0,
-                       search_window=1.5, max_lead=0.35, max_tail=0.45):
+                       search_window=1.8, max_lead=0.45, max_tail=0.55):
     """
-    Snap Gemini-proposed clip boundaries onto real word boundaries plus a bit
-    of the surrounding silence. LLMs are bad at millisecond arithmetic; the
-    word-level timestamps are ground truth, so cuts land in pauses instead of
-    mid-word.
+    Snap proposed clip boundaries onto real word and sentence boundaries
+    with natural acoustic lead/tail margins.
 
-    words: [{'w','s','e'}, ...] for the whole video, sorted by start.
-    Returns (start, end); falls back to the input if no words are nearby or
-    snapping cannot satisfy the duration bounds.
+    Avoids mid-sentence, mid-word cuts and keeps full punchlines intact
+    instead of cutting off abruptly on hard duration limits.
     """
     original = (round(float(start), 3), round(float(end), 3))
     if not words:
@@ -354,46 +371,123 @@ def snap_clip_to_words(start, end, words, video_duration,
 
     starts = [float(w.get("s", 0)) for w in words]
     ends = [float(w.get("e", 0)) for w in words]
+    n_words = len(words)
 
-    # START: snap to the nearest word start, then lead into the silence before it.
+    # START: snap to the nearest word start, favoring sentence openings over conjunctions
     new_start = float(start)
-    candidates = [s for s in starts if abs(s - new_start) <= search_window]
-    if candidates:
-        word_start = min(candidates, key=lambda s: abs(s - new_start))
+    start_candidates = [i for i, s in enumerate(starts) if abs(s - new_start) <= search_window]
+    if start_candidates:
+        # Prefer a clean sentence start (previous word was terminal or had a pause)
+        best_i = start_candidates[0]
+        min_dist = float("inf")
+        for i in start_candidates:
+            w_text = words[i].get("w", "")
+            s_val = starts[i]
+            dist = abs(s_val - new_start)
+            # Check if this word is preceded by sentence termination or natural pause >= 0.35s
+            is_sentence_start = False
+            if i > 0:
+                prev_w = words[i - 1].get("w", "")
+                prev_e = ends[i - 1]
+                if _is_sentence_terminal(prev_w) or (s_val - prev_e >= 0.35):
+                    is_sentence_start = True
+            elif i == 0:
+                is_sentence_start = True
+
+            # If it's a conjunction/filler and not a true sentence start, slightly penalize
+            weight = dist
+            if _is_conjunction_or_filler(w_text) and not is_sentence_start:
+                weight += 0.4
+            elif is_sentence_start:
+                weight -= 0.3
+
+            if weight < min_dist:
+                min_dist = weight
+                best_i = i
+
+        word_start = starts[best_i]
         prev_ends = [e for e in ends if e <= word_start]
         if prev_ends:
             gap = max(0.0, word_start - max(prev_ends))
-            lead = min(max_lead, gap / 2)
+            lead = min(max_lead, max(0.20, gap * 0.75)) if gap >= 0.20 else min(max_lead, gap)
         else:
-            lead = max_lead
+            lead = min(max_lead, max(0.25, word_start))
         new_start = max(0.0, word_start - lead)
 
-    # END: snap to the nearest word end, then trail into the silence after it.
+    # END: snap to the nearest word end, favoring sentence or clause completions
     new_end = float(end)
-    candidates = [e for e in ends if abs(e - new_end) <= search_window]
-    if candidates:
-        word_end = min(candidates, key=lambda e: abs(e - new_end))
+    end_candidates = [i for i, e in enumerate(ends) if abs(e - new_end) <= search_window + 0.8]
+    if end_candidates:
+        best_end_i = end_candidates[0]
+        min_end_dist = float("inf")
+        for i in end_candidates:
+            w_text = words[i].get("w", "")
+            e_val = ends[i]
+            dist = abs(e_val - new_end)
+            # Bonus for sentence end punctuation or pause after word
+            has_pause_after = False
+            if i + 1 < n_words:
+                next_s = starts[i + 1]
+                has_pause_after = (next_s - e_val >= 0.40)
+            else:
+                has_pause_after = True
+
+            weight = dist
+            if _is_sentence_terminal(w_text):
+                weight -= 0.5
+            elif _is_clause_terminal(w_text) or has_pause_after:
+                weight -= 0.25
+
+            if weight < min_end_dist:
+                min_end_dist = weight
+                best_end_i = i
+
+        word_end = ends[best_end_i]
         next_starts = [s for s in starts if s >= word_end]
         if next_starts:
             gap = max(0.0, min(next_starts) - word_end)
-            tail = min(max_tail, gap / 2)
+            tail = min(max_tail, max(0.30, gap * 0.75)) if gap >= 0.30 else min(max_tail, max(0.18, gap))
         else:
             tail = max_tail
         new_end = min(float(video_duration), word_end + tail)
 
-    # Repair duration bounds while staying on word boundaries.
-    if new_end - new_start < min_duration:
-        target = new_start + min_duration
-        later = sorted(e for e in ends if e >= target)
-        if later and later[0] - new_start <= max_duration:
-            new_end = min(float(video_duration), later[0] + 0.2)
+    # REPAIR DURATION BOUNDS WITHOUT CHOPPING WORDS OR PUNCHLINES
+    dur = new_end - new_start
+    if dur > max_duration:
+        target_max = new_start + max_duration
+        valid_words = [(i, w) for i, w in enumerate(words) if new_start + min_duration <= float(w.get("e", 0)) <= target_max]
+        if valid_words:
+            # Find best sentence or clause ending before target_max
+            sentence_ends = [(i, w) for i, w in valid_words if _is_sentence_terminal(w.get("w", ""))]
+            if sentence_ends:
+                chosen_i, chosen_w = sentence_ends[-1]
+            else:
+                clause_ends = [(i, w) for i, w in valid_words if _is_clause_terminal(w.get("w", ""))]
+                chosen_i, chosen_w = clause_ends[-1] if clause_ends else valid_words[-1]
+
+            chosen_e = float(chosen_w.get("e", 0))
+            next_s = starts[chosen_i + 1] if chosen_i + 1 < n_words else chosen_e + 1.0
+            gap = max(0.0, next_s - chosen_e)
+            tail = min(max_tail, max(0.25, gap * 0.75)) if gap >= 0.25 else min(max_tail, gap)
+            new_end = min(float(video_duration), chosen_e + tail)
         else:
             return original
-    if new_end - new_start > max_duration:
-        target = new_start + max_duration
-        earlier = [e for e in ends if new_start < e <= target]
-        new_end = (max(earlier) + 0.2) if earlier else target
-        new_end = min(new_end, new_start + max_duration, float(video_duration))
+
+    dur = new_end - new_start
+    if dur < min_duration:
+        target_min = new_start + min_duration
+        target_max = new_start + max_duration
+        later_words = [(i, w) for i, w in enumerate(words) if target_min <= float(w.get("e", 0)) <= target_max]
+        if later_words:
+            sentence_ends = [(i, w) for i, w in later_words if _is_sentence_terminal(w.get("w", ""))]
+            chosen_i, chosen_w = sentence_ends[0] if sentence_ends else later_words[0]
+            chosen_e = float(chosen_w.get("e", 0))
+            next_s = starts[chosen_i + 1] if chosen_i + 1 < n_words else chosen_e + 1.0
+            gap = max(0.0, next_s - chosen_e)
+            tail = min(max_tail, max(0.25, gap * 0.75)) if gap >= 0.25 else min(max_tail, gap)
+            new_end = min(float(video_duration), chosen_e + tail)
+        else:
+            return original
 
     if new_end <= new_start or new_end - new_start < min_duration:
         return original

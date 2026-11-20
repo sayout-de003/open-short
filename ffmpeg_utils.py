@@ -439,6 +439,7 @@ def cut_clip(input_video, clip_temp_path, start, end, clip_number):
         *rate,
         *encode_args,
         *audio_encode_args(),
+        '-avoid_negative_ts', 'make_zero',
         clip_temp_path
     ]
     gpu_command = None
@@ -451,7 +452,8 @@ def cut_clip(input_video, clip_temp_path, start, end, clip_number):
             del gpu_args[i:i + 2]
         gpu_command = ['ffmpeg', '-y', '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda',
                        '-ss', str(start), '-to', str(end), '-i', input_video,
-                       *rate, *gpu_args, *audio_encode_args(), clip_temp_path]
+                       *rate, *gpu_args, *audio_encode_args(),
+                       '-avoid_negative_ts', 'make_zero', clip_temp_path]
 
     def _run_one(cmd):
         result = subprocess.run(cmd, stdout=subprocess.DEVNULL,

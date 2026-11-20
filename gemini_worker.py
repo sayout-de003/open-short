@@ -284,6 +284,10 @@ Rules:
   live viewers clipped that stretch themselves. That is strong evidence the
   moment lands even when the transcript looks thin (a chase, a crash, a scream),
   so weigh it up; the window still has to make sense to a cold viewer.
+- A window may carry `action_moments` / `action_intensity` (0.0 to 1.0): these are
+  algorithmic detections of visual motion peaks, loud audio, screams, laughter, stunts,
+  excitement, or dramatic reactions. Give high scores (75+) to moments with high
+  action_intensity even when the transcript text seems brief, casual, or informal.
 
 TRANSCRIPT_LANGUAGE: {language}
 VIDEO_DURATION_SECONDS: {video_duration}

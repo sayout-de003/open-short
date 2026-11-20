@@ -9,6 +9,7 @@ import contextlib
 import threading
 import unicodedata
 import uuid
+from typing import Optional, Tuple, List, Dict, Union, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scenedetect import open_video, SceneManager
 from scenedetect.detectors import ContentDetector
@@ -1060,6 +1061,18 @@ def _select_live_stream_urls(info: dict):
         f for f in (info.get("formats") or [])
         if f.get("url") and f.get("protocol") != "mhtml" and f.get("ext") != "mhtml"
     ]
+    if not formats and (info.get("webpage_url") or info.get("original_url")):
+        try:
+            target_u = info.get("webpage_url") or info.get("original_url")
+            with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True, 'live_from_start': False}) as ydl:
+                proc = ydl.extract_info(target_u, download=False, process=True)
+                if proc and proc.get("formats"):
+                    formats = [
+                        f for f in (proc.get("formats") or [])
+                        if f.get("url") and f.get("protocol") != "mhtml" and f.get("ext") != "mhtml"
+                    ]
+        except Exception:
+            pass
 
     def _is_hls_fmt(f):
         proto = (f.get("protocol") or "").lower()
@@ -1117,7 +1130,13 @@ def _live_ffmpeg_input_opts(url: str, start_index: int) -> list:
 def capture_live_stream_segment(info, expected_path, live_seconds=45, start_index=None, cycle_num=None):
     """Captures a window of live stream directly from the live edge via ffmpeg HLS demuxer."""
     if start_index is None:
-        start_index = int(os.environ.get("LIVE_START_INDEX", "-1"))
+        env_idx = os.environ.get("LIVE_START_INDEX")
+        if env_idx is not None:
+            start_index = int(env_idx)
+        else:
+            # Pull from recent DVR cache (e.g. ~20-25 segments back) so ffmpeg downloads
+            # immediately in a few seconds instead of blocking wall-clock seconds waiting for the live edge.
+            start_index = -max(15, int(live_seconds // 2) + 5)
 
     stream_url, v_url, a_url = _select_live_stream_urls(info)
     if not stream_url and not (v_url and a_url):
@@ -1204,7 +1223,11 @@ class _LiveSegmentProducer:
     def start(self, info: dict, start_index: Optional[int] = None) -> bool:
         self.stop_process()
         if start_index is None:
-            start_index = int(os.environ.get("LIVE_START_INDEX", "-1"))
+            env_idx = os.environ.get("LIVE_START_INDEX")
+            if env_idx is not None:
+                start_index = int(env_idx)
+            else:
+                start_index = -20
         stream_url, v_url, a_url = _select_live_stream_urls(info)
         if not stream_url and not (v_url and a_url):
             return False
@@ -2811,11 +2834,11 @@ def get_viral_clips(transcript_result, video_duration, viewer_clips=None, input_
 
         profile = os.getenv("CLIPPING_PROFILE", "auto").lower()
         is_gaming = (profile == "gaming")
-        if is_gaming and input_video and os.path.exists(input_video):
-            print("   🎮 Extracting multi-modal gameplay action peaks (motion & audio energy)...")
+        if input_video and os.path.exists(input_video):
+            print("   ⚡ Extracting multi-modal viral action & audio energy peaks...")
             peaks = extract_action_peaks(input_video, video_duration)
             if peaks:
-                print(f"   ⚡ Detected {len(peaks)} action moment(s) from gameplay footage.")
+                print(f"   ⚡ Detected {len(peaks)} high-energy action/reaction moment(s).")
                 fuse_action_peaks_into_windows(windows, peaks)
 
         # --- Pass 1: score windows in batches, keep the highest-scoring ---
@@ -3286,7 +3309,7 @@ def analyze_and_detect_clips(input_video, duration, viewer_clips=None,
         clips_data = get_visual_clips(input_video, duration, viewer_clips=viewer_clips)
 
     if is_live_continuous and clips_data and clips_data.get('shorts'):
-        min_v_score = float(os.environ.get("LIVE_MIN_VIRALITY_SCORE", "6.5"))
+        min_v_score = float(os.environ.get("LIVE_MIN_VIRALITY_SCORE", "5.0"))
         filtered_shorts = []
         for s in clips_data['shorts']:
             score_val = s.get("predicted_score")
@@ -3296,11 +3319,15 @@ def analyze_and_detect_clips(input_video, duration, viewer_clips=None,
                 score_val = s.get("score")
             if score_val is None or float(score_val) >= min_v_score:
                 filtered_shorts.append(s)
+        if not filtered_shorts and clips_data['shorts']:
+            # Keep at least the highest scoring moment rather than returning zero clips
+            best_clip = max(clips_data['shorts'], key=lambda s: float(s.get("predicted_score") or s.get("virality_score") or s.get("score") or 0))
+            filtered_shorts = [best_clip]
         if len(filtered_shorts) < len(clips_data['shorts']):
             print(f"🎯 [Live Monitor] Kept {len(filtered_shorts)}/{len(clips_data['shorts'])} clip(s) meeting virality >= {min_v_score}.")
         clips_data['shorts'] = filtered_shorts
 
-    if (not clips_data or not clips_data.get('shorts')) and not is_live_continuous:
+    if not clips_data or not clips_data.get('shorts'):
         print("🤖 LLM did not return usable clips — activating 100% Local Intelligence Pipeline...")
         try:
             from gaming_intelligence.pipeline import LocalIntelligencePipeline
