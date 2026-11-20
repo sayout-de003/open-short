@@ -79,6 +79,12 @@ export default function HistoryTab({ onReopenProject }) {
             <Check size={11} /> Completed
           </span>
         );
+      case 'queued':
+        return (
+          <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] py-0.5 px-2 rounded-full flex items-center gap-1 animate-pulse">
+            <Clock size={11} /> Queued
+          </span>
+        );
       case 'processing':
         return (
           <span className="bg-sky-500/10 text-sky-400 border border-sky-500/20 text-[11px] py-0.5 px-2 rounded-full flex items-center gap-1 animate-pulse">

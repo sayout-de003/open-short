@@ -112,10 +112,18 @@ class PersistentQueue:
         """Atomically claim the highest-priority ready QUEUED job."""
         now_iso = _utc_iso()
         with self.db.transaction(immediate=True) as conn:
-            type_clause = "AND job_type = ?" if job_type else ""
-            params: List[Any] = [JobStatus.QUEUED.value, now_iso]
-            if job_type:
-                params.append(job_type)
+            if job_type in ("vod", "vod_clip"):
+                type_clause = "AND job_type IN ('vod', 'vod_clip')"
+                params = [JobStatus.QUEUED.value, now_iso]
+            elif job_type in ("live", "live_stream"):
+                type_clause = "AND job_type IN ('live', 'live_stream')"
+                params = [JobStatus.QUEUED.value, now_iso]
+            elif job_type:
+                type_clause = "AND job_type = ?"
+                params = [JobStatus.QUEUED.value, now_iso, job_type]
+            else:
+                type_clause = ""
+                params = [JobStatus.QUEUED.value, now_iso]
 
             row = conn.execute(
                 f"""

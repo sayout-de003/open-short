@@ -30,6 +30,7 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
   const [publishFeedback, setPublishFeedback] = useState({});
   const [clippingSourceId, setClippingSourceId] = useState(null);
   const [clipFeedback, setClipFeedback] = useState(null);
+  const [activeJobs, setActiveJobs] = useState([]);
 
   // Status & channel config
   const [overview, setOverview] = useState(null);
@@ -56,6 +57,14 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
     }
   }, []);
 
+  // Fetch active/recent autopilot jobs
+  const fetchJobs = useCallback(async () => {
+    try {
+      const res = await apiJson('/api/autopilot/jobs?limit=20');
+      setActiveJobs(res.jobs || []);
+    } catch (_) {}
+  }, []);
+
   // Discover top live streams across YouTube & Twitch
   const discoverStreams = useCallback(async (queryToUse) => {
     const q = queryToUse !== undefined ? queryToUse : searchQuery;
@@ -75,12 +84,16 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
   useEffect(() => {
     fetchYtConfig();
     fetchClips();
+    fetchJobs();
     discoverStreams('GTA 5');
     
-    // Auto-poll clips every 15s to update status when background workers finish
-    const interval = setInterval(fetchClips, 15000);
+    // Auto-poll clips & jobs every 8s to update status when background workers finish
+    const interval = setInterval(() => {
+      fetchClips();
+      fetchJobs();
+    }, 8000);
     return () => clearInterval(interval);
-  }, [fetchYtConfig, fetchClips, discoverStreams]);
+  }, [fetchYtConfig, fetchClips, fetchJobs, discoverStreams]);
 
   // Trigger cutting reels from a discovered live stream or VOD
   const handleCutReels = async (source) => {
@@ -101,13 +114,29 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
           game_name: source.game_name || searchQuery,
         }),
       });
+
+      // Instantly show in active jobs UI
+      setActiveJobs(prev => [
+        {
+          id: res.job_id || `job_${Date.now()}`,
+          title: source.title,
+          platform: source.platform,
+          status: 'processing',
+          created_at: new Date().toLocaleTimeString(),
+        },
+        ...prev
+      ]);
+
       setClipFeedback({
         id: source.source_id,
         type: 'success',
-        text: `⚡ Clipping started for "${source.title.slice(0, 45)}...". Reels will appear on the right!`,
+        text: `⚡ Clipping started for "${source.title.slice(0, 45)}...". Visible in running jobs & Projects!`,
       });
-      // Refresh clips list after a brief pause
-      setTimeout(fetchClips, 3000);
+      // Refresh clips and jobs list after brief pause
+      setTimeout(() => {
+        fetchJobs();
+        fetchClips();
+      }, 2500);
     } catch (e) {
       setClipFeedback({
         id: source.source_id,
@@ -399,6 +428,42 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
                 <RefreshCw size={13} className={loadingClips ? "animate-spin text-brass" : ""} />
               </button>
             </div>
+
+            {/* Active Running/Queued Jobs Card */}
+            {activeJobs.filter(j => ['queued', 'claimed', 'processing', 'running'].includes(j.status)).length > 0 && (
+              <div className="p-3.5 bg-paper2/90 border border-sky-500/30 rounded-card space-y-2.5 mb-4 animate-fade shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+                    <Loader2 size={12} className="animate-spin text-sky-400" />
+                    Clipping In Progress ({activeJobs.filter(j => ['queued', 'claimed', 'processing', 'running'].includes(j.status)).length})
+                  </span>
+                  <a
+                    href="#app?tab=history"
+                    className="text-[11px] text-brass hover:underline flex items-center gap-1 font-medium"
+                    title="Open Projects & Library tab"
+                  >
+                    View in Projects <ArrowUpRight size={11} />
+                  </a>
+                </div>
+                <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                  {activeJobs.filter(j => ['queued', 'claimed', 'processing', 'running'].includes(j.status)).map(j => (
+                    <div key={j.id} className="p-2.5 rounded bg-paper border border-rule flex items-center justify-between gap-3 text-xs">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-ink truncate">{j.title || j.source_id || j.id}</p>
+                        <p className="text-[10px] text-muted flex items-center gap-1 mt-0.5">
+                          <span className="capitalize">{j.platform}</span> · 
+                          <span className="text-sky-400 font-medium">20/80 Stack Active</span> · 
+                          <span>{j.created_at}</span>
+                        </p>
+                      </div>
+                      <span className="shrink-0 bg-sky-500/10 text-sky-400 border border-sky-500/20 text-[10px] py-0.5 px-2 rounded-full flex items-center gap-1">
+                        <Loader2 size={9} className="animate-spin" /> {j.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {loadingClips && clips.length === 0 ? (
               <div className="py-16 flex flex-col items-center justify-center text-muted space-y-2">

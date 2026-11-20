@@ -7278,7 +7278,76 @@ async def list_projects_endpoint():
             "shorts": meta_data.get("shorts", [])
         })
 
-    return {"projects": projects}
+    # Include any active / running jobs from memory or autopilot DB
+    seen_ids = {p["job_id"] for p in projects}
+    active_projects = []
+
+    # 1. Any active jobs currently in memory jobs dict
+    for jid, jdata in list(jobs.items()):
+        if jid not in seen_ids and jdata.get("status") in ("queued", "processing", "running"):
+            seen_ids.add(jid)
+            st = "processing" if jdata.get("status") in ("processing", "running") else "queued"
+            active_projects.append({
+                "job_id": jid,
+                "title": jdata.get("title") or f"Job {jid[:8]}",
+                "status": st,
+                "created_at": jdata.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "timestamp": time.time(),
+                "clip_count": 0,
+                "clips": [],
+                "shorts": []
+            })
+
+    # 2. Autopilot processing_jobs from SQLite
+    try:
+        orch = _get_autopilot_orch()
+        with orch.db.transaction() as conn:
+            rows = conn.execute("""
+                SELECT p.id, p.status, p.created_at, p.job_type, s.title, s.url, s.channel_name
+                FROM processing_jobs p
+                LEFT JOIN discovered_sources s ON p.source_pk = s.id
+                ORDER BY p.created_at DESC
+                LIMIT 30
+            """).fetchall()
+            for r in rows:
+                jid = r["id"]
+                if jid not in seen_ids:
+                    seen_ids.add(jid)
+                    raw_status = r["status"]
+                    if raw_status in ("queued", "pending"):
+                        st = "queued"
+                    elif raw_status in ("claimed", "processing", "running"):
+                        st = "processing"
+                    elif raw_status in ("completed", "uploaded", "scheduled", "clips_generated", "quality_approved"):
+                        st = "completed"
+                    else:
+                        st = raw_status
+
+                    # Check if rendered clips exist for this autopilot job
+                    c_rows = conn.execute("SELECT id, duration_sec FROM rendered_clips WHERE job_id = ?", (jid,)).fetchall()
+                    c_list = []
+                    for c in c_rows:
+                        c_list.append({
+                            "filename": f"{c['id']}.mp4",
+                            "url": f"/videos/autopilot/{c['id']}",
+                            "duration_sec": c["duration_sec"]
+                        })
+
+                    active_projects.append({
+                        "job_id": jid,
+                        "title": r["title"] or f"Autopilot: {r['channel_name'] or jid[:8]}",
+                        "status": st,
+                        "created_at": str(r["created_at"])[:16],
+                        "timestamp": time.time(),
+                        "clip_count": len(c_list),
+                        "clips": c_list,
+                        "shorts": []
+                    })
+    except Exception as e:
+        logger.warning(f"Error querying autopilot processing_jobs for projects list: {e}")
+
+    # Active running/queued projects appear at the top
+    return {"projects": active_projects + projects}
 
 
 @app.delete("/api/projects/{job_id}")
@@ -12397,26 +12466,77 @@ async def api_autopilot_clip_source(req: Dict[str, Any], request: Request):
     platform = req.get("platform", "youtube")
     source_id = req.get("source_id") or hashlib.md5(url.encode()).hexdigest()[:12]
     game_name = req.get("game_name", "Gaming")
+    raw_type = req.get("source_type", "vod")
+    jtype = "live" if raw_type == "live" else "vod"
 
     orch = _get_autopilot_orch()
     import uuid
     job_id = f"job_{uuid.uuid4().hex[:12]}"
+
+    # Prepare local job directory & metadata so it immediately lists in Projects & Library
+    job_out = os.path.join(OUTPUT_DIR, job_id)
+    os.makedirs(job_out, exist_ok=True)
+    initial_meta = {
+        "title": title,
+        "source_video": f"{title}.mp4",
+        "source_url": url,
+        "game_name": game_name,
+        "channel_name": req.get("channel_name", "Streamer"),
+        "platform": platform,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "status": "queued",
+        "is_autopilot": True,
+        "shorts": []
+    }
+    with open(os.path.join(job_out, f"{job_id}_metadata.json"), "w", encoding="utf-8") as f:
+        json.dump(initial_meta, f)
+
+    # Register in memory jobs dict for live UI tracking
+    jobs[job_id] = {
+        'status': 'processing',
+        'logs': _TimedLog([f"⚡ Autopilot: Started clipping '{title}' ({game_name})..."]),
+        'output_dir': job_out,
+        'title': title,
+        'source_url': url,
+        'game_name': game_name,
+        'created_at': datetime.now().strftime("%Y-%m-%d %H:%M"),
+        'platform': platform,
+        'is_autopilot': True
+    }
+
     with orch.db.transaction() as conn:
         conn.execute("""
             INSERT OR IGNORE INTO discovered_sources 
             (platform, source_id, source_type, url, title, channel_id, channel_name, game_name, eligible, discovered_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
-        """, (platform, source_id, req.get("source_type", "live"), url, title, req.get("channel_id", "ch"), req.get("channel_name", "Streamer"), game_name))
+        """, (platform, source_id, raw_type, url, title, req.get("channel_id", "ch"), req.get("channel_name", "Streamer"), game_name))
         src_row = conn.execute("SELECT id FROM discovered_sources WHERE platform=? AND source_id=?", (platform, source_id)).fetchone()
         src_pk = src_row["id"] if src_row else 1
         conn.execute("""
             INSERT INTO processing_jobs (id, source_pk, platform, source_id, job_type, status, priority, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'vod_clip', 'queued', 10.0, datetime('now'), datetime('now'))
-        """, (job_id, src_pk, platform, source_id))
+            VALUES (?, ?, ?, ?, ?, 'queued', 10.0, datetime('now'), datetime('now'))
+        """, (job_id, src_pk, platform, source_id, jtype))
 
     # Trigger orchestrator run in background
-    asyncio.create_task(asyncio.to_thread(orch.run_once, query=game_name))
-    return {"job_id": job_id, "status": "queued", "message": f"Clipping initiated for '{title}'"}
+    async def _run_worker(jid: str, qname: str):
+        try:
+            await asyncio.to_thread(orch.run_once, query=qname)
+        except Exception as e:
+            logger.warning(f"Autopilot background run error for {jid}: {e}")
+            if jid in jobs:
+                jobs[jid]["status"] = "failed"
+                jobs[jid]["error"] = str(e)
+        else:
+            if jid in jobs:
+                jobs[jid]["status"] = "completed"
+
+    asyncio.create_task(_run_worker(job_id, game_name))
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "title": title,
+        "message": f"Clipping initiated for '{title}'"
+    }
 
 
 @app.get("/api/autopilot/metrics")
