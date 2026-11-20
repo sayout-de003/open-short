@@ -230,7 +230,10 @@ def clean_platforms(values) -> List[str]:
 
 
 def eligible(user) -> bool:
-    """Autopilot is part of the paid plans (it spends minutes on its own)."""
+    """Autopilot is part of the paid plans in cloud, or unlocked in self-hosted."""
+    import os
+    if os.environ.get("BILLING_ENABLED", "0") not in ("1", "true", "yes"):
+        return True
     return bool(user is not None and getattr(user, "entitled", False)
                 and getattr(user, "plan", None) in PAID_PLANS)
 

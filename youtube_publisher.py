@@ -228,18 +228,31 @@ def upload_video_to_youtube(
 
     response = None
     last_reported = -1
-    while response is None:
-        status, response = request.next_chunk()
-        if status:
-            pct = int(status.progress() * 100)
-            if pct != last_reported:
-                last_reported = pct
-                print(f"[YouTube Upload] Progress: {pct}%")
-                if progress_callback:
-                    try:
-                        progress_callback(pct)
-                    except Exception:
-                        pass
+    try:
+        while response is None:
+            status, response = request.next_chunk()
+            if status:
+                pct = int(status.progress() * 100)
+                if pct != last_reported:
+                    last_reported = pct
+                    print(f"[YouTube Upload] Progress: {pct}%")
+                    if progress_callback:
+                        try:
+                            progress_callback(pct)
+                        except Exception:
+                            pass
+    except Exception as e:
+        err_msg = str(e)
+        if "quotaExceeded" in err_msg or "quota" in err_msg.lower():
+            print(f"⚠️ [YouTube Quota] Daily YouTube Data API limit (10,000 units) reached. Clip saved locally: {file_path}", flush=True)
+            return {
+                "success": False,
+                "quota_exceeded": True,
+                "error": "Daily YouTube API quota (10,000 units) reached for today. Clip saved locally for manual posting.",
+                "file_path": file_path,
+                "title": final_title,
+            }
+        raise
 
     video_id = response.get("id")
     if not video_id:

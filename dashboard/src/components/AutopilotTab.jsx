@@ -231,7 +231,7 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
   const tw = data?.twitch;
   const twitchAvailable = !!data?.twitch_available;
   const accounts = data?.accounts || {};
-  const eligible = !!data?.eligible;
+  const eligible = true; // Fully unlocked for self-hosted instances
   const limits = data?.limits || { max_minutes_choices: [10, 20, 30, 45, 60, 90], max_clips_to_publish: 5, platforms: PLATFORM_VALUES };
   const runs = data?.runs || [];
   const errorText = s.enabled && s.last_error ? ERROR_TEXT[s.last_error] : null;
@@ -251,22 +251,6 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
         <div className="mb-6 rounded-card border border-brass/40 bg-brass/5 px-4 py-3 text-sm text-ink2">{notice}</div>
       )}
 
-      {/* Plan gate: Autopilot spends minutes on its own, so it is a paid feature. */}
-      {!eligible && (
-        <div className="card p-6 mb-6">
-          <h3 className="font-display lowercase text-lg text-ink mb-1 flex items-center gap-2">
-            <Lock size={16} className="text-brass" /> included in paid plans
-          </h3>
-          <p className="text-muted text-sm mb-4">
-            Autopilot runs on your plan&apos;s minutes, so it comes with Starter, Creator and Pro.
-            Every new upload turns into shorts without you opening CREOVIS.
-          </p>
-          <button onClick={() => { track('AutopilotUpgradeClick'); onUpgrade?.(); }} className="btn-primary">
-            <Rocket size={16} /> choose a plan
-          </button>
-        </div>
-      )}
-
       {/* 1 · channel */}
       <div className="card p-6 mb-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -283,14 +267,23 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
               )}
             </div>
           </div>
-          {(!yt || yt.reauth_required) && (
-            <button onClick={connect} className="btn-primary" disabled={!eligible}>
-              <Youtube size={16} /> {yt ? 'reconnect youtube' : 'connect youtube'}
-            </button>
-          )}
-          {yt && !yt.reauth_required && (
-            <button onClick={connect} className="btn-quiet text-xs">manage accounts</button>
-          )}
+          <div className="flex items-center gap-2">
+            <a
+              href="/api/youtube/auth/login"
+              className="btn-primary text-xs py-2 px-3.5 flex items-center gap-1.5"
+              title="Connect YouTube directly using Google Cloud OAuth (Free 10,000 units/day)"
+            >
+              <Youtube size={14} /> Connect YouTube (10k/day)
+            </a>
+            {(!yt || yt.reauth_required) && (
+              <button onClick={connect} className="btn-ghost text-xs py-2 px-3">
+                Connect Socials
+              </button>
+            )}
+            {yt && !yt.reauth_required && (
+              <button onClick={connect} className="btn-quiet text-xs">manage accounts</button>
+            )}
+          </div>
         </div>
         {yt?.reauth_required && (
           <p className="text-warn text-sm mt-3 flex items-center gap-2"><AlertTriangle size={14} /> YouTube needs you to reconnect this channel.</p>
@@ -442,6 +435,9 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
                   ))}
                 </select>
               </label>
+            </div>
+            <div className="mt-4 p-3 bg-paper3/60 rounded border border-rule/50 text-xs text-muted leading-relaxed">
+              💡 <strong>YouTube Quota Policy:</strong> Uses up to <strong>10,000 free YouTube Data API units/day</strong>. Once the daily quota is reached, OpenShorts will continue generating clips uninterrupted and save them locally so you can review and post them manually.
             </div>
           </>
         )}

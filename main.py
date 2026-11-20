@@ -3394,6 +3394,10 @@ def _maybe_autopost_short(short_dict: dict, output_dir: str):
             short_dict["youtube_url"] = res.get("url")
             short_dict["youtube_id"] = res.get("video_id")
             print(f"🎉 [Auto-Post] Successfully published to YouTube! URL: {res.get('url')}", flush=True)
+        elif res.get("quota_exceeded"):
+            short_dict["youtube_quota_exceeded"] = True
+            short_dict["manual_post_ready"] = True
+            print(f"📦 [Auto-Post] YouTube 10k daily quota reached. Clip preserved locally for manual posting: {os.path.basename(full_path)}", flush=True)
         else:
             print(f"⚠️ [Auto-Post] YouTube upload returned: {res.get('error')}", flush=True)
     except Exception as e:

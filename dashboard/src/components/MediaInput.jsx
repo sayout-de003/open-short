@@ -520,6 +520,67 @@ export default function MediaInput({
                     </div>
                 </div>
 
+                {/* Template Preset Selector - Prominent */}
+                <div className="mt-5" data-tutorial="template-preset">
+                    <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-1.5">
+                            <LayoutTemplate size={15} className="text-brass" />
+                            <p className="eyebrow">Template Preset &amp; Style</p>
+                        </div>
+                        {onOpenTemplates && (
+                            <button
+                                type="button"
+                                onClick={onOpenTemplates}
+                                className="text-xs text-muted hover:text-brass transition-colors underline"
+                            >
+                                studio →
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <select
+                            value={templateId}
+                            onChange={(e) => handleTemplateChange(e.target.value)}
+                            className="input-field flex-1 text-xs py-2 font-sans"
+                            aria-label="template preset"
+                        >
+                            <option value="">Auto AI (Smart Match)</option>
+                            {TEMPLATE_CATEGORIES.map((cat) => {
+                                const catTemplates = templates.filter((t) => t.category === cat.id);
+                                if (!catTemplates.length) return null;
+                                return (
+                                    <optgroup key={cat.id} label={cat.label}>
+                                        {catTemplates.map((t) => (
+                                            <option key={t.id} value={t.id}>
+                                                {t.name}
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                );
+                            })}
+                        </select>
+                        {templateId && (
+                            <button
+                                type="button"
+                                onClick={() => handleTemplateChange('')}
+                                className="btn-ghost py-2 px-3 text-xs"
+                            >
+                                Reset
+                            </button>
+                        )}
+                    </div>
+                    {currentTemplate && (
+                        <div className="mt-2 bg-paper3/60 rounded px-3 py-2 text-[11px] text-muted flex items-center justify-between gap-2 border border-rule/50 animate-fade">
+                            <div className="flex items-center gap-2 truncate">
+                                <span className="w-1.5 h-1.5 rounded-full bg-brass shrink-0" />
+                                <span className="truncate">
+                                    <strong className="text-ink">{currentTemplate.name}</strong> · Layout: <span className="font-mono text-ink2">{currentTemplate.layout}</span> · Captions: <span className="font-mono text-ink2">{currentTemplate.caption_preset}</span> · Range: <span className="font-mono text-ink2">{currentTemplate.duration_range?.[0]}–{currentTemplate.duration_range?.[1]}s</span>
+                                </span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
                 {/* Advanced generation controls — collapsed by default */}
                 <div className="mt-4">
                     <button
