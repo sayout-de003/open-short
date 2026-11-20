@@ -197,6 +197,12 @@ class AutopilotOrchestrator:
                         "Live chat hype monitor did not produce clips (%s). Seamlessly falling back to direct stream clipping...",
                         live_err,
                     )
+                    try:
+                        import app as app_mod
+                        if job.id in app_mod.jobs:
+                            app_mod.jobs[job.id]["logs"].append("⚡ Live chat quiet — seamlessly analyzing direct stream gameplay highlights & viral moments...")
+                    except Exception:
+                        pass
                     clip_ids = self.vod_worker.process_job(job)
             else:
                 clip_ids = self.vod_worker.process_job(job)

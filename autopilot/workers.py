@@ -45,6 +45,7 @@ class VODWorker:
         job_temp_dir = self.config.temp_dir / "renders" / job.id
         job_temp_dir.mkdir(parents=True, exist_ok=True)
 
+        self._current_job_id = job.id
         self._invoke_main_pipeline(source_row["url"], job_temp_dir)
 
         clips = self._collect_generated_clips(job_temp_dir)
@@ -105,6 +106,7 @@ class VODWorker:
         main_py = self.config.base_dir / "main.py"
         cmd = [
             sys.executable,
+            "-u",
             str(main_py),
             "-u",
             url,
@@ -121,14 +123,30 @@ class VODWorker:
         env["MAX_CLIP_DURATION"] = str(self.config.clip_max_duration)
         env["MIN_CLIP_DURATION"] = str(self.config.clip_min_duration)
 
+        job_id = getattr(self, "_current_job_id", None)
+
+        def _push_log(msg: str):
+            if not job_id:
+                return
+            try:
+                import app as app_mod
+                if job_id in app_mod.jobs:
+                    app_mod.jobs[job_id]["logs"].append(msg)
+            except Exception:
+                pass
+
         try:
             res = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=1800)
+            if res.returncode != 0:
+                err = (res.stderr or res.stdout or "")[-400:]
+                raise RetryableError(f"main.py exited {res.returncode}: {err}")
+            if res.stdout and job_id:
+                for line in res.stdout.splitlines():
+                    clean = line.strip()
+                    if clean and any(marker in clean for marker in ("Download", "Transcrib", "Gemini", "Detect", "Render", "Clip", "✅", "⚠️", "❌", "ffmpeg")):
+                        _push_log(clean)
         except subprocess.TimeoutExpired as e:
             raise RetryableError(f"main.py timed out for {url}") from e
-
-        if res.returncode != 0:
-            err = (res.stderr or res.stdout or "")[-400:]
-            raise RetryableError(f"main.py exited {res.returncode}: {err}")
 
     def _collect_generated_clips(self, output_dir: Path) -> List[Dict[str, Any]]:
         meta_files = sorted(glob.glob(str(output_dir / "*_metadata.json")))
@@ -219,19 +237,34 @@ class LiveWorker:
         pipe.detector.cooldown_sec = float(self.config.live_clip_cooldown_seconds)
 
         async def _run_bounded() -> None:
+            def _push_log(msg: str):
+                try:
+                    import app as app_mod
+                    if job.id in app_mod.jobs:
+                        app_mod.jobs[job.id]["logs"].append(msg)
+                except Exception:
+                    pass
+
             try:
+                title = src["title"] if "title" in src.keys() else job.source_id
+                _push_log(f"📡 Connecting to live stream '{title}'...")
                 if job.platform == "twitch":
                     await pipe.start_twitch(src["channel_name"].lower(), stream_url=src["url"])
                 else:
                     await pipe.start_youtube(src["source_id"], api_key=self.config.youtube_api_key)
 
-                # Monitor live stream and capture hype bursts
+                _push_log("⚡ Live hype detection active. Monitoring real-time chat bursts & superchats...")
                 window_sec = min(60.0, float(self.config.live_monitor_window_minutes * 60))
                 elapsed = 0.0
                 check_interval = 2.0
+                last_logged = 0.0
                 while elapsed < window_sec:
                     if pipe.completed_jobs and len(pipe.completed_jobs) >= 1:
+                        _push_log("🔥 Detected viral chat hype event! Processing vertical short...")
                         break
+                    if elapsed - last_logged >= 10.0:
+                        _push_log(f"👀 Live stream monitoring ({int(elapsed)}s / {int(window_sec)}s) · Chat burst detector listening...")
+                        last_logged = elapsed
                     await asyncio.sleep(check_interval)
                     elapsed += check_interval
             finally:

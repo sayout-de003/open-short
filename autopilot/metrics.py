@@ -49,7 +49,17 @@ def collect_metrics(db: AutopilotDatabase, clips_dir: Path) -> Dict[str, Any]:
 def list_recent_jobs(db: AutopilotDatabase, limit: int = 50) -> List[Dict[str, Any]]:
     with db.transaction() as conn:
         rows = conn.execute(
-            "SELECT * FROM processing_jobs ORDER BY updated_at DESC LIMIT ?",
+            """
+            SELECT 
+                j.*,
+                COALESCE(s.title, j.source_id) AS title,
+                s.url AS source_url,
+                s.channel_name,
+                s.game_name
+            FROM processing_jobs j
+            LEFT JOIN discovered_sources s ON j.source_pk = s.id
+            ORDER BY j.updated_at DESC LIMIT ?
+            """,
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]

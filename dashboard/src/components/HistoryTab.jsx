@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Download, Film, Folder, FolderOpen, Trash2, Play, ExternalLink, RefreshCw, Check, AlertCircle, Clock } from 'lucide-react';
+import { Loader2, Download, Film, Folder, FolderOpen, Trash2, Play, ExternalLink, RefreshCw, Check, AlertCircle, Clock, CheckSquare, Square as SquareIcon } from 'lucide-react';
 import { apiJson, apiFetch } from '../lib/api';
 
 export default function HistoryTab({ onReopenProject }) {
   const [projects, setProjects] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
+  const [selectedJobIds, setSelectedJobIds] = useState(new Set());
+  const [batchDeleting, setBatchDeleting] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -17,6 +19,7 @@ export default function HistoryTab({ onReopenProject }) {
     try {
       const data = await apiJson('/api/projects');
       setProjects(data.projects || []);
+      setSelectedJobIds(new Set());
     } catch (e) {
       console.error("Failed to load projects:", e);
       setError("Could not load projects from local storage.");
@@ -37,6 +40,48 @@ export default function HistoryTab({ onReopenProject }) {
     }));
   };
 
+  const toggleSelect = (jobId, e) => {
+    if (e) e.stopPropagation();
+    setSelectedJobIds(prev => {
+      const next = new Set(prev);
+      if (next.has(jobId)) next.delete(jobId);
+      else next.add(jobId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedJobIds.size === filteredProjects.length && filteredProjects.length > 0) {
+      setSelectedJobIds(new Set());
+    } else {
+      setSelectedJobIds(new Set(filteredProjects.map(p => p.job_id)));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    const count = selectedJobIds.size;
+    if (count === 0) return;
+    if (!window.confirm(`Permanently delete ${count} selected project folder(s) and all their video clips? This will immediately free up disk space.`)) {
+      return;
+    }
+    setBatchDeleting(true);
+    try {
+      const res = await apiFetch('/api/projects/batch-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_ids: Array.from(selectedJobIds) })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const toRemove = new Set(selectedJobIds);
+      setProjects(prev => (prev || []).filter(p => !toRemove.has(p.job_id)));
+      setSelectedJobIds(new Set());
+    } catch (err) {
+      alert(`Batch delete failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setBatchDeleting(false);
+    }
+  };
+
   const handleDelete = async (jobId, title) => {
     if (!window.confirm(`Are you sure you want to delete project "${title || jobId}"? This will permanently delete its video clips and free up disk space.`)) {
       return;
@@ -46,6 +91,11 @@ export default function HistoryTab({ onReopenProject }) {
       const res = await apiFetch(`/api/projects/${jobId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(await res.text());
       setProjects(prev => (prev || []).filter(p => p.job_id !== jobId));
+      setSelectedJobIds(prev => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
     } catch (err) {
       alert(`Delete failed: ${err.message || 'Unknown error'}`);
     } finally {
@@ -137,8 +187,8 @@ export default function HistoryTab({ onReopenProject }) {
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+      {/* Filter, Search, and Batch Selection Bar */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <input
           type="text"
           value={searchTerm}
@@ -157,6 +207,41 @@ export default function HistoryTab({ onReopenProject }) {
           <option value="failed">Failed</option>
         </select>
       </div>
+
+      {/* Batch Action Toolbar */}
+      {filteredProjects.length > 0 && (
+        <div className="flex items-center justify-between gap-3 p-2.5 mb-4 bg-paper2 rounded-input border border-rule text-xs">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleSelectAll}
+              className="flex items-center gap-1.5 text-ink hover:text-brass transition-colors font-medium select-none"
+            >
+              {selectedJobIds.size === filteredProjects.length && filteredProjects.length > 0 ? (
+                <CheckSquare size={16} className="text-brass fill-brass/10" />
+              ) : (
+                <SquareIcon size={16} className="text-muted" />
+              )}
+              <span>Select All ({filteredProjects.length})</span>
+            </button>
+            {selectedJobIds.size > 0 && (
+              <span className="text-muted text-[11px] font-mono">
+                · {selectedJobIds.size} selected
+              </span>
+            )}
+          </div>
+          {selectedJobIds.size > 0 && (
+            <button
+              onClick={handleBatchDelete}
+              disabled={batchDeleting}
+              className="py-1 px-3 rounded bg-red-600 hover:bg-red-700 text-white font-medium flex items-center gap-1.5 transition-colors shadow-xs"
+              title="Delete all selected project folders and free up disk space"
+            >
+              {batchDeleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              Delete Selected ({selectedJobIds.size})
+            </button>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="p-3 mb-6 bg-red-500/10 border border-red-500/20 rounded-input text-danger text-xs">
@@ -180,40 +265,52 @@ export default function HistoryTab({ onReopenProject }) {
             const isExpanded = !!expandedFolders[project.job_id];
             const isDeleting = deletingId === project.job_id;
             const hasClips = project.clip_count > 0;
+            const isSelected = selectedJobIds.has(project.job_id);
 
             return (
               <div
                 key={project.job_id}
-                className="card p-4 sm:p-5 border border-rule transition-all hover:border-rule2"
+                className={`card p-4 sm:p-5 border transition-all ${isSelected ? 'border-brass bg-brass/5 shadow-xs' : 'border-rule hover:border-rule2'}`}
               >
                 {/* Folder Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div
-                    onClick={() => toggleFolder(project.job_id)}
-                    className="flex items-start gap-3 min-w-0 cursor-pointer select-none flex-1"
-                  >
-                    <div className="p-2.5 bg-paper3 rounded-input text-brass shrink-0 mt-0.5 sm:mt-0">
-                      {isExpanded ? <FolderOpen size={20} /> : <Folder size={20} />}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm text-ink hover:text-brass transition-colors truncate max-w-lg">
-                          {project.title || `Job: ${project.job_id}`}
-                        </span>
-                        {getStatusBadge(project.status)}
+                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                    <button
+                      type="button"
+                      onClick={(e) => toggleSelect(project.job_id, e)}
+                      className={`p-1 mt-1 rounded transition-colors ${isSelected ? 'text-brass' : 'text-muted/60 hover:text-muted'}`}
+                      title={isSelected ? "Deselect folder" : "Select folder for batch deletion"}
+                    >
+                      {isSelected ? <CheckSquare size={18} className="text-brass fill-brass/10" /> : <SquareIcon size={18} />}
+                    </button>
+                    <div
+                      onClick={() => handleOpenProject(project.job_id)}
+                      className="flex items-start gap-3 min-w-0 cursor-pointer select-none flex-1 group"
+                      title="Click to open this project's view"
+                    >
+                      <div className="p-2.5 bg-paper3 rounded-input text-brass shrink-0 mt-0.5 sm:mt-0 group-hover:scale-105 transition-transform">
+                        {isExpanded ? <FolderOpen size={20} /> : <Folder size={20} />}
                       </div>
-                      <div className="flex items-center gap-3 text-[11px] text-muted mt-1 flex-wrap">
-                        <span className="flex items-center gap-1 font-mono">
-                          <Clock size={11} /> {project.created_at}
-                        </span>
-                        <span>·</span>
-                        <span>
-                          {project.clip_count} {project.clip_count === 1 ? 'clip' : 'clips'}
-                        </span>
-                        <span>·</span>
-                        <span className="font-mono text-muted/70">
-                          ID: {project.job_id.slice(0, 8)}...
-                        </span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm text-ink group-hover:text-brass transition-colors truncate max-w-lg">
+                            {project.title || `Job: ${project.job_id}`}
+                          </span>
+                          {getStatusBadge(project.status)}
+                        </div>
+                        <div className="flex items-center gap-3 text-[11px] text-muted mt-1 flex-wrap">
+                          <span className="flex items-center gap-1 font-mono">
+                            <Clock size={11} /> {project.created_at}
+                          </span>
+                          <span>·</span>
+                          <span className="text-brass font-medium">
+                            {project.clip_count} {project.clip_count === 1 ? 'clip' : 'clips'}
+                          </span>
+                          <span>·</span>
+                          <span className="font-mono text-muted/70">
+                            ID: {project.job_id.slice(0, 8)}...
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -134,7 +134,7 @@ class LiveHypePipeline:
             target = f"https://www.youtube.com/watch?v={target}"
         try:
             res = subprocess.run(
-                [yt_dlp, "-g", "-f", "best[ext=mp4]/best", target],
+                [yt_dlp, "-g", target],
                 capture_output=True, text=True, timeout=20,
             )
             if res.returncode == 0 and res.stdout.strip():

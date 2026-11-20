@@ -4334,6 +4334,12 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_handover_watch())
     asyncio.create_task(_resume_scan())
     cleanup_task = asyncio.create_task(cleanup_jobs())
+    try:
+        orch = _get_autopilot_orch()
+        with orch.db.transaction(immediate=True) as conn:
+            conn.execute("UPDATE processing_jobs SET status = 'QUEUED', locked_at = NULL, worker_id = NULL WHERE status = 'PROCESSING'")
+    except Exception as _e:
+        logger.warning(f"Autopilot recovery on startup note: {_e}")
     if BILLING_ENABLED:
         await cloud.setup_async(app, keep_reservation_ids=_resumed_reservation_ids,
                                 live_reservation_ids=_live_reservation_ids,
@@ -6826,7 +6832,31 @@ def _job_view_from_disk(job_id):
     if m is None:
         if glob.glob(os.path.join(job_path, "*_metadata.json")):
             _recover_jobs_from_disk()
-            return jobs.get(job_id)
+            rec = jobs.get(job_id)
+            if rec:
+                return rec
+        # Fallback: check if there are mp4 clips in this folder even without metadata.json
+        mp4_files = sorted(glob.glob(os.path.join(job_path, "*.mp4")))
+        clip_files = [f for f in mp4_files if not os.path.basename(f).startswith("temp") and not os.path.basename(f).endswith(".temp.mp4")]
+        if clip_files:
+            c_list = []
+            for idx, cpath in enumerate(clip_files):
+                cname = os.path.basename(cpath)
+                c_list.append({
+                    "title": cname.replace(".mp4", "").replace("_", " "),
+                    "video_title_for_youtube_short": cname.replace(".mp4", "").replace("_", " "),
+                    "video_url": f"/videos/{job_id}/{cname}",
+                    "start": 0,
+                    "end": 30,
+                    "virality_score": 8,
+                })
+            jobs[job_id] = {
+                'status': 'completed',
+                'logs': _TimedLog(["✅ Job loaded directly from project folder clips."]),
+                'output_dir': job_path,
+                'result': {'clips': c_list}
+            }
+            return jobs[job_id]
         return None
     alive = time.time() - float(m.get("heartbeat") or 0) < HEARTBEAT_STALE_AFTER
     owner = m.get("user_id")
@@ -7422,6 +7452,45 @@ async def delete_project_endpoint(job_id: str):
         logger.warning(f"Autopilot db cleanup on delete {safe_id}: {e}")
 
     return {"success": True, "job_id": safe_id, "deleted": deleted}
+
+
+@app.post("/api/projects/batch-delete")
+async def batch_delete_projects_endpoint(request: Request):
+    """Delete multiple project folders, upload files, and autopilot database records at once."""
+    body = await request.json()
+    job_ids = body.get("job_ids", [])
+    if not isinstance(job_ids, list):
+        raise HTTPException(status_code=400, detail="job_ids must be a list")
+
+    deleted_count = 0
+    orch = None
+    try:
+        orch = _get_autopilot_orch()
+    except Exception:
+        pass
+
+    for jid in job_ids:
+        safe_id = os.path.basename(str(jid).strip())
+        if not safe_id or safe_id in (".", ".."):
+            continue
+        target_dir = os.path.join(OUTPUT_DIR, safe_id)
+        if os.path.exists(target_dir):
+            shutil.rmtree(target_dir, ignore_errors=True)
+            deleted_count += 1
+        for up in glob.glob(os.path.join(UPLOAD_DIR, f"{safe_id}*")):
+            try:
+                if os.path.isfile(up):
+                    os.remove(up)
+            except Exception:
+                pass
+        jobs.pop(safe_id, None)
+        if orch:
+            try:
+                orch.delete_job(safe_id)
+            except Exception:
+                pass
+
+    return {"success": True, "deleted_count": deleted_count}
 
 
 @app.delete("/api/autopilot/jobs/{job_id}")

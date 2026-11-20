@@ -12,36 +12,37 @@ const ProcessingAnimation = ({ media, isComplete, syncedTime, isSyncedPlaying, s
   useEffect(() => {
     if (!media) return;
 
+    const payload = media.payload || media.url;
+
     if (media.type === 'file') {
       const url = URL.createObjectURL(media.payload);
       setIsYouTube(false);
       setVideoSrc(url);
       return () => URL.revokeObjectURL(url);
-    } else if (media.type === 'server') {
-      // Uploaded source served from the backend (survives a page reload).
-      // The payload is the plain /api/source/<job> path, because that is what
-      // gets persisted; the signed URL is minted here, at render, so a stored
-      // session never carries a token that has since expired. A <video> tag
-      // cannot send the bearer header itself, hence the round trip.
+    } else if (media.type === 'server' || (typeof payload === 'string' && payload.startsWith('/api/source'))) {
       setIsYouTube(false);
       let cancelled = false;
-      const jobId = media.payload.split('/').pop();
+      const raw = typeof payload === 'string' ? payload : '';
+      const jobId = raw.split('/').pop();
       (async () => {
         try {
           const res = await apiFetch(`/api/source-url/${jobId}`);
           const { url } = await res.json();
           if (!cancelled && url) setVideoSrc(getApiUrl(url));
         } catch (e) {
-          // Self-host, or a backend without the endpoint: the open path still
-          // works there, and losing the preview is worse than an unsigned URL.
-          if (!cancelled) setVideoSrc(getApiUrl(media.payload));
+          if (!cancelled && raw) setVideoSrc(getApiUrl(raw));
         }
       })();
       return () => { cancelled = true; };
-    } else if (media.type === 'url') {
-      setIsYouTube(true);
-      const videoId = getYouTubeId(media.payload);
-      setVideoSrc(videoId);
+    } else if (payload && typeof payload === 'string') {
+      const videoId = getYouTubeId(payload);
+      if (videoId) {
+        setIsYouTube(true);
+        setVideoSrc(videoId);
+      } else {
+        setIsYouTube(false);
+        setVideoSrc(getApiUrl(payload));
+      }
     }
   }, [media]);
 

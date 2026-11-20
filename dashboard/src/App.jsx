@@ -775,17 +775,28 @@ function App() {
     setNoSource(true);
     setLogsVisible(true);
 
-    if (proj?.source_url || proj?.title) {
+    if (proj?.source_url) {
       setProcessingMedia({
+        type: 'url',
+        payload: proj.source_url,
+        url: proj.source_url,
         title: proj.title || 'Gaming Stream / VOD',
-        url: proj.source_url || '',
         platform: proj.platform || 'youtube',
+      });
+    } else {
+      setProcessingMedia({
+        type: 'server',
+        payload: `/api/source/${jid}`,
+        url: `/api/source/${jid}`,
+        title: proj?.title || 'Video Stream',
+        platform: proj?.platform || 'youtube',
       });
     }
 
-    const rawStatus = (proj?.status || 'processing').toLowerCase();
-    const isDone = ['complete', 'completed', 'published', 'scheduled', 'uploaded'].includes(rawStatus);
-    setStatus(isDone ? 'complete' : 'processing');
+    const rawStatus = (proj?.status || '').toLowerCase();
+    const isDone = ['complete', 'completed', 'published', 'scheduled', 'uploaded'].includes(rawStatus) || 
+                   (proj?.clips && proj.clips.length > 0 && rawStatus !== 'processing' && rawStatus !== 'queued');
+    setStatus(isDone ? 'complete' : (rawStatus || 'processing'));
 
     if (proj && proj.clips && proj.clips.length > 0) {
       const shorts = proj.clips.map((c, i) => {
@@ -796,7 +807,7 @@ function App() {
           video_title_for_youtube_short: meta.video_title_for_youtube_short || meta.title || `${proj.title || 'Clip'} #${i + 1}`,
           video_url: c.url || c.video_url,
           start: meta.start || 0,
-          end: meta.end || 0,
+          end: meta.end || c.duration_sec || 0,
           virality_score: meta.virality_score || 8,
           hook: meta.hook || '',
           viral_hook_text: meta.viral_hook_text || meta.hook || '',
@@ -1105,7 +1116,7 @@ function App() {
   useEffect(() => {
     let interval;
     let failures = 0;
-    if ((status === 'processing' || status === 'completed') && jobId) {
+    if ((status === 'processing' || status === 'queued' || status === 'completed') && jobId) {
       interval = setInterval(async () => {
         try {
           const data = await pollJob(jobId);
@@ -2659,8 +2670,9 @@ function App() {
           {activeTab === 'dashboard' && (status === 'processing' || status === 'complete' || status === 'completed' || status === 'error' || status === 'failed') && (
             <div className="h-full flex flex-col md:flex-row gap-3 md:gap-4 p-3 md:p-4 overflow-y-auto md:overflow-y-hidden custom-scrollbar animate-fade">
 
-              {/* Left Panel: Preview & Status */}
-              <div className={`${status === 'complete' ? 'w-full md:w-[30%] lg:w-[25%]' : 'w-full md:w-[55%] lg:w-[60%]'} md:h-full flex flex-col shrink-0 md:shrink card p-3.5 sm:p-6 md:overflow-y-auto custom-scrollbar transition-all duration-700 ease-in-out`}>
+              {/* Left Panel: Preview & Status (Only shown during processing, queued, or error states) */}
+              {status !== 'complete' && (
+                <div className="w-full md:w-[55%] lg:w-[60%] md:h-full flex flex-col shrink-0 md:shrink card p-3.5 sm:p-6 md:overflow-y-auto custom-scrollbar transition-all duration-500 ease-in-out">
                 <div className="mb-4 sm:mb-6 flex items-center justify-between gap-2">
                   <h2 className="text-sm font-medium text-ink lowercase flex items-center gap-2">
                     <Activity className={`text-brass ${status === 'processing' ? 'animate-pulse' : ''}`} size={18} />
@@ -2809,26 +2821,55 @@ function App() {
                   )}
                 </div>
               </div>
+              )}
 
               {/* Right Panel: Results Grid */}
-              <div className={`${status === 'complete' ? 'w-full md:w-[70%] lg:w-[75%]' : 'w-full md:w-[45%] lg:w-[40%]'} md:h-full flex flex-col shrink-0 md:shrink card p-3.5 sm:p-6 transition-all duration-700 ease-in-out`}>
+              <div className={`${status === 'complete' ? 'w-full' : 'w-full md:w-[45%] lg:w-[40%]'} md:h-full flex flex-col shrink-0 md:shrink card p-3.5 sm:p-6 transition-all duration-500 ease-in-out`}>
                 {/* Title + counters on one row, the two actions on their own row
                     below. Wrapping them all together dropped a lone half-width
                     "schedule week" pill under the title on a phone. */}
                 <div className="mb-4 sm:mb-6 shrink-0 space-y-3">
-                  <h2 className="font-display lowercase text-lg sm:text-xl text-ink flex flex-wrap items-center gap-2">
-                    <span className="mr-auto">Generated Shorts</span>
-                    {results?.clips?.length > 0 && (
-                      <span className="readout bg-paper3 px-2.5 py-1 rounded-full">
-                        {results.clips.length} Clips
-                      </span>
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rule pb-3">
+                    <h2 className="font-display lowercase text-lg sm:text-xl text-ink flex flex-wrap items-center gap-2">
+                      <Film size={20} className="text-brass" />
+                      <span>Generated Shorts</span>
+                      {results?.clips?.length > 0 && (
+                        <span className="readout bg-paper3 px-2.5 py-1 rounded-full text-xs">
+                          {results.clips.length} Clips
+                        </span>
+                      )}
+                      {results?.cost_analysis && !isManaged && (
+                        <span className="readout bg-paper3 px-2.5 py-1 rounded-full text-xs" title={`Input: ${results.cost_analysis.input_tokens} | Output: ${results.cost_analysis.output_tokens}`}>
+                          GEMINI · ${results.cost_analysis.total_cost.toFixed(5)}
+                        </span>
+                      )}
+                    </h2>
+                    {status === 'complete' && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => goToTab('history')}
+                          className="btn-quiet py-1.5 px-3 text-xs flex items-center gap-1.5"
+                          title="Back to all projects & history"
+                        >
+                          <Film size={13} /> Back to Projects
+                        </button>
+                        <button
+                          onClick={() => goToTab('autopilot')}
+                          className="btn-quiet py-1.5 px-3 text-xs flex items-center gap-1.5 text-brass hover:text-ink"
+                          title="Open live autopilot streams"
+                        >
+                          <Rocket size={13} /> Autopilot
+                        </button>
+                        <button
+                          onClick={handleReset}
+                          className="btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5"
+                          title="Start clipping another video"
+                        >
+                          <Plus size={13} /> New Project
+                        </button>
+                      </div>
                     )}
-                    {results?.cost_analysis && !isManaged && (
-                      <span className="readout bg-paper3 px-2.5 py-1 rounded-full" title={`Input: ${results.cost_analysis.input_tokens} | Output: ${results.cost_analysis.output_tokens}`}>
-                        GEMINI · ${results.cost_analysis.total_cost.toFixed(5)}
-                      </span>
-                    )}
-                  </h2>
+                  </div>
                   {results?.clips?.length > 0 && status === 'complete' && (
                     <div className="flex flex-col sm:flex-row sm:justify-end items-stretch sm:items-center gap-2">
                       <button
@@ -3010,10 +3051,10 @@ function App() {
                       ))}
                     </div>
                   ) : (
-                    status === 'processing' ? (
+                    (status === 'processing' || status === 'queued') ? (
                       <div className="h-full min-h-[140px] flex flex-col items-center justify-center text-muted space-y-3 text-center px-4">
                         <Loader2 size={28} className="animate-spin text-brass" />
-                        <p className="text-sm lowercase">Waiting for clips...</p>
+                        <p className="text-sm lowercase">{status === 'queued' ? 'Queued for clipping...' : 'Waiting for clips...'}</p>
                         <p className="text-xs text-muted/80 max-w-[26ch] leading-snug">
                           They appear here one by one as each finishes rendering.
                         </p>
