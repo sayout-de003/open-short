@@ -822,9 +822,34 @@ function App() {
     setLogTimes([Date.now() / 1000]);
     setActiveTab('dashboard');
 
-    pollJob(jid).then((d) => {
+    pollJob(jid).then(async (d) => {
       if (d?.result?.clips?.length) {
         setResults(d.result);
+      } else if (!proj?.clips?.length) {
+        // Fallback: look up in /api/projects
+        try {
+          const pRes = await apiFetch('/api/projects');
+          const pData = await pRes.json();
+          const found = (pData?.projects || []).find(p => p.job_id === jid);
+          if (found?.clips?.length) {
+            const sh = found.clips.map((c, i) => {
+              const meta = (found.shorts && found.shorts[i]) || {};
+              return {
+                ...meta,
+                title: meta.title || `${found.title || 'Clip'} #${i + 1}`,
+                video_title_for_youtube_short: meta.video_title_for_youtube_short || meta.title || `${found.title || 'Clip'} #${i + 1}`,
+                video_url: c.url || c.video_url,
+                start: meta.start || 0,
+                end: meta.end || c.duration_sec || 0,
+                virality_score: meta.virality_score || 8,
+              };
+            });
+            setResults({ clips: sh });
+            setStatus('complete');
+          }
+        } catch (e) {
+          console.warn("Fallback project fetch:", e);
+        }
       }
       if (d?.logs && d.logs.length > 0) {
         setLogs(d.logs);
@@ -840,8 +865,31 @@ function App() {
           setStatus(norm);
         }
       }
-    }).catch((err) => {
+    }).catch(async (err) => {
       console.warn("Poll job on open:", err);
+      try {
+        const pRes = await apiFetch('/api/projects');
+        const pData = await pRes.json();
+        const found = (pData?.projects || []).find(p => p.job_id === jid);
+        if (found?.clips?.length) {
+          const sh = found.clips.map((c, i) => {
+            const meta = (found.shorts && found.shorts[i]) || {};
+            return {
+              ...meta,
+              title: meta.title || `${found.title || 'Clip'} #${i + 1}`,
+              video_title_for_youtube_short: meta.video_title_for_youtube_short || meta.title || `${found.title || 'Clip'} #${i + 1}`,
+              video_url: c.url || c.video_url,
+              start: meta.start || 0,
+              end: meta.end || c.duration_sec || 0,
+              virality_score: meta.virality_score || 8,
+            };
+          });
+          setResults({ clips: sh });
+          setStatus('complete');
+        }
+      } catch (e) {
+        console.warn("Fallback project fetch on catch:", e);
+      }
     });
   };
 

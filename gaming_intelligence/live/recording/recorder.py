@@ -42,6 +42,7 @@ class SegmentedStreamRecorder:
         ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
         start_num = max(0, self._last_detected_idx + 1)
         input_opts = [
+            "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "-fflags", "+nobuffer+genpts",
             "-rw_timeout", "10000000",
             "-reconnect", "1",

@@ -135,10 +135,11 @@ class LiveHypePipeline:
         try:
             res = subprocess.run(
                 [yt_dlp, "-g", target],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True, text=True, timeout=60,
             )
             if res.returncode == 0 and res.stdout.strip():
-                return res.stdout.strip().splitlines()[0]
+                lines = [ln.strip() for ln in res.stdout.strip().splitlines() if ln.strip()]
+                return lines[0] if lines else None
         except Exception as e:
             logger.warning(f"Could not resolve YouTube live stream URL via yt-dlp: {e}")
         return None

@@ -1113,6 +1113,7 @@ def _select_live_stream_urls(info: dict):
 def _live_ffmpeg_input_opts(url: str, start_index: int) -> list:
     opts = [
         '-loglevel', 'error',
+        '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         '-fflags', '+nobuffer+genpts',
         '-rw_timeout', '10000000',
         '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '2',
@@ -1227,7 +1228,7 @@ class _LiveSegmentProducer:
             if env_idx is not None:
                 start_index = int(env_idx)
             else:
-                start_index = -20
+                start_index = -2
         stream_url, v_url, a_url = _select_live_stream_urls(info)
         if not stream_url and not (v_url and a_url):
             return False
@@ -4001,12 +4002,30 @@ if __name__ == '__main__':
                     captured = producer.collect_window(live_seconds, chunk_file)
                     if not captured:
                         consecutive_failures += 1
-                        if consecutive_failures >= 3:
-                            print(f"🏁 No further segments received from live stream after 3 attempts. Stream broadcast concluded.", flush=True)
-                            break
-                        print(f"⚠️ Live capture chunk {cycle} produced no data. Retrying in 5s...", flush=True)
+                        if consecutive_failures >= 8:
+                            # Verify if broadcast has truly ended
+                            stream_online = False
+                            try:
+                                s_check = _fetch_live_info(args.url, yt_session)
+                                if s_check:
+                                    stream_online = True
+                            except Exception:
+                                pass
+                            if not stream_online:
+                                print(f"🏁 Live broadcast concluded. Continuous live monitoring complete! Total clips generated: {len(all_shorts)}", flush=True)
+                                break
+                            else:
+                                consecutive_failures = 0
+                                print("🔄 Live stream is still broadcasting; reconnecting live edge capture...", flush=True)
+                        print(f"⚠️ Live capture chunk {cycle} produced no data ({consecutive_failures}/8). Reconnecting in 5s...", flush=True)
                         producer.stop_process()
                         time.sleep(5)
+                        try:
+                            fresh_info = _fetch_live_info(args.url, yt_session)
+                            if fresh_info:
+                                producer.start(fresh_info)
+                        except Exception:
+                            pass
                         continue
                     consecutive_failures = 0
 
