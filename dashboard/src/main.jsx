@@ -11,8 +11,9 @@ import { readPendingPlan } from './lib/pendingPlan'
 import { track } from './lib/analytics'
 import { applyConsent } from './lib/consent'
 import CookieBanner from './components/CookieBanner'
+import ErrorBoundary from './components/ErrorBoundary'
+import App from './App.jsx'
 
-const App = lazy(() => import('./App.jsx'))
 const Legal = lazy(() => import('./Legal.jsx'))
 const OAuthConsent = lazy(() => import('./components/OAuthConsent'))
 
@@ -112,14 +113,9 @@ function Root() {
     if (hash.startsWith('#/pricing')) return 'pricing';
     if (hash.startsWith('#/login')) return 'login';
     if (hash === '#legal') return 'legal';
-    // The app lives at #app (and #app?tab=… deep links). Everything else,
-    // including a bare / and the section anchors (#features, #pricing…) and
-    // #landing, is the landing page. There is deliberately no "returning
-    // visitor" shortcut into the app: the static fallback is the landing, so
-    // swapping it for the app after hydration made / jump a second after load,
-    // and the logo of every page has to reach the landing.
-    if (hash === '#app' || hash.startsWith('#app?') || hash === '#/app' || hash.startsWith('#/app?')) return 'app';
-    return 'landing';
+    if (hash === '#landing' || hash === '#/landing') return 'landing';
+    // Default to app on self-hosted instances so opening the site lands directly in OpenShorts Studio
+    return 'app';
   };
 
   const [view, setView] = useState(resolveView);
@@ -159,10 +155,12 @@ applyConsent();
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <AuthProvider>
-      <Suspense fallback={<div className="min-h-screen bg-paper flex items-center justify-center text-muted text-sm lowercase">loading…</div>}>
-        <Root />
-      </Suspense>
-      <CookieBanner />
+      <ErrorBoundary onReset={() => { window.location.hash = '#app'; window.location.reload(); }}>
+        <Suspense fallback={<div className="min-h-screen bg-paper flex items-center justify-center text-muted text-sm lowercase">loading…</div>}>
+          <Root />
+        </Suspense>
+        <CookieBanner />
+      </ErrorBoundary>
     </AuthProvider>
   </StrictMode>,
 )

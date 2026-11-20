@@ -322,30 +322,35 @@
     <!-- Prevent unwanted auto-reloads when changing browser tabs or coming back -->
     <script>
       (function() {
-        var _WS = window.WebSocket;
-        if (_WS) {
-          window.WebSocket = function(url, protocols) {
-            var ws = new _WS(url, protocols);
-            if (protocols === 'vite-hmr' || (typeof url === 'string' && url.indexOf('token=') !== -1)) {
-              var origAdd = ws.addEventListener.bind(ws);
-              ws.addEventListener = function(type, listener, options) {
-                if (type === 'close') {
-                  // Suppress Vite's reload on websocket close when tab is backgrounded/switched
-                  var safeCloseListener = function(event) {
-                    console.log('[creovis] Tab switch or disconnect detected: auto-reload suppressed.');
+        try {
+          var _WS = window.WebSocket;
+          if (_WS) {
+            window.WebSocket = function(url, protocols) {
+              var ws = (protocols !== undefined) ? new _WS(url, protocols) : new _WS(url);
+              if (protocols === 'vite-hmr' || (typeof url === 'string' && url.indexOf('token=') !== -1)) {
+                var origAdd = ws.addEventListener ? ws.addEventListener.bind(ws) : null;
+                if (origAdd) {
+                  ws.addEventListener = function(type, listener, options) {
+                    if (type === 'close') {
+                      var safeCloseListener = function(event) {
+                        console.log('[creovis] Tab switch or disconnect detected: auto-reload suppressed.');
+                      };
+                      return origAdd(type, safeCloseListener, options);
+                    }
+                    return origAdd(type, listener, options);
                   };
-                  return origAdd(type, safeCloseListener, options);
                 }
-                return origAdd(type, listener, options);
-              };
-            }
-            return ws;
-          };
-          window.WebSocket.prototype = _WS.prototype;
-          window.WebSocket.CONNECTING = _WS.CONNECTING;
-          window.WebSocket.OPEN = _WS.OPEN;
-          window.WebSocket.CLOSING = _WS.CLOSING;
-          window.WebSocket.CLOSED = _WS.CLOSED;
+              }
+              return ws;
+            };
+            window.WebSocket.prototype = _WS.prototype;
+            window.WebSocket.CONNECTING = _WS.CONNECTING;
+            window.WebSocket.OPEN = _WS.OPEN;
+            window.WebSocket.CLOSING = _WS.CLOSING;
+            window.WebSocket.CLOSED = _WS.CLOSED;
+          }
+        } catch (err) {
+          console.warn('[creovis] WebSocket guard skipped:', err);
         }
       })();
     </script>

@@ -631,62 +631,6 @@ export default function MediaInput({
                                 material doesn&apos;t hold them. Leave blank to let it decide.
                             </p>
                             <div className="col-span-1 sm:col-span-3 flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-rule">
-                                <div className="flex items-center gap-1.5">
-                                    <LayoutTemplate size={14} className="text-brass" />
-                                    <span className="text-xs text-ink2">template preset</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <select
-                                        value={templateId}
-                                        onChange={(e) => handleTemplateChange(e.target.value)}
-                                        className="input-field !w-auto text-xs py-1.5 max-w-[260px] sm:max-w-xs font-sans"
-                                        aria-label="template preset"
-                                    >
-                                        <option value="">Auto AI (Smart Match)</option>
-                                        {TEMPLATE_CATEGORIES.map((cat) => {
-                                            const catTemplates = templates.filter((t) => t.category === cat.id);
-                                            if (!catTemplates.length) return null;
-                                            return (
-                                                <optgroup key={cat.id} label={cat.label}>
-                                                    {catTemplates.map((t) => (
-                                                        <option key={t.id} value={t.id}>
-                                                            {t.name}
-                                                        </option>
-                                                    ))}
-                                                </optgroup>
-                                            );
-                                        })}
-                                    </select>
-                                    {onOpenTemplates && (
-                                        <button
-                                            type="button"
-                                            onClick={onOpenTemplates}
-                                            className="text-xs text-muted hover:text-brass transition-colors underline whitespace-nowrap"
-                                            title="Browse templates in Template Studio"
-                                        >
-                                            studio →
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                            {currentTemplate && (
-                                <div className="col-span-1 sm:col-span-3 bg-paper3/60 rounded px-3 py-2 text-[11px] text-muted flex items-center justify-between gap-2 border border-rule/50 animate-fade">
-                                    <div className="flex items-center gap-2 truncate">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-brass shrink-0" />
-                                        <span className="truncate">
-                                            <strong className="text-ink">{currentTemplate.name}</strong> · Layout: <span className="font-mono text-ink2">{currentTemplate.layout}</span> · Captions: <span className="font-mono text-ink2">{currentTemplate.caption_preset}</span> · Range: <span className="font-mono text-ink2">{currentTemplate.duration_range?.[0]}–{currentTemplate.duration_range?.[1]}s</span>
-                                        </span>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleTemplateChange('')}
-                                        className="text-[10px] text-muted hover:text-ink shrink-0 underline"
-                                    >
-                                        clear
-                                    </button>
-                                </div>
-                            )}
-                            <div className="col-span-1 sm:col-span-3 flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-rule">
                                 <span className="text-xs text-ink2">clipping mode</span>
                                 <select
                                     value={clippingProfile}

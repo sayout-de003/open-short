@@ -9621,10 +9621,10 @@ async def youtube_auth_callback(code: str, request: Request):
         "<html><body style='font-family:sans-serif;padding:50px;text-align:center;background:#0d1117;color:#e6edf3;'>"
         "<div style='max-width:500px;margin:auto;padding:30px;background:#161b22;border-radius:12px;border:1px solid #30363d;'>"
         "<h2 style='color:#3fb950;margin-top:0;'>🎉 YouTube Connected Successfully!</h2>"
-        "<p style='color:#8b949e;'>Your Google account has been authorized. CREOVIS can now publish directly to YouTube Shorts.</p>"
-        "<div style='margin-top:24px;'><a href='/' style='background:#f59e0b;color:#000;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600;'>Return to CREOVIS Dashboard</a></div>"
+        "<p style='color:#8b949e;'>Your Google account has been authorized. OpenShorts can now publish directly to YouTube Shorts.</p>"
+        "<div style='margin-top:24px;'><a href='/#app' style='background:#f59e0b;color:#000;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600;'>Return to OpenShorts Studio</a></div>"
         "</div>"
-        "<script>setTimeout(() => { window.location.href = '/'; }, 3000);</script>"
+        "<script>setTimeout(() => { window.location.href = '/#app'; }, 2000);</script>"
         "</body></html>"
     )
 
@@ -9753,9 +9753,16 @@ class BufferTokenRequest(BaseModel):
     token: str
 
 
+_buffer_status_cache = {"data": None, "timestamp": 0}
+
+
 @app.get("/api/buffer/status")
 async def buffer_status():
     """Check Buffer API configuration, account information, and connected channels."""
+    now = time.time()
+    if _buffer_status_cache["data"] and (now - _buffer_status_cache["timestamp"] < 60):
+        return _buffer_status_cache["data"]
+
     configured = buffer_publisher.is_buffer_configured()
     account = None
     channels = []
@@ -9765,11 +9772,14 @@ async def buffer_status():
             channels = await asyncio.to_thread(buffer_publisher.list_channels)
         except Exception as e:
             logger.warning(f"Error fetching Buffer status: {e}")
-    return {
+    res = {
         "configured": configured,
         "account": account,
         "channels": channels,
     }
+    _buffer_status_cache["data"] = res
+    _buffer_status_cache["timestamp"] = now
+    return res
 
 
 @app.get("/api/buffer/channels")
