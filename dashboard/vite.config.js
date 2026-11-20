@@ -35,7 +35,9 @@ export default defineConfig({
     },
     allowedHosts: [
       'openshorts.app',
-      'www.openshorts.app'
+      'www.openshorts.app',
+      'evworx.co.in',
+      'www.evworx.co.in'
     ],
     proxy: {
       '/api': { target: backend, changeOrigin: true },
