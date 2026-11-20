@@ -34,6 +34,37 @@ class SegmentedStreamRecorder:
         self._watcher_task: Optional[asyncio.Task] = None
         self._running = False
         self._last_detected_idx = -1
+        self._stream_url: Optional[str] = None
+        self._restart_count = 0
+
+    def _spawn_ffmpeg(self, stream_url: str) -> subprocess.Popen:
+        segment_pattern = os.path.join(self.buffer.buffer_dir, "seg_%05d.ts")
+        ffmpeg_bin = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+        start_num = max(0, self._last_detected_idx + 1)
+        input_opts = [
+            "-fflags", "+nobuffer+genpts",
+            "-rw_timeout", "10000000",
+            "-reconnect", "1",
+            "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "2",
+        ]
+        u_lower = stream_url.lower()
+        if "m3u8" in u_lower or "manifest" in u_lower:
+            input_opts.extend(["-live_start_index", "-1"])
+        cmd = [
+            ffmpeg_bin, "-y", "-nostdin",
+            *input_opts,
+            "-i", stream_url,
+            "-c", "copy",
+            "-f", "segment",
+            "-segment_time", str(self.segment_time_sec),
+            "-segment_format", "mpegts",
+            "-segment_start_number", str(start_num),
+            "-reset_timestamps", "1",
+            segment_pattern
+        ]
+        logger.info(f"Starting FFmpeg segmented recording (start_num={start_num}): {' '.join(cmd[:6])}...")
+        return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     async def start_recording(self, stream_url: str):
         """Starts background FFmpeg process to record into rolling segments."""
@@ -41,30 +72,9 @@ class SegmentedStreamRecorder:
             return
 
         self._running = True
-        segment_pattern = os.path.join(self.buffer.buffer_dir, "seg_%05d.ts")
-
-        # Check ffmpeg binary
-        ffmpeg_bin = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
-
-        # FFmpeg segmented capture command with low-latency segmenting
-        cmd = [
-            ffmpeg_bin, "-y", "-nostdin",
-            "-i", stream_url,
-            "-c", "copy",
-            "-f", "segment",
-            "-segment_time", str(self.segment_time_sec),
-            "-segment_format", "mpegts",
-            "-reset_timestamps", "1",
-            segment_pattern
-        ]
-
-        logger.info(f"Starting FFmpeg segmented recording: {' '.join(cmd[:6])}...")
-        self._process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-
+        self._stream_url = stream_url
+        self._restart_count = 0
+        self._process = self._spawn_ffmpeg(stream_url)
         self._watcher_task = asyncio.create_task(self._watch_segments_loop())
 
     async def stop_recording(self):
@@ -108,6 +118,17 @@ class SegmentedStreamRecorder:
                             self.buffer.clean_expired(end_t)
                     except ValueError:
                         continue
+
+                if self._process and self._process.poll() is not None and self._running and self._stream_url:
+                    self._restart_count += 1
+                    if self._restart_count <= 5:
+                        logger.warning(
+                            f"FFmpeg segmenter exited (code={self._process.returncode}); "
+                            f"restarting ({self._restart_count}/5)..."
+                        )
+                        await asyncio.sleep(min(5.0, float(self._restart_count)))
+                        if self._running:
+                            self._process = self._spawn_ffmpeg(self._stream_url)
 
                 await asyncio.sleep(0.5)
             except asyncio.CancelledError:

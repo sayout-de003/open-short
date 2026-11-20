@@ -13,6 +13,11 @@ from typing import Callable, Optional
 from .normalizer import parse_youtube_chat_item
 from ..models import ChatMessage, Platform
 
+try:
+    import httpx
+except ImportError:
+    httpx = None
+
 logger = logging.getLogger("live.youtube")
 
 
@@ -67,6 +72,17 @@ class YouTubeChatListener:
             except asyncio.CancelledError:
                 pass
 
+    async def _fetch_json(self, url: str) -> Optional[dict]:
+        if httpx is not None:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers={"User-Agent": "OpenShorts/2.0"})
+                resp.raise_for_status()
+                return resp.json()
+        loop = asyncio.get_running_loop()
+        req = urllib.request.Request(url, headers={"User-Agent": "OpenShorts/2.0"})
+        raw = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=10).read())
+        return json.loads(raw.decode("utf-8"))
+
     async def _resolve_live_chat_id(self) -> Optional[str]:
         if not self.api_key:
             return None
@@ -74,11 +90,8 @@ class YouTubeChatListener:
             f"https://www.googleapis.com/youtube/v3/videos"
             f"?part=liveStreamingDetails&id={self.video_id}&key={self.api_key}"
         )
-        loop = asyncio.get_event_loop()
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "OpenShorts/2.0"})
-            resp = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=10).read())
-            data = json.loads(resp.decode("utf-8"))
+            data = await self._fetch_json(url) or {}
             items = data.get("items", [])
             if items:
                 details = items[0].get("liveStreamingDetails", {})
@@ -97,11 +110,8 @@ class YouTubeChatListener:
         if self._next_page_token:
             url += f"&pageToken={self._next_page_token}"
 
-        loop = asyncio.get_event_loop()
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "OpenShorts/2.0"})
-            resp = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=10).read())
-            data = json.loads(resp.decode("utf-8"))
+            data = await self._fetch_json(url) or {}
             self._next_page_token = data.get("nextPageToken")
             interval_ms = data.get("pollingIntervalMillis", 2000)
             self.poll_interval = max(0.5, interval_ms / 1000.0)

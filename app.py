@@ -43,6 +43,8 @@ import yt_account
 import youtube_publisher
 import buffer_publisher
 import scheduler
+import resource_guard
+from concurrent.futures import ThreadPoolExecutor
 from jsonfile import write_json_atomic
 
 load_dotenv()
@@ -57,6 +59,73 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Default to 1 if not set, but user can set higher for powerful servers
 MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "5"))
 MAX_FILE_SIZE_MB = 2048  # 2GB limit
+RAM_MIN_FREE_MB = int(os.environ.get("RAM_MIN_FREE_MB", "2048"))
+RAM_EDIT_MIN_FREE_MB = int(os.environ.get("RAM_EDIT_MIN_FREE_MB", "1024"))
+MAX_CONCURRENT_EDITS = max(1, int(os.environ.get("MAX_CONCURRENT_EDITS", "4")))
+_media_executor = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_EDITS, thread_name_prefix="media-edit")
+_edit_semaphore = asyncio.Semaphore(MAX_CONCURRENT_EDITS)
+_active_edits = 0
+_bg_tasks: Dict[str, Dict[str, Any]] = {}
+
+
+async def _run_in_media_pool(fn, *args):
+    """Run a heavy FFmpeg/reframe/edit callable in the dedicated media pool after checking RAM."""
+    global _active_edits
+    async with _edit_semaphore:
+        if RAM_EDIT_MIN_FREE_MB > 0:
+            has_ram = await resource_guard.wait_for_ram(
+                RAM_EDIT_MIN_FREE_MB,
+                active_count_fn=lambda: _active_edits,
+                timeout_sec=60.0,
+            )
+            if not has_ram:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Insufficient system RAM (< {RAM_EDIT_MIN_FREE_MB} MiB free); try again shortly.",
+                )
+        _active_edits += 1
+        try:
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(_media_executor, fn, *args)
+        finally:
+            _active_edits = max(0, _active_edits - 1)
+
+
+def _submit_bg_task(kind: str, coro_factory, owner: Optional[str] = None) -> dict:
+    """Schedule an async clip/crop/edit/capture task and return its tracking handle."""
+    task_id = str(uuid.uuid4())
+    if len(_bg_tasks) > 200:
+        done_ids = [k for k, v in _bg_tasks.items() if v.get("status") in ("completed", "failed")]
+        for k in done_ids[:-100]:
+            _bg_tasks.pop(k, None)
+    record: Dict[str, Any] = {
+        "task_id": task_id,
+        "kind": kind,
+        "status": "queued",
+        "created_at": time.time(),
+        "owner": owner,
+        "result": None,
+        "error": None,
+    }
+    _bg_tasks[task_id] = record
+
+    async def _runner():
+        record["status"] = "running"
+        record["started_at"] = time.time()
+        try:
+            record["result"] = await coro_factory()
+            record["status"] = "completed"
+        except HTTPException as he:
+            record["status"] = "failed"
+            record["error"] = he.detail
+        except Exception as e:
+            record["status"] = "failed"
+            record["error"] = str(e)
+        finally:
+            record["finished_at"] = time.time()
+
+    asyncio.create_task(_runner())
+    return {"ok": True, "task_id": task_id, "status": "queued", "kind": kind}
 
 # How TikTok receives our uploads. MEDIA_UPLOAD lands the video in the user's
 # TikTok drafts so they finish the post inside TikTok's own editor; DIRECT_POST
@@ -2174,13 +2243,18 @@ async def _wait_for_shared_gpu():
         # Reads every manifest on the shared disk: off the loop.
         elsewhere = await loop.run_in_executor(None, _jobs_busy_elsewhere)
         free_mb = await loop.run_in_executor(None, _gpu_free_mb)
-        if gpu_has_room(_local_running(), elsewhere, free_mb):
+        avail_ram = await loop.run_in_executor(None, lambda: resource_guard.available_ram_mb(use_cache=False))
+        gpu_ok = gpu_has_room(_local_running(), elsewhere, free_mb)
+        ram_ok = resource_guard.ram_has_room(RAM_MIN_FREE_MB, _local_running() + elsewhere, avail_ram)
+        if gpu_ok and ram_ok:
             return
         if not logged:
             print(f"⏳ Holding the next job: {_local_running()} running here, "
                   f"{elsewhere} on a draining instance, "
                   f"{free_mb if free_mb is not None else '?'} MiB GPU free "
-                  f"(needs {GPU_MIN_FREE_MB}).")
+                  f"(needs {GPU_MIN_FREE_MB}), "
+                  f"{avail_ram if avail_ram is not None else '?'} MiB RAM free "
+                  f"(needs {RAM_MIN_FREE_MB}).")
             logged = True
         await asyncio.sleep(SHARED_GPU_WAIT_SECONDS)
         waited += SHARED_GPU_WAIT_SECONDS
@@ -5557,34 +5631,80 @@ class StreamCaptureRequest(BaseModel):
     platform: str = "twitch"  # "twitch" or "youtube"
     duration_seconds: int = 120
     profile: str = "gaming"
+    async_mode: bool = False
+
+
+@app.get("/api/system/resources")
+async def get_system_resources():
+    """Real-time system RAM, GPU VRAM, and active async workload metrics."""
+    loop = asyncio.get_running_loop()
+    ram = await loop.run_in_executor(None, lambda: resource_guard.ram_stats(use_cache=False))
+    gpu_free = await loop.run_in_executor(None, _gpu_free_mb)
+    return {
+        "ram": ram,
+        "ram_min_free_mb": RAM_MIN_FREE_MB,
+        "ram_edit_min_free_mb": RAM_EDIT_MIN_FREE_MB,
+        "gpu_free_mb": gpu_free,
+        "gpu_min_free_mb": GPU_MIN_FREE_MB,
+        "jobs_running": _local_running(),
+        "jobs_queued": job_queue.qsize(),
+        "edits_running": _active_edits,
+        "max_concurrent_edits": MAX_CONCURRENT_EDITS,
+        "live_monitors": list(_live_monitors.keys()),
+        "bg_tasks_active": sum(1 for t in _bg_tasks.values() if t.get("status") in ("queued", "running")),
+    }
+
+
+@app.get("/api/tasks")
+async def list_bg_tasks():
+    """List background async clip/crop/edit/capture tasks."""
+    tasks = sorted(_bg_tasks.values(), key=lambda t: t.get("created_at", 0), reverse=True)[:50]
+    return {"tasks": tasks}
+
+
+@app.get("/api/tasks/{task_id}")
+async def get_bg_task(task_id: str):
+    """Poll status and result of a background async task."""
+    task = _bg_tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
 
 @app.post("/api/intelligence/stream")
 async def capture_live_stream(req: StreamCaptureRequest):
     from gaming_intelligence.stream_recorder import StreamRecorder
-    recorder = StreamRecorder(output_dir=UPLOAD_DIR)
-    try:
+
+    def _run_capture():
+        recorder = StreamRecorder(output_dir=UPLOAD_DIR)
         if req.platform.lower() == "twitch":
             recorded_file = recorder.capture_twitch_stream(req.url, duration_sec=req.duration_seconds)
         else:
             recorded_file = recorder.capture_youtube_live(req.url, duration_sec=req.duration_seconds)
+        return {
+            "ok": True,
+            "file": recorded_file,
+            "filename": os.path.basename(recorded_file),
+            "profile": req.profile,
+            "duration_seconds": req.duration_seconds,
+            "message": f"Successfully captured {req.duration_seconds}s from {req.url}"
+        }
+
+    if req.async_mode:
+        return _submit_bg_task("stream_capture", lambda: _run_in_media_pool(_run_capture))
+
+    try:
+        return await _run_in_media_pool(_run_capture)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Stream capture failed: {str(e)}")
-
-    return {
-        "ok": True,
-        "file": recorded_file,
-        "filename": os.path.basename(recorded_file),
-        "profile": req.profile,
-        "duration_seconds": req.duration_seconds,
-        "message": f"Successfully captured {req.duration_seconds}s from {req.url}"
-    }
 
 
 # --------------------------------------------------------------------------- #
 # Live Stream Ultra-Low-Latency Hype Auto-Clipping Endpoints
 # --------------------------------------------------------------------------- #
-_active_live_pipeline = None
+_live_monitors: Dict[str, Any] = {}
 
 
 class LiveHypeStartRequest(BaseModel):
@@ -5593,31 +5713,32 @@ class LiveHypeStartRequest(BaseModel):
     stream_video_url: Optional[str] = None
     pre_roll_sec: float = 25.0
     post_roll_sec: float = 10.0
+    monitor_id: str = "default"
 
 
 @app.post("/api/intelligence/live/start")
 async def start_live_hype_tracking(req: LiveHypeStartRequest):
-    global _active_live_pipeline
     from gaming_intelligence.live.pipeline import LiveHypePipeline
-    from gaming_intelligence.live.models import Platform
 
-    if _active_live_pipeline:
-        await _active_live_pipeline.stop()
+    mid = (req.monitor_id or "default").strip() or "default"
+    if mid in _live_monitors:
+        await _live_monitors[mid].stop()
 
-    out_dir = os.path.join(OUTPUT_DIR, "live_shorts")
-    buf_dir = os.path.join(UPLOAD_DIR, "live_buffer")
-    _active_live_pipeline = LiveHypePipeline(
+    out_dir = os.path.join(OUTPUT_DIR, "live_shorts") if mid == "default" else os.path.join(OUTPUT_DIR, "live_shorts", mid)
+    buf_dir = os.path.join(UPLOAD_DIR, "live_buffer") if mid == "default" else os.path.join(UPLOAD_DIR, "live_buffer", mid)
+    pipeline = LiveHypePipeline(
         buffer_dir=buf_dir,
         output_dir=out_dir,
         pre_roll_sec=req.pre_roll_sec,
         post_roll_sec=req.post_roll_sec
     )
+    _live_monitors[mid] = pipeline
 
     if req.platform.lower() == "twitch":
         channel = req.url_or_channel.rstrip("/").split("/")[-1].lstrip("#")
-        await _active_live_pipeline.start_twitch(channel=channel, stream_url=req.stream_video_url)
+        await pipeline.start_twitch(channel=channel, stream_url=req.stream_video_url)
     else:
-        await _active_live_pipeline.start_youtube(
+        await pipeline.start_youtube(
             video_id_or_url=req.url_or_channel,
             stream_url=req.stream_video_url,
             api_key=os.environ.get("YOUTUBE_API_KEY")
@@ -5625,6 +5746,8 @@ async def start_live_hype_tracking(req: LiveHypeStartRequest):
 
     return {
         "ok": True,
+        "monitor_id": mid,
+        "active_monitors": list(_live_monitors.keys()),
         "message": f"Live hype tracking active for {req.platform}: {req.url_or_channel}",
         "pre_roll_sec": req.pre_roll_sec,
         "post_roll_sec": req.post_roll_sec
@@ -5632,17 +5755,27 @@ async def start_live_hype_tracking(req: LiveHypeStartRequest):
 
 
 @app.get("/api/intelligence/live/status")
-async def get_live_hype_status():
-    global _active_live_pipeline
-    if not _active_live_pipeline:
-        return {"active": False, "message": "No live pipeline running"}
+async def get_live_hype_status(monitor_id: str = "default"):
+    pipeline = _live_monitors.get(monitor_id)
+    ram = resource_guard.ram_stats()
+    if not pipeline:
+        return {
+            "active": False,
+            "monitor_id": monitor_id,
+            "active_monitors": list(_live_monitors.keys()),
+            "ram": ram,
+            "message": "No live pipeline running",
+        }
 
-    detector = _active_live_pipeline.detector
+    detector = pipeline.detector
     metrics = detector.compute_metrics()
-    latency_stats = _active_live_pipeline.get_latency_stats()
+    latency_stats = pipeline.get_latency_stats()
 
     return {
         "active": True,
+        "monitor_id": monitor_id,
+        "active_monitors": list(_live_monitors.keys()),
+        "ram": ram,
         "metrics": {
             "velocity_mps": metrics.velocity_mps,
             "acceleration": metrics.acceleration,
@@ -5651,19 +5784,20 @@ async def get_live_hype_status():
             "z_score": metrics.z_score,
             "top_chants": metrics.top_chants
         },
-        "completed_clips_count": len(_active_live_pipeline.completed_jobs),
+        "completed_clips_count": len(pipeline.completed_jobs),
+        "active_clips_count": len([j for j in pipeline.scheduler.active_jobs.values() if j.status not in ("complete", "failed")]),
         "latency_stats": latency_stats
     }
 
 
 @app.get("/api/intelligence/live/clips")
-async def get_live_hype_clips():
-    global _active_live_pipeline
-    if not _active_live_pipeline:
-        return {"clips": []}
+async def get_live_hype_clips(monitor_id: str = "default"):
+    pipeline = _live_monitors.get(monitor_id)
+    if not pipeline:
+        return {"clips": [], "monitor_id": monitor_id}
 
     clips = []
-    for job in _active_live_pipeline.completed_jobs:
+    for job in pipeline.completed_jobs:
         clips.append({
             "job_id": job.job_id,
             "status": job.status,
@@ -5674,16 +5808,21 @@ async def get_live_hype_clips():
             "peak_velocity": job.event.peak_velocity,
             "z_score": job.event.z_score
         })
-    return {"clips": clips}
+    return {"clips": clips, "monitor_id": monitor_id}
 
 
 @app.post("/api/intelligence/live/stop")
-async def stop_live_hype_tracking():
-    global _active_live_pipeline
-    if _active_live_pipeline:
-        await _active_live_pipeline.stop()
-        _active_live_pipeline = None
-    return {"ok": True, "message": "Live hype tracking stopped"}
+async def stop_live_hype_tracking(monitor_id: Optional[str] = None):
+    if monitor_id is None:
+        for mid, pipeline in list(_live_monitors.items()):
+            await pipeline.stop()
+        _live_monitors.clear()
+        return {"ok": True, "message": "All live hype tracking stopped"}
+
+    pipeline = _live_monitors.pop(monitor_id, None)
+    if pipeline:
+        await pipeline.stop()
+    return {"ok": True, "monitor_id": monitor_id, "message": f"Live hype tracking stopped for {monitor_id}"}
 
 
 async def _probe_youtube_quality(url: str) -> dict:
@@ -7303,6 +7442,7 @@ class EditRequest(BaseModel):
     clip_index: int
     api_key: Optional[str] = None
     input_filename: Optional[str] = None
+    async_mode: bool = False
 
 @app.post("/api/edit")
 async def edit_clip(
@@ -7333,6 +7473,17 @@ async def edit_clip(
     reservation_id = None if body_key else await reserve_managed_action(
         request, edit_minutes, req.job_id, "edit")
 
+    async def _do_edit():
+        lock = _rerender_locks.setdefault(req.job_id, asyncio.Lock())
+        async with lock:
+            return await _edit_locked(req, request, job, final_api_key, reservation_id)
+
+    if req.async_mode:
+        return _submit_bg_task("edit", _do_edit)
+    return await _do_edit()
+
+
+async def _edit_locked(req: EditRequest, request: Request, job, final_api_key: str, reservation_id):
     try:
         # Resolve Input Path: Prefer explict input_filename from frontend (chaining edits)
         if req.input_filename:
@@ -7439,15 +7590,13 @@ async def edit_clip(
                     if os.path.exists(temp_path):
                         os.remove(temp_path)
 
-        # Run in thread pool
-        loop = asyncio.get_event_loop()
-        plan = await loop.run_in_executor(None, run_edit)
+        # Run in dedicated bounded media pool with RAM guard
+        plan = await _run_in_media_pool(run_edit)
 
         # Captions back on top, so the clip the user sees keeps them and the
         # clean edited file stays available for a later restyle.
         if had_captions:
-            recap = await loop.run_in_executor(
-                None, _reapply_captions, req.job_id, req.clip_index, output_path)
+            recap = await _run_in_media_pool(_reapply_captions, req.job_id, req.clip_index, output_path)
             if recap:
                 edited_filename = os.path.basename(recap)
 
@@ -7715,6 +7864,7 @@ class RerenderRequest(BaseModel):
     # None = inherit the recipe's framing (so plain trims keep the look);
     # 'auto' resets to the classifier; 'full'/'track' force a layout.
     framing: Optional[str] = None
+    async_mode: bool = False
 
 
 # Manual framing -> reframe-engine strategy. 'full' shows the whole source
@@ -7756,8 +7906,14 @@ async def rerender_clip(req: RerenderRequest, request: Request):
     # read-modify-write below, with the last writer silently reverting the
     # other clip's recipe/video_url.
     lock = _rerender_locks.setdefault(req.job_id, asyncio.Lock())
-    async with lock:
-        return await _rerender_locked(req, request, job)
+
+    async def _do_rerender():
+        async with lock:
+            return await _rerender_locked(req, request, job)
+
+    if req.async_mode:
+        return _submit_bg_task("rerender", _do_rerender)
+    return await _do_rerender()
 
 
 async def _rerender_locked(req: RerenderRequest, request: Request, job):
@@ -7862,8 +8018,7 @@ async def _rerender_locked(req: RerenderRequest, request: Request, job):
                            if v_transcript else None))
 
     try:
-        loop = asyncio.get_event_loop()
-        served_name, _clean_recut_name = await loop.run_in_executor(None, run_recut)
+        served_name, _clean_recut_name = await _run_in_media_pool(run_recut)
         served_name = await _deliver(request, req.job_id, served_name)
 
         new_video_url = f"/videos/{req.job_id}/{served_name}"
@@ -8181,6 +8336,7 @@ class ReframeRequest(BaseModel):
     # know the source dimensions.
     crop_overrides: Dict[str, Any]
     reapply_captions: bool = True
+    async_mode: bool = False
 
 
 def _clip_scene_workfile(source_path, segments, output_dir, token):
@@ -8399,8 +8555,14 @@ async def reframe_clip(req: ReframeRequest, request: Request):
     # and the metadata must be read INSIDE the lock or a rerender committing
     # in between gets clobbered by a write of stale data.
     lock = _rerender_locks.setdefault(req.job_id, asyncio.Lock())
-    async with lock:
-        return await _reframe_locked(req, request, job, overrides)
+
+    async def _do_reframe():
+        async with lock:
+            return await _reframe_locked(req, request, job, overrides)
+
+    if req.async_mode:
+        return _submit_bg_task("reframe", _do_reframe)
+    return await _do_reframe()
 
 
 async def _reframe_locked(req: ReframeRequest, request: Request, job, overrides):
@@ -8470,8 +8632,7 @@ async def _reframe_locked(req: ReframeRequest, request: Request, job, overrides)
                            if v_transcript else None))
 
     try:
-        loop = asyncio.get_event_loop()
-        served_name, _clean = await loop.run_in_executor(None, run)
+        served_name, _clean = await _run_in_media_pool(run)
         served_name = await _deliver(request, req.job_id, served_name)
 
         new_video_url = f"/videos/{req.job_id}/{served_name}"

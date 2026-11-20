@@ -54,13 +54,13 @@ def test_live_ffmpeg_hls_command_options():
 
 
 def test_live_stream_always_goes_with_live_edge():
-    # Verify default live start index targets the live edge (-3 segments)
-    start_index = int(os.environ.get("LIVE_START_INDEX", "-3"))
-    assert start_index == -3
+    # Verify default live start index targets the live edge (-1 segments)
+    start_index = int(os.environ.get("LIVE_START_INDEX", "-1"))
+    assert start_index == -1
 
-    with patch.dict(os.environ, {"LIVE_START_INDEX": "-1"}):
-        custom_index = int(os.environ.get("LIVE_START_INDEX", "-3"))
-        assert custom_index == -1
+    with patch.dict(os.environ, {"LIVE_START_INDEX": "-2"}):
+        custom_index = int(os.environ.get("LIVE_START_INDEX", "-1"))
+        assert custom_index == -2
 
 
 def test_live_stream_dl_opts_always_go_with_live():
@@ -102,17 +102,51 @@ def test_capture_live_stream_segment():
             mock_proc.poll.side_effect = [None, 0]
             mock_proc.communicate.return_value = ("", "")
 
-            result = capture_live_stream_segment(mock_info, tmp_name, live_seconds=120, start_index=-3, cycle_num=1)
+            result = capture_live_stream_segment(mock_info, tmp_name, live_seconds=45, start_index=-1, cycle_num=1)
             assert result is True
             assert mock_popen.called
             cmd_args = mock_popen.call_args[0][0]
             assert '-live_start_index' in cmd_args
-            assert '-3' in cmd_args
+            assert '-1' in cmd_args
+            assert '-rw_timeout' in cmd_args
+            assert '-movflags' in cmd_args
+            assert '+frag_keyframe+empty_moov' in cmd_args
             assert '-t' in cmd_args
-            assert '120' in cmd_args
+            assert '45' in cmd_args
     finally:
         if os.path.exists(tmp_name):
             os.remove(tmp_name)
+
+
+def test_select_live_stream_urls_prefers_muxed_hls_and_skips_mhtml():
+    from main import _select_live_stream_urls
+
+    info = {
+        'formats': [
+            {'protocol': 'mhtml', 'ext': 'mhtml', 'vcodec': 'none', 'acodec': 'none', 'url': 'https://example.com/sb.mhtml'},
+            {'protocol': 'm3u8_native', 'vcodec': 'avc1.64001f', 'acodec': 'mp4a.40.2', 'url': 'https://example.com/muxed.m3u8'},
+            {'protocol': 'm3u8_native', 'vcodec': 'vp9', 'acodec': 'none', 'url': 'https://example.com/v_only.m3u8'},
+        ]
+    }
+    stream_url, v_url, a_url = _select_live_stream_urls(info)
+    assert stream_url == 'https://example.com/muxed.m3u8'
+    assert v_url is None and a_url is None
+
+
+def test_segmented_stream_recorder_live_edge_flags(tmp_path):
+    from gaming_intelligence.live.recording.buffer import RollingSegmentBuffer
+    from gaming_intelligence.live.recording.timestamps import TimestampSynchronizer
+    from gaming_intelligence.live.recording.recorder import SegmentedStreamRecorder
+
+    buf = RollingSegmentBuffer(str(tmp_path))
+    rec = SegmentedStreamRecorder(buf, TimestampSynchronizer())
+    with patch("subprocess.Popen") as mock_popen:
+        rec._spawn_ffmpeg("https://manifest.googlevideo.com/api/manifest/hls_live/test.m3u8")
+        cmd_args = mock_popen.call_args[0][0]
+        assert "-live_start_index" in cmd_args
+        assert "-1" in cmd_args
+        assert "-rw_timeout" in cmd_args
+        assert "-reconnect" in cmd_args
 
 
 def test_analyze_and_detect_clips_continuous_mode_graceful():

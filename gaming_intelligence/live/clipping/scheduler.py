@@ -5,7 +5,9 @@ Pins pre-roll immediately upon hype detection, waits for post-roll, and executes
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import logging
+import os
 import time
 from typing import Callable, Dict, List, Optional
 from .extractor import FastClipExtractor
@@ -13,6 +15,11 @@ from .renderer import FastVerticalRenderer
 from ..models import ClipJob, ClipMode, HypeEvent, LatencyMilestones
 from ..recording.buffer import RollingSegmentBuffer
 from ..recording.timestamps import TimestampSynchronizer
+
+try:
+    import resource_guard
+except ImportError:
+    resource_guard = None
 
 logger = logging.getLogger("live.scheduler")
 
@@ -29,6 +36,8 @@ class ClipScheduler:
         pre_roll_sec: float = 25.0,
         post_roll_sec: float = 10.0,
         on_clip_ready: Optional[Callable[[ClipJob], None]] = None,
+        max_concurrent_renders: Optional[int] = None,
+        min_free_ram_mb: Optional[int] = None,
     ):
         self.buffer = buffer
         self.sync = sync
@@ -37,9 +46,29 @@ class ClipScheduler:
         self.pre_roll_sec = pre_roll_sec
         self.post_roll_sec = post_roll_sec
         self.on_clip_ready = on_clip_ready
+        self.max_concurrent_renders = max(
+            1,
+            max_concurrent_renders
+            if max_concurrent_renders is not None
+            else int(os.environ.get("MAX_LIVE_CLIP_RENDERS", "2")),
+        )
+        self.min_free_ram_mb = (
+            min_free_ram_mb
+            if min_free_ram_mb is not None
+            else int(os.environ.get("RAM_EDIT_MIN_FREE_MB", "1024"))
+        )
+        self._render_semaphore = asyncio.Semaphore(self.max_concurrent_renders)
+        self._render_executor = ThreadPoolExecutor(
+            max_workers=self.max_concurrent_renders,
+            thread_name_prefix="live-render",
+        )
+        self._active_renders = 0
 
         # Active jobs: job_id -> ClipJob
         self.active_jobs: Dict[str, ClipJob] = {}
+
+    def close(self):
+        self._render_executor.shutdown(wait=False)
 
     def on_hype_event(self, event: HypeEvent):
         """
@@ -98,34 +127,50 @@ class ClipScheduler:
                 self.buffer.unpin(job.job_id)
                 return
 
-            # 3. Stage A: Fast Draft Remux (< 1.5s)
-            job.status = "extracting_stage_a"
-            job.milestones.extract_started_at = time.time()
+            # 3. Bound concurrent renders and check RAM before running FFmpeg Stage A & B
+            async with self._render_semaphore:
+                if resource_guard is not None and self.min_free_ram_mb > 0:
+                    has_ram = await resource_guard.wait_for_ram(
+                        self.min_free_ram_mb,
+                        active_count_fn=lambda: self._active_renders,
+                        timeout_sec=60.0,
+                    )
+                    if not has_ram:
+                        raise RuntimeError(
+                            f"Insufficient system RAM (< {self.min_free_ram_mb} MiB free) for live clip render"
+                        )
 
-            # Run in thread pool so FFmpeg subprocess doesn't block the async loop
-            loop = asyncio.get_event_loop()
-            draft_path = await loop.run_in_executor(
-                None,
-                lambda: self.extractor.extract_draft_preview(pinned, job.job_id)
-            )
-            job.draft_path = draft_path
-            job.milestones.extract_completed_at = time.time()
+                self._active_renders += 1
+                try:
+                    # Stage A: Fast Draft Remux (< 1.5s)
+                    job.status = "extracting_stage_a"
+                    job.milestones.extract_started_at = time.time()
 
-            # 4. Stage B: Hardware-Accelerated Vertical Render (< 5.0s)
-            job.status = "rendering_stage_b"
-            job.milestones.render_started_at = time.time()
+                    loop = asyncio.get_running_loop()
+                    draft_path = await loop.run_in_executor(
+                        self._render_executor,
+                        lambda: self.extractor.extract_draft_preview(pinned, job.job_id)
+                    )
+                    job.draft_path = draft_path
+                    job.milestones.extract_completed_at = time.time()
 
-            target_duration = job.clip_end_time - job.clip_start_time
-            out_filename = f"short_{job.job_id}_{int(time.time())}.mp4"
+                    # Stage B: Hardware-Accelerated Vertical Render (< 5.0s)
+                    job.status = "rendering_stage_b"
+                    job.milestones.render_started_at = time.time()
 
-            final_path = await loop.run_in_executor(
-                None,
-                lambda: self.renderer.render_vertical_short(
-                    draft_path,
-                    out_filename,
-                    target_duration=target_duration
-                )
-            )
+                    target_duration = job.clip_end_time - job.clip_start_time
+                    out_filename = f"short_{job.job_id}_{int(time.time())}.mp4"
+
+                    final_path = await loop.run_in_executor(
+                        self._render_executor,
+                        lambda: self.renderer.render_vertical_short(
+                            draft_path,
+                            out_filename,
+                            target_duration=target_duration
+                        )
+                    )
+                finally:
+                    self._active_renders = max(0, self._active_renders - 1)
             job.final_path = final_path
             job.milestones.render_completed_at = time.time()
             job.status = "complete"

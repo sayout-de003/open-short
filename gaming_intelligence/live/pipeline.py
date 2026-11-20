@@ -9,6 +9,8 @@ import asyncio
 import logging
 import math
 import os
+import shutil
+import subprocess
 import sys
 import time
 from typing import Dict, List, Optional
@@ -122,9 +124,33 @@ class LiveHypePipeline:
         self.twitch_listener = TwitchChatListener(channel, on_message=self.ingest_message)
         await self.twitch_listener.start()
 
+    @staticmethod
+    def _resolve_youtube_stream_url_sync(video_id_or_url: str) -> Optional[str]:
+        yt_dlp = shutil.which("yt-dlp")
+        if not yt_dlp:
+            return None
+        target = video_id_or_url.strip()
+        if "youtu" not in target:
+            target = f"https://www.youtube.com/watch?v={target}"
+        try:
+            res = subprocess.run(
+                [yt_dlp, "-g", "-f", "best[ext=mp4]/best", target],
+                capture_output=True, text=True, timeout=20,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                return res.stdout.strip().splitlines()[0]
+        except Exception as e:
+            logger.warning(f"Could not resolve YouTube live stream URL via yt-dlp: {e}")
+        return None
+
     async def start_youtube(self, video_id_or_url: str, stream_url: Optional[str] = None, api_key: Optional[str] = None):
         """Starts live monitoring on a YouTube live stream."""
         logger.info(f"Starting YouTube live pipeline on: {video_id_or_url}")
+        if not stream_url:
+            loop = asyncio.get_running_loop()
+            stream_url = await loop.run_in_executor(
+                None, lambda: self._resolve_youtube_stream_url_sync(video_id_or_url)
+            )
         if stream_url:
             await self.recorder.start_recording(stream_url)
 
@@ -142,4 +168,5 @@ class LiveHypePipeline:
         if self.youtube_listener:
             await self.youtube_listener.stop()
         await self.recorder.stop_recording()
+        self.scheduler.close()
         logger.info("Live Hype Pipeline stopped.")

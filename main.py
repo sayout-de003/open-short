@@ -1049,55 +1049,104 @@ def _content_block(error_text):
     return None
 
 
-def capture_live_stream_segment(info, expected_path, live_seconds=120, start_index=None, cycle_num=None):
-    """Captures a window of live stream directly from the live edge via ffmpeg HLS demuxer."""
-    if start_index is None:
-        start_index = int(os.environ.get("LIVE_START_INDEX", "-3"))
+def _is_hls_url(url: Optional[str]) -> bool:
+    u = (url or "").lower()
+    return "m3u8" in u or "manifest" in u
 
-    v_url = None
-    a_url = None
-    stream_url = None
-    if info.get('formats'):
-        # Extract best video and best audio HLS streams (YouTube separates them)
-        for f in reversed(info['formats']):
-            if not stream_url and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
-                stream_url = f.get('url')
-            if f.get('vcodec') != 'none' and not v_url and f.get('url'):
-                v_url = f.get('url')
-            if f.get('acodec') != 'none' and f.get('vcodec') == 'none' and not a_url and f.get('url'):
-                a_url = f.get('url')
 
-    stream_url = stream_url or info.get('url') or v_url
-    if not stream_url:
-        return False
+def _select_live_stream_urls(info: dict):
+    """Pick the most reliable live-edge stream URLs (preferring single muxed HLS)."""
+    formats = [
+        f for f in (info.get("formats") or [])
+        if f.get("url") and f.get("protocol") != "mhtml" and f.get("ext") != "mhtml"
+    ]
 
-    try:
-        hls_opts = [
-            '-loglevel', 'error',
+    def _is_hls_fmt(f):
+        proto = (f.get("protocol") or "").lower()
+        return "m3u8" in proto or _is_hls_url(f.get("url"))
+
+    def _mp4_vcodec(f):
+        vc = (f.get("vcodec") or "").lower()
+        return vc != "none" and ("avc1" in vc or "h264" in vc)
+
+    def _mp4_acodec(f):
+        ac = (f.get("acodec") or "").lower()
+        return ac != "none" and ("mp4a" in ac or "aac" in ac)
+
+    muxed_hls = [
+        f for f in formats
+        if f.get("vcodec") != "none" and f.get("acodec") != "none" and _is_hls_fmt(f)
+    ]
+    # Prefer MP4-compatible muxed HLS (highest quality last in yt-dlp formats)
+    for pred in (lambda f: _mp4_vcodec(f) and _mp4_acodec(f), lambda f: True):
+        for f in reversed(muxed_hls):
+            if pred(f):
+                return f["url"], None, None
+
+    # Fallback: separate HLS video + audio
+    hls_v = [f for f in formats if f.get("vcodec") != "none" and _is_hls_fmt(f)]
+    hls_a = [f for f in formats if f.get("acodec") != "none" and f.get("vcodec") == "none" and _is_hls_fmt(f)]
+    v_url = next((f["url"] for f in reversed(hls_v) if _mp4_vcodec(f)), None) or (hls_v[-1]["url"] if hls_v else None)
+    a_url = next((f["url"] for f in reversed(hls_a) if _mp4_acodec(f)), None) or (hls_a[-1]["url"] if hls_a else None)
+    if v_url and a_url and v_url != a_url:
+        return None, v_url, a_url
+
+    # Last resort: any muxed format or top-level info['url']
+    any_muxed = [f for f in formats if f.get("vcodec") != "none" and f.get("acodec") != "none"]
+    stream_url = (any_muxed[-1]["url"] if any_muxed else None) or info.get("url") or v_url
+    return stream_url, None, None
+
+
+def _live_ffmpeg_input_opts(url: str, start_index: int) -> list:
+    opts = [
+        '-loglevel', 'error',
+        '-fflags', '+nobuffer+genpts',
+        '-rw_timeout', '10000000',
+        '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '2',
+    ]
+    if _is_hls_url(url):
+        opts.extend([
             '-live_start_index', str(start_index),
             '-http_persistent', '1',
             '-http_multiple', '1',
-            '-max_reload', '1',
-            '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '2',
-        ]
-        if v_url and a_url and v_url != a_url:
+            '-max_reload', '5',
+        ])
+    return opts
+
+
+def capture_live_stream_segment(info, expected_path, live_seconds=45, start_index=None, cycle_num=None):
+    """Captures a window of live stream directly from the live edge via ffmpeg HLS demuxer."""
+    if start_index is None:
+        start_index = int(os.environ.get("LIVE_START_INDEX", "-1"))
+
+    stream_url, v_url, a_url = _select_live_stream_urls(info)
+    if not stream_url and not (v_url and a_url):
+        return False
+
+    try:
+        if stream_url:
             cmd = [
-                'ffmpeg', '-y',
-                *hls_opts,
-                '-i', v_url,
-                *hls_opts,
-                '-i', a_url,
+                'ffmpeg', '-y', '-nostdin',
+                *_live_ffmpeg_input_opts(stream_url, start_index),
+                '-i', stream_url,
                 '-t', str(int(live_seconds)),
                 '-c', 'copy',
+                '-avoid_negative_ts', 'make_zero',
+                '-movflags', '+frag_keyframe+empty_moov',
                 expected_path
             ]
         else:
             cmd = [
-                'ffmpeg', '-y',
-                *hls_opts,
-                '-i', stream_url,
+                'ffmpeg', '-y', '-nostdin',
+                *_live_ffmpeg_input_opts(v_url, start_index),
+                '-i', v_url,
+                *_live_ffmpeg_input_opts(a_url, start_index),
+                '-i', a_url,
                 '-t', str(int(live_seconds)),
                 '-c', 'copy',
+                '-avoid_negative_ts', 'make_zero',
+                '-shortest',
+                '-movflags', '+frag_keyframe+empty_moov',
                 expected_path
             ]
         cycle_label = f" [Cycle {cycle_num}]" if cycle_num else ""
@@ -1115,8 +1164,12 @@ def capture_live_stream_segment(info, expected_path, live_seconds=120, start_ind
                     sz_mb = (os.path.getsize(expected_path) / (1024 * 1024)) if os.path.exists(expected_path) else 0.0
                     print(f"🔴 Live capture{cycle_label} in progress: {elapsed_sec}s / {int(live_seconds)}s ({sz_mb:.1f} MB captured)...", flush=True)
                     last_log = now_t
-                if now_t - start_t > live_seconds + 60:
-                    p.kill()
+                if now_t - start_t > live_seconds + 30:
+                    p.terminate()
+                    try:
+                        p.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        p.kill()
                     break
         p.wait()
         if os.path.exists(expected_path) and os.path.getsize(expected_path) > 256 * 1024:
@@ -1136,6 +1189,117 @@ def capture_live_stream_segment(info, expected_path, live_seconds=120, start_ind
     except Exception as e:
         print(f"⚠️ Live ffmpeg capture error ({e})")
     return False
+
+
+class _LiveSegmentProducer:
+    """Continuously records 2s MPEG-TS segments from the live edge in the background."""
+
+    def __init__(self, seg_dir: str, segment_time_sec: float = 2.0):
+        self.seg_dir = seg_dir
+        self.segment_time_sec = segment_time_sec
+        self._proc: Optional[subprocess.Popen] = None
+        self._consumed_idx = -1
+        os.makedirs(self.seg_dir, exist_ok=True)
+
+    def start(self, info: dict, start_index: Optional[int] = None) -> bool:
+        self.stop_process()
+        if start_index is None:
+            start_index = int(os.environ.get("LIVE_START_INDEX", "-1"))
+        stream_url, v_url, a_url = _select_live_stream_urls(info)
+        if not stream_url and not (v_url and a_url):
+            return False
+
+        pattern = os.path.join(self.seg_dir, "seg_%05d.ts")
+        start_num = self._consumed_idx + 1
+        seg_out = [
+            '-c', 'copy',
+            '-f', 'segment',
+            '-segment_time', str(self.segment_time_sec),
+            '-segment_format', 'mpegts',
+            '-segment_start_number', str(start_num),
+            '-reset_timestamps', '1',
+            pattern,
+        ]
+        if stream_url:
+            cmd = ['ffmpeg', '-y', '-nostdin', *_live_ffmpeg_input_opts(stream_url, start_index), '-i', stream_url, *seg_out]
+        else:
+            cmd = [
+                'ffmpeg', '-y', '-nostdin',
+                *_live_ffmpeg_input_opts(v_url, start_index), '-i', v_url,
+                *_live_ffmpeg_input_opts(a_url, start_index), '-i', a_url,
+                *seg_out,
+            ]
+        self._proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+
+    def is_running(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None
+
+    def collect_window(self, window_sec: float, dest_mp4: str, max_wait_sec: Optional[float] = None) -> bool:
+        """Wait until ~window_sec of completed segments are ready, remux to dest_mp4."""
+        import glob as _glob
+        target_segs = max(3, int(window_sec / self.segment_time_sec))
+        deadline = time.time() + (max_wait_sec if max_wait_sec is not None else window_sec + 30.0)
+        ready = []
+
+        while time.time() < deadline:
+            files = sorted(_glob.glob(os.path.join(self.seg_dir, "seg_*.ts")))
+            # Leave the newest file untouched while ffmpeg is still writing to it.
+            candidates = files[:-1] if self.is_running() and len(files) > 1 else files
+            ready = [f for f in candidates if self._parse_idx(f) > self._consumed_idx]
+            if len(ready) >= target_segs:
+                break
+            if not self.is_running():
+                break
+            time.sleep(0.5)
+
+        if not ready:
+            return False
+
+        selected = ready[:target_segs] if len(ready) > target_segs else ready
+        concat_txt = os.path.join(self.seg_dir, "concat_window.txt")
+        with open(concat_txt, "w", encoding="utf-8") as cf:
+            for f in selected:
+                cf.write(f"file '{os.path.abspath(f)}'\n")
+
+        cmd = [
+            'ffmpeg', '-y', '-nostdin', '-loglevel', 'error',
+            '-f', 'concat', '-safe', '0', '-i', concat_txt,
+            '-c', 'copy', '-avoid_negative_ts', 'make_zero',
+            '-movflags', '+frag_keyframe+empty_moov',
+            dest_mp4,
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+        for f in selected:
+            idx = self._parse_idx(f)
+            if idx > self._consumed_idx:
+                self._consumed_idx = idx
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+        return res.returncode == 0 and os.path.exists(dest_mp4) and os.path.getsize(dest_mp4) > 256 * 1024
+
+    @staticmethod
+    def _parse_idx(path: str) -> int:
+        try:
+            return int(os.path.basename(path).replace("seg_", "").replace(".ts", ""))
+        except ValueError:
+            return -1
+
+    def stop_process(self):
+        if self._proc is not None:
+            if self._proc.poll() is None:
+                self._proc.terminate()
+                try:
+                    self._proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self._proc.kill()
+            self._proc = None
+
+    def cleanup(self):
+        self.stop_process()
+        shutil.rmtree(self.seg_dir, ignore_errors=True)
 
 
 def download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
@@ -1379,6 +1543,12 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
         with (yt_session.request() if (cookies and cookies_path) else contextlib.nullcontext()):
             with yt_dlp.YoutubeDL(_base_opts(extractor_args, proxy, cookies)) as ydl:
                 info = ydl.extract_info(url, download=False, process=False)
+                # Resolve channel /live redirects or playlist-like wrappers so is_live and formats are populated.
+                if info and (
+                    info.get('_type') in ('url', 'url_transparent')
+                    or (not info.get('formats') and not info.get('is_live') and info.get('url'))
+                ):
+                    info = ydl.process_ie_result(info, download=False)
         # Media URLs another program will fetch (ffmpeg on a ranged or HLS
         # download) resolve outside the Python guard: check them here. YouTube's
         # own CDN hosts are skipped (dozens of them, never internal).
@@ -1393,18 +1563,20 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
         # Real-time live video cutting: do not wait for the stream to end.
         is_live = bool(info.get('is_live') or info.get('live_status') == 'is_live')
         if is_live:
-            # Default to 120s rolling window (or LIVE_CUT_SECONDS)
-            live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "120"))
-            print(f"🔴 Live video stream detected! Real-time live clipping active (capturing {live_seconds/60:.1f}m rolling window)...")
+            continuous_on = os.environ.get("LIVE_CONTINUOUS_MONITOR", "1") in ("1", "true", "yes")
+            live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "45"))
+            print(f"🔴 Live video stream detected! Real-time live clipping active (capturing {live_seconds:.0f}s live-edge window)...")
             os.environ["IS_LIVE_STREAM"] = "1"
             if not os.environ.get("X264_PRESET"):
                 os.environ["X264_PRESET"] = "ultrafast"
             if not os.environ.get("CLIP_TARGET_MAX"):
                 os.environ["CLIP_TARGET_MAX"] = "5"
-            if not os.environ.get("CLIP_TARGET_MIN"):
+            # Do not force CLIP_TARGET_MIN=3 in continuous mode — otherwise quiet
+            # chunks are forced to emit 3 non-viral filler clips.
+            if not continuous_on and not os.environ.get("CLIP_TARGET_MIN"):
                 os.environ["CLIP_TARGET_MIN"] = "3"
 
-            cycle_label = "1" if os.environ.get("LIVE_CONTINUOUS_MONITOR", "1") in ("1", "true", "yes") else None
+            cycle_label = "1" if continuous_on else None
             success = capture_live_stream_segment(info, expected, live_seconds=live_seconds, cycle_num=cycle_label)
             if success:
                 print(f"✅ Real-time live stream captured ({os.path.getsize(expected)} bytes). Cutting clips immediately!", flush=True)
@@ -1414,7 +1586,7 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
 
         # If live stream fell back to yt-dlp, ensure _range_cap is set to live_seconds
         if is_live and not _range_cap:
-            _range_cap = float(os.environ.get("LIVE_CUT_SECONDS", "120"))
+            _range_cap = float(os.environ.get("LIVE_CUT_SECONDS", "45"))
 
         # Only when the whole source is far bigger than what was paid for: a
         # ranged fetch goes through ffmpeg at ~1-2.5x realtime, while a native
@@ -1445,8 +1617,14 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
             'progress_hooks': [_progress_hook],
         }
         if is_live:
-            # Always go with live edge (current time), never from start of live video
+            # Always go with live edge (current time), never from start of live video,
+            # and bound ffmpeg downloader duration so yt-dlp cannot hang forever.
             dl_opts['live_from_start'] = False
+            dl_opts['external_downloader'] = 'ffmpeg'
+            dl_opts['external_downloader_args'] = {
+                'ffmpeg_i': ['-rw_timeout', '10000000'],
+                'ffmpeg': ['-t', str(int(_range_cap or 45))],
+            }
         _dl_bytes["ranged"] = ranged
         if ranged and not is_live:
             from yt_dlp.utils import download_range_func
@@ -3107,7 +3285,22 @@ def analyze_and_detect_clips(input_video, duration, viewer_clips=None,
     else:
         clips_data = get_visual_clips(input_video, duration, viewer_clips=viewer_clips)
 
-    if not clips_data or not clips_data.get('shorts'):
+    if is_live_continuous and clips_data and clips_data.get('shorts'):
+        min_v_score = float(os.environ.get("LIVE_MIN_VIRALITY_SCORE", "6.5"))
+        filtered_shorts = []
+        for s in clips_data['shorts']:
+            score_val = s.get("predicted_score")
+            if score_val is None:
+                score_val = s.get("virality_score")
+            if score_val is None:
+                score_val = s.get("score")
+            if score_val is None or float(score_val) >= min_v_score:
+                filtered_shorts.append(s)
+        if len(filtered_shorts) < len(clips_data['shorts']):
+            print(f"🎯 [Live Monitor] Kept {len(filtered_shorts)}/{len(clips_data['shorts'])} clip(s) meeting virality >= {min_v_score}.")
+        clips_data['shorts'] = filtered_shorts
+
+    if (not clips_data or not clips_data.get('shorts')) and not is_live_continuous:
         print("🤖 LLM did not return usable clips — activating 100% Local Intelligence Pipeline...")
         try:
             from gaming_intelligence.pipeline import LocalIntelligencePipeline
@@ -3247,6 +3440,16 @@ def render_clips_for_dataset(clips_data, input_video, video_title, output_dir, o
     if metadata_file:
         combined_shorts = list(existing_clips or []) + rendered_shorts
         meta_to_write = dict(clips_data)
+        if existing_clips and os.path.exists(metadata_file):
+            try:
+                with open(metadata_file, 'r') as mf:
+                    prev_meta = json.load(mf)
+                prev_segs = ((prev_meta.get('transcript') or {}).get('segments') or [])
+                cur_segs = ((meta_to_write.get('transcript') or {}).get('segments') or [])
+                if prev_segs:
+                    meta_to_write.setdefault('transcript', {})['segments'] = prev_segs + cur_segs
+            except Exception:
+                pass
         meta_to_write['shorts'] = combined_shorts
         meta_to_write['source_video'] = os.path.basename(input_video)
         meta_to_write['output_format'] = output_format
@@ -3528,102 +3731,127 @@ if __name__ == '__main__':
             except Exception:
                 pass
 
-        early_state = globals().get("early")
-        clips_data = analyze_and_detect_clips(
-            input_video, duration, viewer_clips=viewer_clips,
-            precomputed_transcript=precomputed, early_state=early_state,
-            output_dir=output_dir, args_url=args.url, is_live_continuous=continuous_mode
-        )
+        def _fetch_live_info(target_url: str, yt_sess) -> Optional[dict]:
+            import ssrf_guard
+            c_cookies = None if yt_account.cooling_down() else yt_sess.path
+            ydl_check_opts = {
+                'quiet': True, 'no_warnings': True, 'noprogress': True,
+                'cookiefile': c_cookies if c_cookies else None,
+                'live_from_start': False, 'noplaylist': True, 'socket_timeout': 15,
+            }
+            with ssrf_guard.guarded(), yt_dlp.YoutubeDL(ydl_check_opts) as ydl:
+                s_info = ydl.extract_info(target_url, download=False)
+                if s_info and (s_info.get('is_live') or s_info.get('live_status') == 'is_live'):
+                    return s_info
+            return None
 
-        all_shorts = []
-        if clips_data and clips_data.get('shorts'):
-            print(f"🔥 Found {len(clips_data['shorts'])} clips!")
-            rendered = render_clips_for_dataset(
-                clips_data, input_video, video_title, output_dir, output_format,
-                source_subtitle_band=source_subtitle_band, global_start_index=0,
-                metadata_file=metadata_file, existing_clips=[]
-            )
-            all_shorts.extend(rendered)
-
-        # 2. If continuous live mode, loop until live broadcast ends
+        producer = None
+        yt_session = yt_account.Session()
         if continuous_mode and args.url:
-            print(f"🔴 Continuous live monitor active: monitoring stream until broadcast ends...", flush=True)
-            cycle = 2
-            live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "120"))
-            consecutive_failures = 0
-            yt_session = yt_account.Session()
-            c_cookies = yt_session.path
+            producer = _LiveSegmentProducer(os.path.join(output_dir, ".live_segments"))
+            try:
+                s_info = _fetch_live_info(args.url, yt_session)
+                if s_info:
+                    producer.start(s_info)
+            except Exception as e:
+                logger.warning(f"Background live segmenter startup warning: {e}") if 'logger' in globals() else print(f"⚠️ Background live segmenter startup warning: {e}")
 
-            while True:
-                # Check if stream is still broadcasting
-                is_still_live = False
-                stream_info = None
-                try:
-                    ydl_check_opts = {
-                        'quiet': True, 'no_warnings': True, 'noprogress': True,
-                        'cookiefile': c_cookies if c_cookies else None,
-                        'live_from_start': False, 'noplaylist': True,
-                    }
-                    with yt_dlp.YoutubeDL(ydl_check_opts) as ydl:
-                        stream_info = ydl.extract_info(args.url, download=False, process=False)
-                        is_still_live = bool(stream_info.get('is_live') or stream_info.get('live_status') == 'is_live')
-                except Exception as e:
-                    print(f"🔴 Live stream status check: {e}. Stream appears offline.", flush=True)
-                    is_still_live = False
+        early_state = globals().get("early")
+        try:
+            clips_data = analyze_and_detect_clips(
+                input_video, duration, viewer_clips=viewer_clips,
+                precomputed_transcript=precomputed, early_state=early_state,
+                output_dir=output_dir, args_url=args.url, is_live_continuous=continuous_mode
+            )
 
-                if not is_still_live or not stream_info:
-                    print(f"🏁 Live broadcast has ended. Continuous live monitoring complete! Total clips generated: {len(all_shorts)}", flush=True)
-                    break
-
-                chunk_filename = f"{video_title}_chunk{cycle}.mp4"
-                chunk_file = os.path.join(output_dir, chunk_filename)
-                if os.path.exists(chunk_file):
-                    try:
-                        os.remove(chunk_file)
-                    except OSError:
-                        pass
-
-                captured = capture_live_stream_segment(
-                    stream_info, chunk_file, live_seconds=live_seconds, cycle_num=cycle
+            all_shorts = []
+            if clips_data and clips_data.get('shorts'):
+                print(f"🔥 Found {len(clips_data['shorts'])} clips!")
+                rendered = render_clips_for_dataset(
+                    clips_data, input_video, video_title, output_dir, output_format,
+                    source_subtitle_band=source_subtitle_band, global_start_index=0,
+                    metadata_file=metadata_file, existing_clips=[]
                 )
-                if not captured:
-                    consecutive_failures += 1
-                    if consecutive_failures >= 3:
-                        print(f"🏁 No further segments received from live stream after 3 attempts. Stream broadcast concluded.", flush=True)
-                        break
-                    print(f"⚠️ Live capture chunk {cycle} produced no data. Retrying in 10s...", flush=True)
-                    time.sleep(10)
-                    continue
+                all_shorts.extend(rendered)
+
+            # 2. If continuous live mode, loop until live broadcast ends
+            if continuous_mode and args.url:
+                print(f"🔴 Continuous live monitor active: real-time rolling capture until broadcast ends...", flush=True)
+                cycle = 2
+                live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "45"))
                 consecutive_failures = 0
+                consecutive_offline = 0
 
-                # Check duration of chunk
-                c_cap = cv2.VideoCapture(chunk_file)
-                c_fps = c_cap.get(cv2.CAP_PROP_FPS) or 30.0
-                c_frames = int(c_cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                c_duration = c_frames / c_fps if c_fps > 0 else 0.0
-                c_cap.release()
+                while True:
+                    if not producer.is_running():
+                        stream_info = None
+                        try:
+                            stream_info = _fetch_live_info(args.url, yt_session)
+                        except Exception as e:
+                            print(f"🔴 Live stream status check error: {e}", flush=True)
 
-                # Analyze chunk for viral clips
-                chunk_clips = analyze_and_detect_clips(
-                    chunk_file, c_duration, viewer_clips=viewer_clips,
-                    output_dir=output_dir, args_url=None, is_live_continuous=True
-                )
-                if chunk_clips and chunk_clips.get('shorts'):
-                    print(f"🔥 Found {len(chunk_clips['shorts'])} clips in cycle {cycle}!")
-                    rendered = render_clips_for_dataset(
-                        chunk_clips, chunk_file, video_title, output_dir, output_format,
-                        source_subtitle_band=source_subtitle_band, global_start_index=len(all_shorts),
-                        metadata_file=metadata_file, existing_clips=all_shorts
+                        if not stream_info:
+                            consecutive_offline += 1
+                            if consecutive_offline >= 3:
+                                print(f"🏁 Live broadcast has ended after {consecutive_offline} checks. Continuous live monitoring complete! Total clips generated: {len(all_shorts)}", flush=True)
+                                break
+                            print(f"⚠️ Stream status check {consecutive_offline}/3 did not confirm live; retrying in 5s...", flush=True)
+                            time.sleep(5)
+                            continue
+                        consecutive_offline = 0
+                        producer.start(stream_info)
+
+                    chunk_filename = f"{video_title}_chunk{cycle}.mp4"
+                    chunk_file = os.path.join(output_dir, chunk_filename)
+                    if os.path.exists(chunk_file):
+                        try:
+                            os.remove(chunk_file)
+                        except OSError:
+                            pass
+
+                    captured = producer.collect_window(live_seconds, chunk_file)
+                    if not captured:
+                        consecutive_failures += 1
+                        if consecutive_failures >= 3:
+                            print(f"🏁 No further segments received from live stream after 3 attempts. Stream broadcast concluded.", flush=True)
+                            break
+                        print(f"⚠️ Live capture chunk {cycle} produced no data. Retrying in 5s...", flush=True)
+                        producer.stop_process()
+                        time.sleep(5)
+                        continue
+                    consecutive_failures = 0
+
+                    # Check duration of chunk
+                    c_cap = cv2.VideoCapture(chunk_file)
+                    c_fps = c_cap.get(cv2.CAP_PROP_FPS) or 30.0
+                    c_frames = int(c_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                    c_duration = c_frames / c_fps if c_fps > 0 else 0.0
+                    c_cap.release()
+
+                    # Analyze chunk for viral clips
+                    chunk_clips = analyze_and_detect_clips(
+                        chunk_file, c_duration, viewer_clips=viewer_clips,
+                        output_dir=output_dir, args_url=None, is_live_continuous=True
                     )
-                    all_shorts.extend(rendered)
+                    if chunk_clips and chunk_clips.get('shorts'):
+                        print(f"🔥 Found {len(chunk_clips['shorts'])} clips in cycle {cycle}!")
+                        rendered = render_clips_for_dataset(
+                            chunk_clips, chunk_file, video_title, output_dir, output_format,
+                            source_subtitle_band=source_subtitle_band, global_start_index=len(all_shorts),
+                            metadata_file=metadata_file, existing_clips=all_shorts
+                        )
+                        all_shorts.extend(rendered)
 
-                if not args.keep_original and os.path.exists(chunk_file):
-                    try:
-                        os.remove(chunk_file)
-                    except OSError:
-                        pass
+                    if not args.keep_original and os.path.exists(chunk_file):
+                        try:
+                            os.remove(chunk_file)
+                        except OSError:
+                            pass
 
-                cycle += 1
+                    cycle += 1
+        finally:
+            if producer is not None:
+                producer.cleanup()
 
         if not all_shorts and not os.path.exists(metadata_file):
             write_json_atomic(metadata_file, {
