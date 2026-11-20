@@ -6878,6 +6878,47 @@ async def get_status(job_id: str, request: Request):
     if job is None:
         job = _job_view_from_disk(job_id)
     if job is None:
+        try:
+            orch = _get_autopilot_orch()
+            with orch.db.transaction() as conn:
+                p_row = conn.execute("""
+                    SELECT j.*, s.title as src_title, s.url as src_url, s.channel_name
+                    FROM processing_jobs j
+                    LEFT JOIN discovered_sources s ON j.source_pk = s.id
+                    WHERE j.id = ?
+                """, (job_id,)).fetchone()
+                if p_row:
+                    c_rows = conn.execute("""
+                        SELECT id, local_path, duration_sec, quality_status
+                        FROM rendered_clips WHERE job_id = ?
+                    """, (job_id,)).fetchall()
+                    clips_res = []
+                    for c in c_rows:
+                        c_id = c["id"]
+                        clips_res.append({
+                            "title": f"Gaming Reel - {p_row['src_title'] or job_id}",
+                            "video_url": f"/videos/autopilot/{c_id}",
+                            "video_title_for_youtube_short": f"Gaming Highlight #{c_id[:4]}",
+                            "start": 0,
+                            "end": c["duration_sec"],
+                            "virality_score": 8,
+                            "duration_sec": c["duration_sec"],
+                        })
+                    st = str(p_row["status"]).lower()
+                    if st in ('published', 'scheduled', 'uploaded', 'quality_approved', 'clips_generated'):
+                        st = 'complete'
+                    job = {
+                        'status': st,
+                        'logs': _TimedLog([f"⚡ Autopilot: Processing '{p_row['src_title']}' ({p_row['job_type']})"]),
+                        'title': p_row['src_title'],
+                        'source_url': p_row['src_url'],
+                        'result': {'clips': clips_res} if clips_res else None,
+                        'is_autopilot': True
+                    }
+                    jobs[job_id] = job
+        except Exception as e:
+            logger.warning(f"Error checking autopilot db in get_status: {e}")
+    if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
     await _assert_job_owner(request, job)

@@ -130,8 +130,20 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
       setClipFeedback({
         id: source.source_id,
         type: 'success',
-        text: `⚡ Clipping started for "${source.title.slice(0, 45)}...". Visible in running jobs & Projects!`,
+        text: `⚡ Clipping started for "${source.title.slice(0, 45)}...". Opening live monitor...`,
       });
+
+      // Instantly open the live clipping screen with system logs down & clips on the right!
+      if (onOpenProject && res.job_id) {
+        onOpenProject(res.job_id, {
+          id: res.job_id,
+          title: source.title,
+          source_url: source.url,
+          platform: source.platform,
+          status: 'processing',
+        });
+      }
+
       // Refresh clips and jobs list after brief pause
       setTimeout(() => {
         fetchJobs();
@@ -469,9 +481,17 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
                 </div>
                 <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
                   {activeJobs.filter(j => ['queued', 'claimed', 'processing', 'running'].includes((j.status || '').toLowerCase())).map(j => (
-                    <div key={j.id} className="p-2.5 rounded bg-paper border border-rule flex items-center justify-between gap-3 text-xs">
+                    <div
+                      key={j.id}
+                      onClick={() => onOpenProject && onOpenProject(j.id, j)}
+                      className="p-2.5 rounded bg-paper border border-rule hover:border-sky-500/60 hover:bg-paper2 cursor-pointer flex items-center justify-between gap-3 text-xs transition-all group shadow-xs"
+                      title="Click to open live clipping screen with video preview & system logs"
+                    >
                       <div className="min-w-0 flex-1">
-                        <p className="font-medium text-ink truncate">{j.title || j.source_id || j.id}</p>
+                        <p className="font-medium text-ink group-hover:text-sky-400 transition-colors truncate flex items-center gap-1.5">
+                          <Play size={11} className="text-sky-400 shrink-0 fill-sky-400/20" />
+                          {j.title || j.source_id || j.id}
+                        </p>
                         <p className="text-[10px] text-muted flex items-center gap-1 mt-0.5">
                           <span className="capitalize">{j.platform}</span> · 
                           <span className="text-sky-400 font-medium">20/80 Stack Active</span> · 
@@ -483,8 +503,8 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
                           <Loader2 size={9} className="animate-spin" /> {(j.status || '').toLowerCase()}
                         </span>
                         <button
-                          onClick={() => handleCancelJob(j.id)}
-                          className="p-1 rounded text-muted hover:text-red-400 hover:bg-paper2 transition-colors"
+                          onClick={(e) => { e.stopPropagation(); handleCancelJob(j.id); }}
+                          className="p-1 rounded text-muted hover:text-red-400 hover:bg-paper3 transition-colors"
                           title="Cancel and remove this job"
                         >
                           <Trash2 size={12} />
@@ -568,6 +588,17 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
 
                         {/* Action Buttons */}
                         <div className="flex items-center gap-2">
+                          {onOpenProject && clip.job_id && (
+                            <button
+                              onClick={() => onOpenProject(clip.job_id, { id: clip.job_id, title: clip.source_title })}
+                              className="btn-ghost py-1 px-2.5 text-xs text-ink hover:text-brass flex items-center gap-1 border border-rule/70 rounded hover:border-brass/40 transition-colors"
+                              title="Open in Full Video Studio with System Logs, Reframe & Subtitles"
+                            >
+                              <Play size={11} className="fill-current" />
+                              <span>Studio</span>
+                            </button>
+                          )}
+
                           <a
                             href={clip.video_url ? `${getApiUrl(clip.video_url)}?download=1` : '#'}
                             download={`short_${clip.id}.mp4`}

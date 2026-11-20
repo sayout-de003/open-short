@@ -220,13 +220,29 @@ export default function HistoryTab({ onReopenProject }) {
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-rule">
-                    {hasClips && (
+                    {(project.status === 'processing' || project.status === 'queued') ? (
+                      <button
+                        onClick={() => handleOpenProject(project.job_id)}
+                        className="btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5 bg-sky-500 hover:bg-sky-600 border-sky-400 text-white animate-pulse shadow-sm"
+                        title="Open live clipping monitor, video preview & system logs"
+                      >
+                        <Loader2 size={12} className="animate-spin" /> Live Clipping
+                      </button>
+                    ) : hasClips ? (
                       <button
                         onClick={() => handleOpenProject(project.job_id)}
                         className="btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5"
                         title="Open this project in the Clip Generator & Editor"
                       >
                         <Play size={12} /> View Clips
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleOpenProject(project.job_id)}
+                        className="btn-quiet py-1.5 px-2.5 text-xs flex items-center gap-1 text-muted hover:text-ink"
+                        title="Open project studio"
+                      >
+                        <Play size={11} /> Open Studio
                       </button>
                     )}
                     {hasClips && (

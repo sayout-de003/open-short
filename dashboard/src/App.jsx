@@ -766,6 +766,74 @@ function App() {
     setActiveTab('dashboard');
   };
 
+  // Open any active or completed project in the live dashboard studio:
+  // Shows live progress, video preview, system logs down below, and clipped videos on the right!
+  const handleOpenProjectView = (jid, proj) => {
+    setJobId(jid);
+    setJobGone(false);
+    flushClipState();
+    setNoSource(true);
+    setLogsVisible(true);
+
+    if (proj?.source_url || proj?.title) {
+      setProcessingMedia({
+        title: proj.title || 'Gaming Stream / VOD',
+        url: proj.source_url || '',
+        platform: proj.platform || 'youtube',
+      });
+    }
+
+    const rawStatus = (proj?.status || 'processing').toLowerCase();
+    const isDone = ['complete', 'completed', 'published', 'scheduled', 'uploaded'].includes(rawStatus);
+    setStatus(isDone ? 'complete' : 'processing');
+
+    if (proj && proj.clips && proj.clips.length > 0) {
+      const shorts = proj.clips.map((c, i) => {
+        const meta = (proj.shorts && proj.shorts[i]) || {};
+        return {
+          ...meta,
+          title: meta.title || `${proj.title || 'Clip'} #${i + 1}`,
+          video_title_for_youtube_short: meta.video_title_for_youtube_short || meta.title || `${proj.title || 'Clip'} #${i + 1}`,
+          video_url: c.url || c.video_url,
+          start: meta.start || 0,
+          end: meta.end || 0,
+          virality_score: meta.virality_score || 8,
+          hook: meta.hook || '',
+          viral_hook_text: meta.viral_hook_text || meta.hook || '',
+          video_description_for_tiktok: meta.video_description_for_tiktok || '',
+          video_description_for_instagram: meta.video_description_for_instagram || '',
+        };
+      });
+      setResults({ clips: shorts });
+    }
+
+    setLogs([`⚡ Opened project '${proj?.title || jid}'. Loading live clipping monitor & system logs...`]);
+    setLogTimes([Date.now() / 1000]);
+    setActiveTab('dashboard');
+
+    pollJob(jid).then((d) => {
+      if (d?.result?.clips?.length) {
+        setResults(d.result);
+      }
+      if (d?.logs && d.logs.length > 0) {
+        setLogs(d.logs);
+        setLogTimes(d.log_times || []);
+      }
+      if (d?.status) {
+        const norm = normalizeStatus(d.status);
+        if (norm === 'complete' || norm === 'completed') {
+          setStatus('complete');
+        } else if (norm === 'failed' || norm === 'error') {
+          setStatus('error');
+        } else {
+          setStatus(norm);
+        }
+      }
+    }).catch((err) => {
+      console.warn("Poll job on open:", err);
+    });
+  };
+
   // Apply one subtitle style to every clip of the job, sequentially.
   const handleBulkSubtitles = async (options) => {
     const clips = results?.clips || [];
@@ -1204,6 +1272,15 @@ function App() {
         if (tab) targetTab = resolveTab(tab);
         if (params.get('connected') === '1') {
           setAutopilotConnected(readConnectReturn(window.location.search));
+        }
+        const job = params.get('job');
+        if (job) {
+          setJobId(job);
+          pollJob(job).then((d) => {
+            if (d?.result) setResults(d.result);
+            if (d?.logs) { setLogs(d.logs); setLogTimes(d.log_times || []); }
+            if (d?.status) setStatus(normalizeStatus(d.status));
+          }).catch(() => {});
         }
       } else {
         const cleanHash = hash.replace(/^[#/]+/, '').trim().toLowerCase();
@@ -2469,7 +2546,7 @@ function App() {
               <div className="max-w-7xl mx-auto p-2 sm:p-4 md:p-6">
                 {(!billingEnabled || isSignedIn) ? (
                   <AutopilotTab
-                    onOpenProject={restoreProject}
+                    onOpenProject={handleOpenProjectView}
                     onUpgrade={() => (isManaged ? openUpsell({ source: 'autopilot' }) : setShowPlanChoice(true))}
                     justConnected={autopilotConnected}
                   />
@@ -2492,71 +2569,7 @@ function App() {
           {activeTab === 'history' && (
             <div className="h-full overflow-y-auto custom-scrollbar animate-fade">
               <div className="max-w-6xl mx-auto p-4 sm:p-6 md:p-8">
-                <HistoryTab onReopenProject={(jid, proj) => {
-                  setJobId(jid);
-                  setJobGone(false);
-                  flushClipState();
-                  setNoSource(true);
-                  setProcessingMedia(null);
-
-                  // If project from HistoryTab already has clips, display them IMMEDIATELY!
-                  if (proj && proj.clips && proj.clips.length > 0) {
-                    const shorts = proj.clips.map((c, i) => {
-                      const meta = (proj.shorts && proj.shorts[i]) || {};
-                      return {
-                        ...meta,
-                        title: meta.title || `${proj.title || 'Clip'} #${i + 1}`,
-                        video_title_for_youtube_short: meta.video_title_for_youtube_short || meta.title || `${proj.title || 'Clip'} #${i + 1}`,
-                        video_url: c.url,
-                        start: meta.start || 0,
-                        end: meta.end || 0,
-                        virality_score: meta.virality_score || 5,
-                        hook: meta.hook || '',
-                        viral_hook_text: meta.viral_hook_text || meta.hook || '',
-                        video_description_for_tiktok: meta.video_description_for_tiktok || '',
-                        video_description_for_instagram: meta.video_description_for_instagram || '',
-                      };
-                    });
-                    setResults({ clips: shorts });
-                    setStatus('complete');
-                    setLogs(['♻️ Project loaded from your local library.']);
-                    setLogTimes([Date.now() / 1000]);
-                    setActiveTab('dashboard');
-                  }
-
-                  // Also poll backend to sync freshest state
-                  pollJob(jid).then((d) => {
-                    if (d?.result?.clips?.length) {
-                      setResults(d.result);
-                    }
-                    if (d?.logs && d.logs.length > 0) {
-                      setLogs(d.logs);
-                      setLogTimes(d.log_times || []);
-                    }
-                    if (d?.status) {
-                      const norm = normalizeStatus(d.status);
-                      if ((proj?.clips?.length || d?.result?.clips?.length) && norm !== 'error') {
-                        setStatus('complete');
-                      } else {
-                        setStatus(norm);
-                      }
-                    } else if (proj?.clips?.length || d?.result?.clips?.length) {
-                      setStatus('complete');
-                    }
-                    setNoSource(true);
-                    setProcessingMedia(null);
-                    setActiveTab('dashboard');
-                  }).catch((err) => {
-                    console.warn("Poll job on reopen:", err);
-                    if (!proj || !proj.clips || proj.clips.length === 0) {
-                      setStatus('error');
-                      setJobError("Could not retrieve project clips from server.");
-                    } else {
-                      setStatus('complete');
-                    }
-                    setActiveTab('dashboard');
-                  });
-                }} />
+                <HistoryTab onReopenProject={handleOpenProjectView} />
               </div>
             </div>
           )}
