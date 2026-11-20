@@ -114,3 +114,67 @@ def test_moment_and_publication_deduplication(tmp_path: Path) -> None:
     # Different channel allowed
     pub2 = q.create_publication_attempt("clip_1", "ch_ig_1", "instagram", "Title", "Caption", None)
     assert pub2 is not None
+
+
+def test_job_status_case_insensitivity_and_claim_by_id(tmp_path: Path) -> None:
+    # Test case insensitivity of JobStatus
+    assert JobStatus("queued") == JobStatus.QUEUED
+    assert JobStatus("Queued") == JobStatus.QUEUED
+    assert JobStatus("processing") == JobStatus.PROCESSING
+
+    db = AutopilotDatabase(tmp_path / "autopilot.db")
+    q = PersistentQueue(db)
+
+    # Insert lowercase 'queued' directly to simulate legacy or external writes
+    with db.transaction(immediate=True) as conn:
+        conn.execute("""
+            INSERT INTO discovered_sources (platform, source_id, source_type, url, title, channel_id, channel_name, discovered_at)
+            VALUES ('youtube', 'vid_case_1', 'vod', 'http://yt.com/1', 'Test Case', 'ch1', 'Chan', '2026-11-20T00:00:00+00:00')
+        """)
+        src_pk = conn.execute("SELECT id FROM discovered_sources WHERE source_id='vid_case_1'").fetchone()["id"]
+        conn.execute("""
+            INSERT INTO processing_jobs (id, source_pk, platform, source_id, job_type, status, priority, created_at, updated_at)
+            VALUES ('job_case_1', ?, 'youtube', 'vid_case_1', 'vod', 'queued', 10.0, '2026-11-20T00:00:00+00:00', '2026-11-20T00:00:00+00:00')
+        """, (src_pk,))
+
+    # claim_next_job handles lowercase 'queued'
+    claimed = q.claim_next_job("worker_test")
+    assert claimed is not None
+    assert claimed.id == "job_case_1"
+    assert claimed.status == JobStatus.PROCESSING
+
+    # Enqueue a second job and test claim_job_by_id
+    job2_id = q.register_source_and_enqueue(_make_source("vid_case_2"))
+    assert job2_id is not None
+    claimed_by_id = q.claim_job_by_id(job2_id, "worker_specific")
+    assert claimed_by_id is not None
+    assert claimed_by_id.id == job2_id
+    assert claimed_by_id.status == JobStatus.PROCESSING
+
+
+def test_delete_job_cleans_database(tmp_path: Path) -> None:
+    db = AutopilotDatabase(tmp_path / "autopilot.db")
+    q = PersistentQueue(db)
+    job_id = q.register_source_and_enqueue(_make_source("vid_del_1"))
+    assert job_id is not None
+
+    m = q.record_moment_if_unique(job_id, "youtube", "vid_del_1", 10.0, 45.0)
+    with db.transaction(immediate=True) as conn:
+        conn.execute(
+            """
+            INSERT INTO rendered_clips (id, job_id, moment_id, local_path, duration_sec, quality_status, created_at)
+            VALUES ('clip_del_1', ?, ?, '/tmp/clip_del.mp4', 35.0, 'approved', '2026-11-20T00:00:00+00:00')
+            """,
+            (job_id, m),
+        )
+    q.create_publication_attempt("clip_del_1", "ch_del_1", "youtube", "Title", "Caption", None)
+
+    # Delete job
+    assert q.delete_job(job_id) is True
+
+    # Verify all tables are cleared of this job
+    with db.transaction(immediate=True) as conn:
+        assert conn.execute("SELECT COUNT(*) as cnt FROM processing_jobs WHERE id = ?", (job_id,)).fetchone()["cnt"] == 0
+        assert conn.execute("SELECT COUNT(*) as cnt FROM clip_moments WHERE job_id = ?", (job_id,)).fetchone()["cnt"] == 0
+        assert conn.execute("SELECT COUNT(*) as cnt FROM rendered_clips WHERE job_id = ?", (job_id,)).fetchone()["cnt"] == 0
+        assert conn.execute("SELECT COUNT(*) as cnt FROM published_posts WHERE rendered_clip_id = 'clip_del_1'").fetchone()["cnt"] == 0

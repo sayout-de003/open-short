@@ -17,6 +17,15 @@ class JobStatus(str, Enum):
     PUBLISHED = "PUBLISHED"
     FAILED = "FAILED"
 
+    @classmethod
+    def _missing_(cls, value):
+        if isinstance(value, str):
+            val_upper = value.strip().upper()
+            for member in cls:
+                if member.value == val_upper or member.name == val_upper:
+                    return member
+        return super()._missing_(value)
+
 
 VALID_TRANSITIONS: Dict[JobStatus, Set[JobStatus]] = {
     JobStatus.DISCOVERED: {JobStatus.QUEUED, JobStatus.FAILED},

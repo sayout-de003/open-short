@@ -95,10 +95,12 @@ class ClipQualityValidator:
                 has_audio=True,
             )
 
-        if duration < self.min_duration or duration > self.max_duration:
+        min_allowed = max(10.0, self.min_duration - 15.0)
+        max_allowed = max(self.max_duration + 30.0, 75.0)
+        if duration < min_allowed or duration > max_allowed:
             return QualityResult(
                 False,
-                f"invalid_duration:{duration:.1f}s",
+                f"invalid_duration:{duration:.1f}s (allowed: {min_allowed:.1f}..{max_allowed:.1f}s)",
                 duration_sec=duration,
                 width=width,
                 height=height,

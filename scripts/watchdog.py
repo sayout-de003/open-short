@@ -79,22 +79,34 @@ def check_and_heal():
     try:
         from autopilot.database import AutopilotDatabase
         from autopilot.config import AutopilotConfig
+        from autopilot.models import JobStatus
         cfg = AutopilotConfig.from_env()
         if cfg.database_path.exists():
             db = AutopilotDatabase(cfg.database_path)
             with db.transaction() as conn:
                 stale = conn.execute("""
                     SELECT COUNT(*) as cnt FROM processing_jobs 
-                    WHERE status = 'claimed' AND locked_at < datetime('now', '-30 minutes')
+                    WHERE (status = 'claimed' OR UPPER(status) = 'PROCESSING')
+                      AND locked_at < datetime('now', '-30 minutes')
                 """).fetchone()
                 if stale and stale["cnt"] > 0:
                     conn.execute("""
-                        UPDATE processing_jobs SET status = 'queued', locked_at = NULL, worker_id = NULL
-                        WHERE status = 'claimed' AND locked_at < datetime('now', '-30 minutes')
+                        UPDATE processing_jobs 
+                        SET status = 'QUEUED', locked_at = NULL, worker_id = NULL
+                        WHERE (status = 'claimed' OR UPPER(status) = 'PROCESSING')
+                          AND locked_at < datetime('now', '-30 minutes')
                     """)
-                    log(f"♻️ Watchdog recovered {stale['cnt']} stale processing jobs.")
+                    log(f"♻️ Watchdog recovered {stale['cnt']} stale processing jobs to QUEUED.")
+
+                # If there are queued jobs waiting, trigger orchestrator run
+                queued = conn.execute("SELECT COUNT(*) as cnt FROM processing_jobs WHERE UPPER(status) = 'QUEUED'").fetchone()
+                if queued and queued["cnt"] > 0:
+                    log(f"⚡ Watchdog found {queued['cnt']} queued jobs waiting. Triggering queue processing...")
+                    from autopilot.orchestrator import AutopilotOrchestrator
+                    orch = AutopilotOrchestrator(cfg)
+                    orch.run_once()
     except Exception as e:
-        log(f"⚠️ Stale jobs check note: {e}")
+        log(f"⚠️ Autopilot watchdog check note: {e}")
 
     log("🏁 Watchdog check complete.\n")
 

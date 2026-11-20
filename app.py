@@ -7353,7 +7353,7 @@ async def list_projects_endpoint():
 
 @app.delete("/api/projects/{job_id}")
 async def delete_project_endpoint(job_id: str):
-    """Delete a project folder and its associated upload files."""
+    """Delete a project folder and its associated upload files and database records."""
     safe_id = os.path.basename(job_id.strip())
     if not safe_id or safe_id in (".", ".."):
         raise HTTPException(status_code=400, detail="Invalid job ID")
@@ -7372,6 +7372,32 @@ async def delete_project_endpoint(job_id: str):
             pass
 
     jobs.pop(safe_id, None)
+
+    # Also clean up from Autopilot database if present
+    try:
+        orch = _get_autopilot_orch()
+        orch.delete_job(safe_id)
+    except Exception as e:
+        logger.warning(f"Autopilot db cleanup on delete {safe_id}: {e}")
+
+    return {"success": True, "job_id": safe_id, "deleted": deleted}
+
+
+@app.delete("/api/autopilot/jobs/{job_id}")
+async def api_autopilot_delete_job(job_id: str, request: Request):
+    """Cancel or delete an autopilot job and all its rendered clips."""
+    _require_autopilot_auth(request)
+    safe_id = os.path.basename(job_id.strip())
+    if not safe_id or safe_id in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid job ID")
+
+    target_dir = os.path.join(OUTPUT_DIR, safe_id)
+    if os.path.exists(target_dir):
+        shutil.rmtree(target_dir, ignore_errors=True)
+
+    jobs.pop(safe_id, None)
+    orch = _get_autopilot_orch()
+    deleted = orch.delete_job(safe_id)
     return {"success": True, "job_id": safe_id, "deleted": deleted}
 
 
@@ -12522,23 +12548,27 @@ async def api_autopilot_clip_source(req: Dict[str, Any], request: Request):
         """, (platform, source_id, raw_type, url, title, req.get("channel_id", "ch"), req.get("channel_name", "Streamer"), game_name))
         src_row = conn.execute("SELECT id FROM discovered_sources WHERE platform=? AND source_id=?", (platform, source_id)).fetchone()
         src_pk = src_row["id"] if src_row else 1
+        from autopilot.models import JobStatus
         conn.execute("""
             INSERT INTO processing_jobs (id, source_pk, platform, source_id, job_type, status, priority, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'queued', 10.0, datetime('now'), datetime('now'))
-        """, (job_id, src_pk, platform, source_id, jtype))
+            VALUES (?, ?, ?, ?, ?, ?, 10.0, datetime('now'), datetime('now'))
+        """, (job_id, src_pk, platform, source_id, jtype, JobStatus.QUEUED.value))
 
-    # Trigger orchestrator run in background
+    # Trigger real-time worker execution in background
     async def _run_worker(jid: str, qname: str):
         try:
-            await asyncio.to_thread(orch.run_once, query=qname)
+            logger.info(f"⚡ Autopilot: Starting real-time clipping for job {jid} ({qname})")
+            if jid in jobs:
+                jobs[jid]["status"] = "processing"
+            approved, scheduled = await asyncio.to_thread(orch.process_job_by_id, jid)
+            logger.info(f"✅ Autopilot: Finished job {jid}: {approved} clips approved, {scheduled} auto-posted")
+            if jid in jobs:
+                jobs[jid]["status"] = "completed" if approved > 0 else "failed"
         except Exception as e:
-            logger.warning(f"Autopilot background run error for {jid}: {e}")
+            logger.warning(f"❌ Autopilot background run error for {jid}: {e}")
             if jid in jobs:
                 jobs[jid]["status"] = "failed"
                 jobs[jid]["error"] = str(e)
-        else:
-            if jid in jobs:
-                jobs[jid]["status"] = "completed"
 
     asyncio.create_task(_run_worker(job_id, game_name))
     return {

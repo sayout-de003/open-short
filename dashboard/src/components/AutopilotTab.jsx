@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Rocket, Youtube, Twitch, Loader2, RefreshCw, Play, CheckCircle2, AlertTriangle,
   Clock, Scissors, Send, ExternalLink, FolderOpen, Lock, Radio, Gamepad2, Search,
-  Download, Sparkles, Check, ChevronRight, Eye, ShieldCheck, Flame, ArrowUpRight
+  Download, Sparkles, Check, ChevronRight, Eye, ShieldCheck, Flame, ArrowUpRight, Trash2
 } from 'lucide-react';
 import { apiJson, openQuotaWall } from '../lib/api';
 import { getApiUrl } from '../config';
@@ -146,6 +146,22 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
     } finally {
       setClippingSourceId(null);
     }
+  };
+
+  // Cancel or delete an active/queued job
+  const handleCancelJob = async (jobId) => {
+    if (!window.confirm("Cancel and delete this clipping job?")) return;
+    try {
+      await apiJson(`/api/autopilot/jobs/${jobId}`, { method: 'DELETE' });
+    } catch (err) {
+      try {
+        await apiJson(`/api/projects/${jobId}`, { method: 'DELETE' });
+      } catch (_) {}
+    }
+    setActiveJobs(prev => prev.filter(j => j.id !== jobId));
+    setTimeout(() => {
+      fetchJobs();
+    }, 400);
   };
 
   // Publish a reel to YouTube Shorts manually / on demand
@@ -436,12 +452,12 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
             </div>
 
             {/* Active Running/Queued Jobs Card */}
-            {activeJobs.filter(j => ['queued', 'claimed', 'processing', 'running'].includes(j.status)).length > 0 && (
+            {activeJobs.filter(j => ['queued', 'claimed', 'processing', 'running'].includes((j.status || '').toLowerCase())).length > 0 && (
               <div className="p-3.5 bg-paper2/90 border border-sky-500/30 rounded-card space-y-2.5 mb-4 animate-fade shadow-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
                     <Loader2 size={12} className="animate-spin text-sky-400" />
-                    Clipping In Progress ({activeJobs.filter(j => ['queued', 'claimed', 'processing', 'running'].includes(j.status)).length})
+                    Clipping In Progress ({activeJobs.filter(j => ['queued', 'claimed', 'processing', 'running'].includes((j.status || '').toLowerCase())).length})
                   </span>
                   <a
                     href="#app?tab=history"
@@ -452,7 +468,7 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
                   </a>
                 </div>
                 <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
-                  {activeJobs.filter(j => ['queued', 'claimed', 'processing', 'running'].includes(j.status)).map(j => (
+                  {activeJobs.filter(j => ['queued', 'claimed', 'processing', 'running'].includes((j.status || '').toLowerCase())).map(j => (
                     <div key={j.id} className="p-2.5 rounded bg-paper border border-rule flex items-center justify-between gap-3 text-xs">
                       <div className="min-w-0 flex-1">
                         <p className="font-medium text-ink truncate">{j.title || j.source_id || j.id}</p>
@@ -462,9 +478,18 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
                           <span>{j.created_at}</span>
                         </p>
                       </div>
-                      <span className="shrink-0 bg-sky-500/10 text-sky-400 border border-sky-500/20 text-[10px] py-0.5 px-2 rounded-full flex items-center gap-1">
-                        <Loader2 size={9} className="animate-spin" /> {j.status}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="bg-sky-500/10 text-sky-400 border border-sky-500/20 text-[10px] py-0.5 px-2 rounded-full flex items-center gap-1">
+                          <Loader2 size={9} className="animate-spin" /> {(j.status || '').toLowerCase()}
+                        </span>
+                        <button
+                          onClick={() => handleCancelJob(j.id)}
+                          className="p-1 rounded text-muted hover:text-red-400 hover:bg-paper2 transition-colors"
+                          title="Cancel and remove this job"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

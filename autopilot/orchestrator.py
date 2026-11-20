@@ -257,6 +257,20 @@ class AutopilotOrchestrator:
             logger.error("Job %s failed: %s", job.id, exc)
             return 0, 0
 
+    def process_job_by_id(self, job_id: str) -> tuple[int, int]:
+        """Atomically claim and immediately execute a specific enqueued job."""
+        run_id = f"manual_{uuid.uuid4().hex[:8]}"
+        job = self.queue.claim_job_by_id(job_id, worker_id=run_id)
+        if not job:
+            logger.info("Job %s could not be claimed (already processing or missing)", job_id)
+            return 0, 0
+        is_live = (job.job_type in ("live", "live_stream"))
+        return self._execute_job(job, is_live=is_live)
+
+    def delete_job(self, job_id: str) -> bool:
+        """Remove a job from the database."""
+        return self.queue.delete_job(job_id)
+
     def _finish_run(self, run_id: str, status: str, stats: Dict[str, Any], error: Optional[str] = None) -> None:
         with self.db.transaction(immediate=True) as conn:
             conn.execute(

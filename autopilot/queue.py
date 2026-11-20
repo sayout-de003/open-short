@@ -114,21 +114,21 @@ class PersistentQueue:
         with self.db.transaction(immediate=True) as conn:
             if job_type in ("vod", "vod_clip"):
                 type_clause = "AND job_type IN ('vod', 'vod_clip')"
-                params = [JobStatus.QUEUED.value, now_iso]
+                params = [now_iso]
             elif job_type in ("live", "live_stream"):
                 type_clause = "AND job_type IN ('live', 'live_stream')"
-                params = [JobStatus.QUEUED.value, now_iso]
+                params = [now_iso]
             elif job_type:
                 type_clause = "AND job_type = ?"
-                params = [JobStatus.QUEUED.value, now_iso, job_type]
+                params = [now_iso, job_type]
             else:
                 type_clause = ""
-                params = [JobStatus.QUEUED.value, now_iso]
+                params = [now_iso]
 
             row = conn.execute(
                 f"""
                 SELECT * FROM processing_jobs
-                WHERE status = ?
+                WHERE (status = 'QUEUED' OR UPPER(status) = 'QUEUED')
                   AND is_permanent_failure = 0
                   AND (next_retry_at IS NULL OR next_retry_at <= ?)
                   {type_clause}
@@ -146,7 +146,7 @@ class PersistentQueue:
                 """
                 UPDATE processing_jobs
                 SET status = ?, locked_at = ?, worker_id = ?, attempt_count = attempt_count + 1, updated_at = ?
-                WHERE id = ? AND status = ?
+                WHERE id = ? AND (status = ? OR UPPER(status) = 'QUEUED')
                 """,
                 (
                     JobStatus.PROCESSING.value,
@@ -154,7 +154,7 @@ class PersistentQueue:
                     worker_id,
                     now_iso,
                     row["id"],
-                    JobStatus.QUEUED.value,
+                    row["status"],
                 ),
             )
             if updated.rowcount != 1:
@@ -162,6 +162,56 @@ class PersistentQueue:
 
             claimed = conn.execute("SELECT * FROM processing_jobs WHERE id = ?", (row["id"],)).fetchone()
             return self._row_to_job(claimed)
+
+    def claim_job_by_id(self, job_id: str, worker_id: str) -> Optional[ProcessingJob]:
+        """Atomically claim a specific job by ID if in QUEUED state."""
+        now_iso = _utc_iso()
+        with self.db.transaction(immediate=True) as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM processing_jobs
+                WHERE id = ?
+                  AND (status = 'QUEUED' OR UPPER(status) = 'QUEUED')
+                LIMIT 1
+                """,
+                (job_id,),
+            ).fetchone()
+
+            if row is None:
+                return None
+
+            validate_transition(row["status"], JobStatus.PROCESSING)
+            updated = conn.execute(
+                """
+                UPDATE processing_jobs
+                SET status = ?, locked_at = ?, worker_id = ?, attempt_count = attempt_count + 1, updated_at = ?
+                WHERE id = ? AND (status = ? OR UPPER(status) = 'QUEUED')
+                """,
+                (
+                    JobStatus.PROCESSING.value,
+                    now_iso,
+                    worker_id,
+                    now_iso,
+                    job_id,
+                    row["status"],
+                ),
+            )
+            if updated.rowcount != 1:
+                return None
+            claimed = conn.execute("SELECT * FROM processing_jobs WHERE id = ?", (job_id,)).fetchone()
+            return self._row_to_job(claimed)
+
+    def delete_job(self, job_id: str) -> bool:
+        """Completely remove a job and its associated clips and published records."""
+        with self.db.transaction(immediate=True) as conn:
+            conn.execute(
+                "DELETE FROM published_posts WHERE rendered_clip_id IN (SELECT id FROM rendered_clips WHERE job_id = ?)",
+                (job_id,),
+            )
+            conn.execute("DELETE FROM rendered_clips WHERE job_id = ?", (job_id,))
+            conn.execute("DELETE FROM clip_moments WHERE job_id = ?", (job_id,))
+            res = conn.execute("DELETE FROM processing_jobs WHERE id = ?", (job_id,))
+            return res.rowcount > 0
 
     def transition_job(
         self,

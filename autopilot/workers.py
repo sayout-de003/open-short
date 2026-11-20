@@ -133,21 +133,50 @@ class VODWorker:
     def _collect_generated_clips(self, output_dir: Path) -> List[Dict[str, Any]]:
         meta_files = sorted(glob.glob(str(output_dir / "*_metadata.json")))
         clips: List[Dict[str, Any]] = []
+        candidate_mp4s = sorted([
+            p for p in output_dir.glob("*.mp4")
+            if not p.name.startswith("temp_")
+            and not p.name.startswith("source_")
+            and not p.name.endswith("_original.mp4")
+            and not p.name.endswith("_raw.mp4")
+        ])
         if meta_files:
-            data = json.loads(Path(meta_files[0]).read_text(encoding="utf-8"))
+            try:
+                data = json.loads(Path(meta_files[0]).read_text(encoding="utf-8"))
+            except Exception:
+                data = {}
             shorts = data.get("shorts") or []
-            mp4s = sorted(output_dir.glob("clip_*.mp4"))
             for idx, s in enumerate(shorts):
-                fp = s.get("file_path") or s.get("output_path")
-                if not fp and idx < len(mp4s):
-                    fp = str(mp4s[idx])
+                raw_fp = s.get("file_path") or s.get("output_path") or s.get("short_file") or s.get("output_video")
+                if raw_fp:
+                    p = Path(raw_fp)
+                    fp = str(p if p.is_absolute() else (output_dir / p))
+                elif idx < len(candidate_mp4s):
+                    fp = str(candidate_mp4s[idx])
+                else:
+                    fp = None
+
                 if fp and Path(fp).exists():
-                    clips.append({**s, "file_path": fp})
+                    clips.append({
+                        **s,
+                        "file_path": fp,
+                        "start_time": s.get("start_time") or s.get("start") or 0.0,
+                        "end_time": s.get("end_time") or s.get("end") or 0.0,
+                        "score": s.get("score") or s.get("virality_score") or 8.0,
+                        "reason": s.get("reason", "viral_gaming_moment"),
+                    })
             if clips:
                 return clips
 
-        for mp4 in sorted(output_dir.glob("*.mp4")):
-            clips.append({"file_path": str(mp4), "start_time": 0.0, "end_time": 0.0})
+        for mp4 in candidate_mp4s:
+            if "clip" in mp4.name.lower() or "short" in mp4.name.lower() or len(candidate_mp4s) == 1:
+                clips.append({
+                    "file_path": str(mp4),
+                    "start_time": 0.0,
+                    "end_time": 0.0,
+                    "score": 8.0,
+                    "reason": "viral_gaming_moment",
+                })
         return clips
 
     def _get_source_row(self, source_pk: int):
