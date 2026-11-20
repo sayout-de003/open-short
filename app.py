@@ -5011,6 +5011,28 @@ def _finish_job(job_id, returncode, output_dir):
                         f"⚠️ {missing} of {len(clips)} clips failed to render.")
                 jobs[job_id]['result'] = {'clips': rendered, 'cost_analysis': cost_analysis}
 
+                # Zero-Touch Direct YouTube Publishing
+                if youtube_publisher.is_direct_youtube_configured():
+                    for clip in (rendered or []):
+                        if not clip.get('youtube_published') and not clip.get('youtube_url'):
+                            try:
+                                clip_info, file_path, filename = _resolve_clip_video_file(jobs[job_id], job_id, clip.get('clip_index', 0))
+                                final_title = clip.get('video_title_for_youtube_short') or clip.get('title', 'Viral Short')
+                                final_description = clip.get('video_description_for_instagram') or clip.get('video_description_for_tiktok') or f"{final_title} #shorts"
+                                logger.info(f"📡 [Zero-Touch] Auto-uploading clip to YouTube: {filename}...")
+                                yt_res = await asyncio.to_thread(
+                                    youtube_publisher.upload_video_to_youtube,
+                                    file_path=file_path,
+                                    title=final_title,
+                                    description=final_description,
+                                )
+                                if yt_res.get("success"):
+                                    clip['youtube_published'] = True
+                                    clip['youtube_url'] = yt_res.get('url')
+                                    jobs[job_id]['logs'].append(f"🎉 Auto-posted clip to YouTube Shorts: {yt_res.get('url')}")
+                            except Exception as yt_err:
+                                jobs[job_id]['logs'].append(f"⚠️ Direct YouTube auto-post warning: {yt_err}")
+
                 # Zero-Touch Autonomous Buffer Publishing
                 if jobs[job_id].get('autopost_buffer'):
                     try:
@@ -6265,6 +6287,7 @@ async def process_endpoint(
     buffer_platforms: Optional[str] = Form(None),
     scheduling_mode: Optional[str] = Form(None),
     posts_per_day: Optional[str] = Form(None),
+    live_chat_hype: Optional[str] = Form(None),
 ):
     api_key = await resolve_gemini(request)
     if not api_key and not (llm_backend.active() and not BILLING_ENABLED):
@@ -6308,6 +6331,7 @@ async def process_endpoint(
         buffer_platforms = body.get("buffer_platforms")
         scheduling_mode = body.get("scheduling_mode")
         posts_per_day = body.get("posts_per_day")
+        live_chat_hype = body.get("live_chat_hype") or live_chat_hype
         template_id = body.get("template_id") or template_id
 
     # Autopost and scheduling settings
@@ -6500,6 +6524,16 @@ async def process_endpoint(
         if auto_hook_style in HOOK_STYLES:
             env["AUTO_HOOK_STYLE"] = auto_hook_style
         print(f"[auto-hook] job={job_id} style={env.get('AUTO_HOOK_STYLE', 'classic')}")
+
+    # Live chat sentiment hype auto-clipping (enabled by default for live streams)
+    if live_chat_hype is not None and str(live_chat_hype).lower() in ("0", "false", "no"):
+        env["LIVE_CHAT_HYPE"] = "0"
+    else:
+        env["LIVE_CHAT_HYPE"] = "1"
+
+    # Direct YouTube Auto-Posting
+    if youtube_publisher.is_direct_youtube_configured():
+        env["YOUTUBE_AUTO_POST"] = "1"
 
     # Manual generation controls (discussion #65): optional clip-count target
     # and duration band, forwarded to the selection prompts via the same env

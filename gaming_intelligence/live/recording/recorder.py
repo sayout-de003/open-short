@@ -39,7 +39,7 @@ class SegmentedStreamRecorder:
 
     def _spawn_ffmpeg(self, stream_url: str) -> subprocess.Popen:
         segment_pattern = os.path.join(self.buffer.buffer_dir, "seg_%05d.ts")
-        ffmpeg_bin = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+        ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
         start_num = max(0, self._last_detected_idx + 1)
         input_opts = [
             "-fflags", "+nobuffer+genpts",

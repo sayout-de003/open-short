@@ -120,7 +120,61 @@ class YouTubeChatListener:
             logger.warning(f"Error fetching YouTube live chat messages: {e}")
             return []
 
+    def _run_pytchat_sync(self):
+        """Streams public YouTube live chat using pytchat in a background worker."""
+        import time
+        try:
+            import pytchat
+        except ImportError:
+            logger.warning("pytchat is not installed; public live chat streaming disabled.")
+            return
+
+        logger.info(f"Connecting pytchat listener to YouTube stream {self.video_id}...")
+        try:
+            chat = pytchat.create(video_id=self.video_id)
+            while self._running and chat.is_alive():
+                data = chat.get()
+                for c in data.sync_items():
+                    if not self._running:
+                        break
+                    is_sub = False
+                    author_badges = getattr(c.author, "badges", []) or []
+                    if author_badges:
+                        is_sub = any("member" in str(b).lower() or "sponsor" in str(b).lower() for b in author_badges)
+                    amount = 0.0
+                    if getattr(c, "amountValue", 0.0):
+                        try:
+                            amount = float(c.amountValue)
+                        except (ValueError, TypeError):
+                            pass
+                    msg = ChatMessage(
+                        user_id=getattr(c.author, "name", None) or getattr(c.author, "channelId", "anon"),
+                        text=c.message or "",
+                        platform=Platform.YOUTUBE,
+                        timestamp=time.time(),
+                        is_subscriber=is_sub,
+                        bits_or_superchat=amount,
+                    )
+                    try:
+                        self.on_message(msg)
+                    except Exception as m_err:
+                        logger.debug(f"on_message callback error: {m_err}")
+                time.sleep(self.poll_interval)
+        except Exception as e:
+            logger.warning(f"pytchat stream ended or encountered error: {e}")
+
     async def _poll_loop(self):
+        # Prefer pytchat when API key is omitted or as primary lightweight stream
+        if not self.api_key:
+            loop = asyncio.get_running_loop()
+            try:
+                await loop.run_in_executor(None, self._run_pytchat_sync)
+                return
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.warning(f"pytchat run error: {e}")
+
         if self.api_key:
             self._live_chat_id = await self._resolve_live_chat_id()
 

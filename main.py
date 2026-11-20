@@ -3362,6 +3362,143 @@ def analyze_and_detect_clips(input_video, duration, viewer_clips=None,
     return clips_data
 
 
+def _maybe_autopost_short(short_dict: dict, output_dir: str):
+    """Optionally uploads a rendered short to YouTube Shorts if direct publishing credentials exist."""
+    try:
+        import youtube_publisher
+        can_post = youtube_publisher.is_direct_youtube_configured() or os.environ.get("YOUTUBE_AUTO_POST", "0") in ("1", "true", "yes")
+        if not can_post:
+            return
+        if short_dict.get("youtube_published") or short_dict.get("youtube_url"):
+            return
+        short_file = short_dict.get("short_file") or short_dict.get("output_video")
+        if not short_file:
+            return
+        full_path = short_file if os.path.isabs(short_file) else os.path.join(output_dir, short_file)
+        if not os.path.exists(full_path):
+            return
+        title = short_dict.get("video_title_for_youtube_short") or short_dict.get("title") or "Viral Short"
+        desc = (
+            short_dict.get("video_description_for_instagram") or
+            short_dict.get("video_description_for_tiktok") or
+            f"{title} #shorts #viral"
+        )
+        print(f"🚀 [Auto-Post] Uploading Short to YouTube: {os.path.basename(full_path)}...", flush=True)
+        res = youtube_publisher.upload_video_to_youtube(
+            file_path=full_path,
+            title=title,
+            description=desc,
+        )
+        if res.get("success"):
+            short_dict["youtube_published"] = True
+            short_dict["youtube_url"] = res.get("url")
+            short_dict["youtube_id"] = res.get("video_id")
+            print(f"🎉 [Auto-Post] Successfully published to YouTube! URL: {res.get('url')}", flush=True)
+        else:
+            print(f"⚠️ [Auto-Post] YouTube upload returned: {res.get('error')}", flush=True)
+    except Exception as e:
+        print(f"⚠️ [Auto-Post] YouTube upload warning: {e}", flush=True)
+
+
+class _LiveChatHypeMonitor:
+    """Monitors YouTube live chat sentiment & superchats in background, cutting 25s pre-roll + 10s post-roll reels."""
+
+    def __init__(self, stream_url: str, output_dir: str, video_title: str, metadata_file: str, all_shorts_ref: list, lock):
+        self.stream_url = stream_url
+        self.output_dir = output_dir
+        self.video_title = video_title
+        self.metadata_file = metadata_file
+        self.all_shorts = all_shorts_ref
+        self.lock = lock
+        self.pipeline = None
+        self.thread = None
+        self.loop = None
+        self.running = False
+
+    def start(self):
+        import threading
+        self.running = True
+        self.thread = threading.Thread(target=self._run, daemon=True, name="LiveChatHypeWorker")
+        self.thread.start()
+
+    def _run(self):
+        import asyncio
+        from gaming_intelligence.live.pipeline import LiveHypePipeline
+        from gaming_intelligence.live.models import ClipJob
+
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
+        buffer_dir = os.path.join(self.output_dir, ".live_chat_buffer")
+        live_shorts_dir = os.path.join(self.output_dir, "hype_shorts")
+        os.makedirs(live_shorts_dir, exist_ok=True)
+
+        self.pipeline = LiveHypePipeline(
+            buffer_dir=buffer_dir,
+            output_dir=live_shorts_dir,
+            pre_roll_sec=25.0,
+            post_roll_sec=10.0,
+        )
+
+        orig_on_ready = self.pipeline._on_clip_ready
+
+        def _handle_clip_ready(job: ClipJob):
+            orig_on_ready(job)
+            try:
+                rel_short_file = os.path.relpath(job.final_path, self.output_dir)
+                clip_data = {
+                    "start": round(max(0.0, job.event.stream_timestamp - 25.0), 2),
+                    "end": round(job.event.stream_timestamp + 10.0, 2),
+                    "duration": round(job.duration, 2),
+                    "video_title_for_youtube_short": f"🔥 {self.video_title} - Peak Moment",
+                    "video_description_for_instagram": f"Unreal live moment from {self.video_title}! #shorts #live #viral",
+                    "video_description_for_tiktok": f"Unreal live moment! #shorts #live #viral",
+                    "short_file": rel_short_file,
+                    "virality_score": min(9.9, max(7.5, round(6.0 + (job.event.hype_score or 2.0), 1))),
+                    "caption": f"⚡ Live Chat Hype Burst",
+                    "reason": f"Chat sentiment explosion: {job.event.top_keywords or 'High velocity'}",
+                    "live_chat_hype": True,
+                }
+                with self.lock:
+                    self.all_shorts.append(clip_data)
+                    _maybe_autopost_short(clip_data, self.output_dir)
+                    if self.metadata_file:
+                        try:
+                            write_json_atomic(self.metadata_file, {
+                                "shorts": self.all_shorts,
+                                "source_video": self.video_title,
+                                "output_format": "9:16",
+                            }, indent=2)
+                        except Exception as w_err:
+                            print(f"⚠️ Error updating metadata.json: {w_err}", flush=True)
+            except Exception as e:
+                print(f"⚠️ Live chat hype clip callback error: {e}", flush=True)
+
+        self.pipeline.scheduler.on_clip_ready = _handle_clip_ready
+
+        api_key = os.environ.get("YOUTUBE_API_KEY")
+        try:
+            print(f"⚡ [Live Chat Hype] Starting real-time chat sentiment monitor for {self.stream_url}...", flush=True)
+            self.loop.run_until_complete(
+                self.pipeline.start_youtube(self.stream_url, api_key=api_key)
+            )
+            while self.running:
+                self.loop.run_until_complete(asyncio.sleep(1.0))
+        except Exception as e:
+            print(f"ℹ️ [Live Chat Hype] Monitor loop ended or caught: {e}", flush=True)
+        finally:
+            try:
+                self.loop.run_until_complete(self.pipeline.stop())
+            except Exception:
+                pass
+            self.loop.close()
+
+    def stop(self):
+        self.running = False
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=3.0)
+
+
 def render_clips_for_dataset(clips_data, input_video, video_title, output_dir, output_format,
                             source_subtitle_band=None, global_start_index=0,
                             metadata_file=None, existing_clips=None):
@@ -3800,6 +3937,27 @@ if __name__ == '__main__':
                     metadata_file=metadata_file, existing_clips=[]
                 )
                 all_shorts.extend(rendered)
+                for r in rendered:
+                    _maybe_autopost_short(r, output_dir)
+
+            hype_monitor = None
+            if continuous_mode and args.url and os.environ.get("LIVE_CHAT_HYPE", "1") in ("1", "true", "yes"):
+                import threading
+                hype_lock = threading.Lock()
+                try:
+                    hype_monitor = _LiveChatHypeMonitor(
+                        stream_url=args.url,
+                        output_dir=output_dir,
+                        video_title=video_title,
+                        metadata_file=metadata_file,
+                        all_shorts_ref=all_shorts,
+                        lock=hype_lock,
+                    )
+                    hype_monitor.start()
+                    print(f"⚡ [Live Chat Hype] Sentiment and superchat clipping monitor active for {args.url}", flush=True)
+                except Exception as hm_err:
+                    print(f"⚠️ [Live Chat Hype] Startup warning: {hm_err}", flush=True)
+                    hype_monitor = None
 
             # 2. If continuous live mode, loop until live broadcast ends
             if continuous_mode and args.url:
@@ -3868,6 +4026,8 @@ if __name__ == '__main__':
                             metadata_file=metadata_file, existing_clips=all_shorts
                         )
                         all_shorts.extend(rendered)
+                        for r in rendered:
+                            _maybe_autopost_short(r, output_dir)
 
                     if not args.keep_original and os.path.exists(chunk_file):
                         try:
@@ -3877,6 +4037,11 @@ if __name__ == '__main__':
 
                     cycle += 1
         finally:
+            if 'hype_monitor' in locals() and hype_monitor is not None:
+                try:
+                    hype_monitor.stop()
+                except Exception:
+                    pass
             if producer is not None:
                 producer.cleanup()
 

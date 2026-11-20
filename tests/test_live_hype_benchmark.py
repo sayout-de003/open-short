@@ -20,7 +20,8 @@ from gaming_intelligence.live.models import ChatMessage, Platform
 async def test_live_pipeline_e2e_benchmark(tmp_path):
     buffer_dir = str(tmp_path / "buffer")
     output_dir = str(tmp_path / "output")
-    ffmpeg_bin = "/opt/homebrew/bin/ffmpeg"
+    import shutil
+    ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
 
     # 1. Initialize Pipeline with fast pre-roll/post-roll for testing
     pipeline = LiveHypePipeline(

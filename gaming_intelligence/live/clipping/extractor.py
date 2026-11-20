@@ -21,7 +21,7 @@ class FastClipExtractor:
     def __init__(self, output_dir: str):
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
-        self.ffmpeg_bin = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+        self.ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
 
     def extract_draft_preview(
         self,

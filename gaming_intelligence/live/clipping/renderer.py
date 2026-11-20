@@ -17,21 +17,23 @@ logger = logging.getLogger("live.renderer")
 
 def detect_best_encoder(ffmpeg_bin: str) -> List[str]:
     """Detects available hardware-accelerated H.264 encoder in priority order."""
-    try:
-        res = subprocess.run(
-            [ffmpeg_bin, "-encoders"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True
-        )
-        output = res.stdout.lower()
+    def _test_encoder(enc: str) -> bool:
+        try:
+            r = subprocess.run(
+                [ffmpeg_bin, "-y", "-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.05", "-c:v", enc, "-f", "null", "-"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            return r.returncode == 0
+        except Exception:
+            return False
 
+    try:
         # 1. macOS VideoToolbox
-        if sys.platform == "darwin" and "h264_videotoolbox" in output:
+        if sys.platform == "darwin" and _test_encoder("h264_videotoolbox"):
             return ["-c:v", "h264_videotoolbox", "-b:v", "6000k"]
 
         # 2. Linux / Windows NVIDIA NVENC
-        if "h264_nvenc" in output:
+        if _test_encoder("h264_nvenc"):
             return ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-b:v", "6000k"]
 
     except Exception:
@@ -47,7 +49,7 @@ class FastVerticalRenderer:
     def __init__(self, output_dir: str):
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
-        self.ffmpeg_bin = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+        self.ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
         self.encoder_args = detect_best_encoder(self.ffmpeg_bin)
         logger.info(f"Video Encoder selected for Stage B: {' '.join(self.encoder_args)}")
 

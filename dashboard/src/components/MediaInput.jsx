@@ -117,6 +117,11 @@ export default function MediaInput({
     const [autoHook, setAutoHook] = useState(() => {
         try { return localStorage.getItem('os_auto_hook') !== '0'; } catch { return true; }
     });
+    // Live Chat Hype: cut reels from live chat sentiment bursts (W, L, OMG, KEKW, Superchats).
+    // On by default; user can uncheck in advanced options if they want.
+    const [liveChatHype, setLiveChatHype] = useState(() => {
+        try { return localStorage.getItem('os_live_chat_hype') !== '0'; } catch { return true; }
+    });
     const [autoHookStyle, setAutoHookStyle] = useState(() => {
         // v2 key: the default became 'pill'; an old saved 'classic' was just the old default.
         try { return localStorage.getItem('os_auto_hook_style_v2') || 'pill'; } catch { return 'pill'; }
@@ -265,6 +270,7 @@ export default function MediaInput({
             clipMaxSeconds: clipMaxSeconds || null,
             autoHook,
             autoHookStyle,
+            liveChatHype,
             layout,
             templateId: templateId || null,
             clipping_profile: clippingProfile,
@@ -274,6 +280,7 @@ export default function MediaInput({
         try {
             localStorage.setItem('os_auto_hook', autoHook ? '1' : '0');
             localStorage.setItem('os_auto_hook_style_v2', autoHookStyle);
+            localStorage.setItem('os_live_chat_hype', liveChatHype ? '1' : '0');
             localStorage.setItem('os_layout', layout);
             localStorage.setItem('os_clipping_profile', clippingProfile);
             localStorage.setItem('os_template_id', templateId || '');
@@ -673,6 +680,17 @@ export default function MediaInput({
                                         <option value="outline_yellow">Outline+</option>
                                     </select>
                                 )}
+                            </div>
+                            <div className="col-span-1 sm:col-span-3 flex items-center justify-between gap-2 pt-2 border-t border-rule">
+                                <label className="flex items-center gap-2 text-xs text-ink2 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={liveChatHype}
+                                        onChange={(e) => setLiveChatHype(e.target.checked)}
+                                        className="w-4 h-4 shrink-0 accent-[var(--color-accent)] cursor-pointer"
+                                    />
+                                    <span>⚡ Live chat hype clipping (auto-cut reels on sentiment spikes & superchats)</span>
+                                </label>
                             </div>
                         </div>
                     )}
