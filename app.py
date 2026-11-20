@@ -23,6 +23,7 @@ import asyncio
 import signal
 import socket
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from dotenv import load_dotenv
 from typing import Any, Dict, Optional, List
 from contextlib import asynccontextmanager, suppress
@@ -4643,6 +4644,38 @@ async def issue_media_token(request: Request):
                         httponly=True, samesite="lax",
                         secure=public.startswith("https://") or request.url.scheme == "https")
     return response
+
+
+@app.get("/videos/autopilot/{clip_id}")
+async def serve_autopilot_clip(clip_id: str):
+    """Serve an approved autopilot MP4 clip by unguessable clip_id for Buffer ingestion."""
+    import re
+    if not re.fullmatch(r"clip_[a-f0-9]{16,64}", clip_id):
+        raise HTTPException(status_code=404, detail="Clip not found")
+    from autopilot.config import AutopilotConfig
+    from autopilot.database import AutopilotDatabase
+
+    cfg = AutopilotConfig.from_env()
+    if not cfg.database_path.exists():
+        raise HTTPException(status_code=404, detail="Clip not found")
+    db = AutopilotDatabase(cfg.database_path)
+    with db.transaction() as conn:
+        row = conn.execute(
+            """
+            SELECT local_path, quality_status, local_deleted_at
+            FROM rendered_clips WHERE id = ?
+            """,
+            (clip_id,),
+        ).fetchone()
+    if not row or row["quality_status"] != "approved" or row["local_deleted_at"]:
+        raise HTTPException(status_code=404, detail="Clip not available")
+
+    clip_path = Path(row["local_path"]).resolve()
+    clips_root = cfg.clips_dir.resolve()
+    if clips_root not in clip_path.parents or not clip_path.is_file():
+        raise HTTPException(status_code=404, detail="Clip file not found")
+
+    return FileResponse(str(clip_path), media_type="video/mp4", filename=f"{clip_id}.mp4")
 
 
 # Mount static files for serving videos. A miss under /videos/<job_id>/ first
@@ -12165,3 +12198,91 @@ async def saasshorts_voices(
         ],
         "source": "defaults",
     }
+
+
+# ---------------------------------------------------------------------------
+# Zero-Touch Gaming Autopilot Control & Observability Endpoints
+# ---------------------------------------------------------------------------
+_autopilot_orch = None
+
+
+def _get_autopilot_orch():
+    global _autopilot_orch
+    if _autopilot_orch is None:
+        from autopilot.config import AutopilotConfig
+        from autopilot.orchestrator import AutopilotOrchestrator
+        _autopilot_orch = AutopilotOrchestrator(AutopilotConfig.from_env())
+    return _autopilot_orch
+
+
+def _require_autopilot_auth(request: Request) -> None:
+    import hmac
+    expected = os.getenv("AUTOPILOT_API_KEY") or os.getenv("ADMIN_API_KEY")
+    if not expected:
+        return  # Local/dev mode when no API key is configured
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.headers.get("X-Autopilot-Key", "").strip()
+    if not token or not hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized autopilot access")
+
+
+@app.get("/api/autopilot/status")
+async def api_autopilot_status(request: Request):
+    _require_autopilot_auth(request)
+    orch = _get_autopilot_orch()
+    return {"paused": orch._paused, **orch.status()}
+
+
+@app.get("/api/autopilot/jobs")
+async def api_autopilot_jobs(request: Request, limit: int = 50):
+    _require_autopilot_auth(request)
+    from autopilot.metrics import list_recent_jobs
+    return {"jobs": list_recent_jobs(_get_autopilot_orch().db, limit=limit)}
+
+
+@app.get("/api/autopilot/clips")
+async def api_autopilot_clips(request: Request, limit: int = 50):
+    _require_autopilot_auth(request)
+    from autopilot.metrics import list_recent_clips
+    return {"clips": list_recent_clips(_get_autopilot_orch().db, limit=limit)}
+
+
+@app.get("/api/autopilot/metrics")
+async def api_autopilot_metrics(request: Request):
+    _require_autopilot_auth(request)
+    orch = _get_autopilot_orch()
+    return orch.status()
+
+
+@app.post("/api/autopilot/run")
+async def api_autopilot_run(request: Request, query: Optional[str] = None, dry_run: bool = False):
+    _require_autopilot_auth(request)
+    orch = _get_autopilot_orch()
+    return await asyncio.to_thread(orch.run_once, query=query, dry_run=dry_run)
+
+
+@app.post("/api/autopilot/pause")
+async def api_autopilot_pause(request: Request):
+    _require_autopilot_auth(request)
+    orch = _get_autopilot_orch()
+    orch._paused = True
+    return {"paused": True}
+
+
+@app.post("/api/autopilot/resume")
+async def api_autopilot_resume(request: Request):
+    _require_autopilot_auth(request)
+    orch = _get_autopilot_orch()
+    orch._paused = False
+    return {"paused": False}
+
+
+@app.post("/api/autopilot/retry/{job_id}")
+async def api_autopilot_retry(job_id: str, request: Request):
+    _require_autopilot_auth(request)
+    orch = _get_autopilot_orch()
+    try:
+        status = orch.recovery.manual_retry(job_id)
+        return {"job_id": job_id, "status": status.value}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Job not found")

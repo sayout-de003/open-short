@@ -14,9 +14,12 @@ import json
 import os
 import time
 import uuid
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-SCHEDULE_FILE = "/root/openshort/output/.scheduled_posts.json"
+BASE_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = Path(os.getenv("OPENSHORT_OUTPUT_DIR", str(BASE_DIR / "output")))
+SCHEDULE_FILE = OUTPUT_DIR / ".scheduled_posts.json"
 _scheduler_task = None
 
 # Peak engagement time windows (UTC): Morning, Afternoon, Evening

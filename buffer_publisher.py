@@ -9,13 +9,15 @@ import os
 import re
 import json
 import logging
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 import requests
 
 logger = logging.getLogger("buffer_publisher")
 
 BUFFER_API_ENDPOINT = "https://api.buffer.com"
-ENV_PATH = "/root/openshort/.env"
+BASE_DIR = Path(__file__).resolve().parent
+ENV_PATH = Path(os.getenv("OPENSHORT_ENV_PATH", str(BASE_DIR / ".env")))
 
 
 def get_buffer_token(env_path: Optional[str] = None) -> Optional[str]:
