@@ -163,7 +163,7 @@ class AutopilotConfig:
             live_clip_cooldown_seconds=_env_int("LIVE_CLIP_COOLDOWN_SECONDS", 180),
             live_monitor_window_minutes=_env_int("LIVE_MONITOR_WINDOW_MINUTES", 60),
             clip_retention_hours=_env_int("CLIP_RETENTION_HOURS", 24),
-            delete_clip_after_publish=_env_bool("DELETE_CLIP_AFTER_PUBLISH", True),
+            delete_clip_after_publish=_env_bool("DELETE_CLIP_AFTER_PUBLISH", False),
             stale_lock_minutes=_env_int("STALE_LOCK_MINUTES", 45),
             max_job_attempts=_env_int("MAX_JOB_ATTEMPTS", 3),
             timezone=os.getenv("AUTOPILOT_TIMEZONE", "UTC").strip() or "UTC",

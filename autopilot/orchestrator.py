@@ -206,16 +206,50 @@ class AutopilotOrchestrator:
             self.queue.transition_job(job.id, JobStatus.UPLOADED)
 
             for idx, (cid, url) in enumerate(verified_urls):
-                if self.config.buffer_enabled:
-                    res = self.publisher.publish_clip(
-                        clip_id=cid,
-                        public_url=url,
-                        source_title=src["title"] if src else "Gaming Highlight",
-                        channel_name=src["channel_name"] if src else "Creator",
-                        game_name=src["game_name"] if src else None,
-                        slot_index=idx,
-                    )
-                    scheduled_count += sum(1 for r in res if "buffer_post_id" in r)
+                # 1. Direct YouTube Shorts auto-post if configured
+                try:
+                    import youtube_publisher
+                    if youtube_publisher.is_direct_youtube_configured():
+                        with self.db.transaction() as conn:
+                            clip_row = conn.execute("SELECT local_path FROM rendered_clips WHERE id = ?", (cid,)).fetchone()
+                        if clip_row and os.path.exists(clip_row["local_path"]):
+                            yt_title = f"{src['title'][:60]} #Shorts" if src else "Gaming Highlight #Shorts"
+                            yt_desc = f"Best gaming clip from {src['channel_name'] if src else 'Streamer'}!\n\n#gaming #shorts #viral #reels"
+                            yt_res = youtube_publisher.upload_video_to_youtube(
+                                file_path=clip_row["local_path"],
+                                title=yt_title,
+                                description=yt_desc,
+                                tags=["gaming", "shorts", "viral", (src["game_name"] if src and src["game_name"] else "gaming")]
+                            )
+                            if yt_res.get("success"):
+                                scheduled_count += 1
+                                post_id = f"post_{uuid.uuid4().hex[:12]}"
+                                with self.db.transaction() as conn:
+                                    conn.execute("""
+                                        INSERT OR REPLACE INTO published_posts 
+                                        (id, rendered_clip_id, buffer_channel_id, platform, operation_id, buffer_post_id, publication_status, published_at, created_at, updated_at)
+                                        VALUES (?, ?, 'youtube_direct', 'youtube', ?, ?, 'sent', datetime('now'), datetime('now'), datetime('now'))
+                                    """, (post_id, cid, yt_res.get("video_id", post_id), yt_res.get("video_id")))
+                            elif yt_res.get("quota_exceeded"):
+                                logger.warning("YouTube 10k quota reached for today. Clip %s saved locally for manual download/posting.", cid)
+                except Exception as ex:
+                    logger.warning("Direct YouTube auto-publish failed for clip %s (clip preserved on disk): %s", cid, ex)
+
+                # 2. Buffer auto-post if enabled
+                if self.config.buffer_enabled and self.config.buffer_access_token:
+                    try:
+                        res = self.publisher.publish_clip(
+                            clip_id=cid,
+                            public_url=url,
+                            source_title=src["title"] if src else "Gaming Highlight",
+                            channel_name=src["channel_name"] if src else "Creator",
+                            game_name=src["game_name"] if src else None,
+                            slot_index=idx,
+                        )
+                        scheduled_count += sum(1 for r in res if "buffer_post_id" in r)
+                    except Exception as e:
+                        logger.warning("Buffer publish skipped/failed for %s (clip safe on disk): %s", cid, e)
+
             self.queue.transition_job(job.id, JobStatus.SCHEDULED)
             return len(clip_ids), scheduled_count
         except Exception as exc:

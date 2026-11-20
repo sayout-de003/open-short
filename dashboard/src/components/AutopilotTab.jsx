@@ -159,6 +159,12 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
           [clipId]: { type: 'success', text: '🎉 Published directly to YouTube Shorts!' },
         }));
         fetchClips();
+      } else if (res.quota_exceeded) {
+        setPublishFeedback((prev) => ({
+          ...prev,
+          [clipId]: { type: 'warning', text: '⚠️ Daily YouTube API quota (10,000 units) reached. Clip is preserved on your server—click Download to post manually.' },
+        }));
+        fetchClips();
       } else {
         setPublishFeedback((prev) => ({
           ...prev,
@@ -524,6 +530,10 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
                             <span className="badge-ok text-[10px] flex items-center gap-1 font-medium">
                               <CheckCircle2 size={12} className="text-emerald-400" /> Posted to YouTube Shorts
                             </span>
+                          ) : clip.publication_status === 'quota_exhausted' ? (
+                            <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] py-0.5 px-2 rounded flex items-center gap-1 font-medium" title="YouTube Data API daily limit reached. Clip preserved locally.">
+                              <Clock size={11} /> 10k Quota Reached — Ready to Download
+                            </span>
                           ) : (
                             <span className="badge-quiet text-[10px] text-amber-400 flex items-center gap-1 font-medium">
                               <Clock size={11} /> Ready to Post
@@ -534,12 +544,13 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
                         {/* Action Buttons */}
                         <div className="flex items-center gap-2">
                           <a
-                            href={clip.video_url ? getApiUrl(clip.video_url) : '#'}
+                            href={clip.video_url ? `${getApiUrl(clip.video_url)}?download=1` : '#'}
                             download={`short_${clip.id}.mp4`}
-                            className="btn-ghost p-1.5 text-xs text-muted hover:text-ink"
-                            title="Download MP4 Reel"
+                            className="btn-ghost py-1 px-2.5 text-xs text-ink hover:text-brass flex items-center gap-1 border border-rule/70 rounded hover:border-brass/40 transition-colors"
+                            title="Download MP4 Reel directly to your computer"
                           >
                             <Download size={13} />
+                            <span>Download</span>
                           </a>
 
                           {!isPosted && (
@@ -567,7 +578,7 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
                       {feedback && (
                         <p
                           className={`text-[11px] mt-1 ${
-                            feedback.type === 'success' ? 'text-emerald-400' : 'text-danger'
+                            feedback.type === 'success' ? 'text-emerald-400' : feedback.type === 'warning' ? 'text-amber-400' : 'text-danger'
                           }`}
                         >
                           {feedback.text}

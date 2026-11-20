@@ -83,6 +83,38 @@ class LocalMediaStorage:
                     now_iso,
                 ),
             )
+
+        # Also sync to output/<job_id> so regular Projects directory and Editor can view/download it
+        try:
+            output_job_dir = Path("/root/openshort/output") / job_id
+            output_job_dir.mkdir(parents=True, exist_ok=True)
+            output_clip_dest = output_job_dir / f"{clip_id}.mp4"
+            if not output_clip_dest.exists():
+                try:
+                    os.link(dest, output_clip_dest)
+                except OSError:
+                    shutil.copy2(dest, output_clip_dest)
+            
+            meta_path = output_job_dir / f"{job_id}_metadata.json"
+            meta_data = {}
+            if meta_path.exists():
+                try:
+                    meta_data = json.loads(meta_path.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            shorts = meta_data.get("shorts", [])
+            shorts.append({
+                "clip_id": clip_id,
+                "video_url": f"/videos/{job_id}/{clip_id}.mp4",
+                "duration": duration_sec,
+                "title": f"Highlight #{len(shorts) + 1}",
+                "aspect_ratio": "9:16"
+            })
+            meta_data["shorts"] = shorts
+            meta_data["status"] = "completed"
+            meta_path.write_text(json.dumps(meta_data, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.warning("Could not sync clip to output directory: %s", e)
         return clip_id
 
     def verify_public_url(self, clip_id: str, timeout: int = 10) -> str:

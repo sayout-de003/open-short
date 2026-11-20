@@ -69,9 +69,30 @@ def check_and_heal():
             if yt_cfg.get("configured"):
                 log("🎉 YouTube Auto-Post: Connected and ready.")
             else:
-                log("ℹ️ YouTube Auto-Post: OAuth pending. User needs to visit http://evworx.co.in/api/youtube/auth/login")
+                log("ℹ️ YouTube Auto-Post: OAuth pending. Authorize anytime at https://evworx.co.in/api/youtube/auth/login")
     except Exception as e:
         log(f"⚠️ YouTube config check error: {e}")
+
+    # 5. Check and recover any stale autopilot jobs
+    try:
+        from autopilot.database import AutopilotDatabase
+        from autopilot.config import AutopilotConfig
+        cfg = AutopilotConfig.from_env()
+        if cfg.database_path.exists():
+            db = AutopilotDatabase(cfg.database_path)
+            with db.transaction() as conn:
+                stale = conn.execute("""
+                    SELECT COUNT(*) as cnt FROM processing_jobs 
+                    WHERE status = 'claimed' AND locked_at < datetime('now', '-30 minutes')
+                """).fetchone()
+                if stale and stale["cnt"] > 0:
+                    conn.execute("""
+                        UPDATE processing_jobs SET status = 'queued', locked_at = NULL, worker_id = NULL
+                        WHERE status = 'claimed' AND locked_at < datetime('now', '-30 minutes')
+                    """)
+                    log(f"♻️ Watchdog recovered {stale['cnt']} stale processing jobs.")
+    except Exception as e:
+        log(f"⚠️ Stale jobs check note: {e}")
 
     log("🏁 Watchdog check complete.\n")
 

@@ -202,7 +202,16 @@ class LiveWorker:
             finally:
                 pipe.scheduler.close()
 
-        asyncio.run(_run_bounded())
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    pool.submit(asyncio.run, _run_bounded()).result()
+            else:
+                loop.run_until_complete(_run_bounded())
+        except RuntimeError:
+            asyncio.run(_run_bounded())
 
         if not pipe.completed_jobs:
             raise RetryableError(f"No live hype clips captured during window for {job.source_id}")

@@ -4647,8 +4647,8 @@ async def issue_media_token(request: Request):
 
 
 @app.get("/videos/autopilot/{clip_id}")
-async def serve_autopilot_clip(clip_id: str):
-    """Serve an approved autopilot MP4 clip by unguessable clip_id for Buffer ingestion."""
+async def serve_autopilot_clip(clip_id: str, download: Optional[int] = 0):
+    """Serve an approved autopilot MP4 clip by unguessable clip_id for Buffer ingestion or browser download."""
     import re
     if not re.fullmatch(r"clip_[a-f0-9]{16,64}", clip_id):
         raise HTTPException(status_code=404, detail="Clip not found")
@@ -4675,7 +4675,8 @@ async def serve_autopilot_clip(clip_id: str):
     if clips_root not in clip_path.parents or not clip_path.is_file():
         raise HTTPException(status_code=404, detail="Clip file not found")
 
-    return FileResponse(str(clip_path), media_type="video/mp4", filename=f"{clip_id}.mp4")
+    disp = "attachment" if download else "inline"
+    return FileResponse(str(clip_path), media_type="video/mp4", filename=f"{clip_id}.mp4", content_disposition_type=disp)
 
 
 # Mount static files for serving videos. A miss under /videos/<job_id>/ first
@@ -12452,6 +12453,15 @@ async def api_autopilot_publish_clip(clip_id: str, request: Request):
                 (id, rendered_clip_id, buffer_channel_id, platform, operation_id, buffer_post_id, publication_status, published_at, created_at, updated_at)
                 VALUES (?, ?, 'youtube_direct', 'youtube', ?, ?, 'sent', datetime('now'), datetime('now'), datetime('now'))
             """, (post_id, clip_id, res.get("video_id", post_id), res.get("video_id")))
+    elif res.get("quota_exceeded"):
+        import uuid
+        post_id = f"post_{uuid.uuid4().hex[:12]}"
+        with orch.db.transaction() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO published_posts 
+                (id, rendered_clip_id, buffer_channel_id, platform, operation_id, publication_status, last_error, created_at, updated_at)
+                VALUES (?, ?, 'youtube_direct', 'youtube', ?, 'quota_exhausted', 'Daily 10k quota reached. Preserved locally for download.', datetime('now'), datetime('now'))
+            """, (post_id, clip_id, post_id))
     return res
 
 
