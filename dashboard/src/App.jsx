@@ -2671,6 +2671,7 @@ function App() {
                     syncedTime={syncedTime}
                     isSyncedPlaying={isSyncedPlaying}
                     syncTrigger={syncTrigger}
+                    logs={logs}
                   />
                 )}
 

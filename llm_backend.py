@@ -103,6 +103,7 @@ def _is_format_rejection(resp: httpx.Response) -> bool:
 
 
 def generate_json(prompt: str, schema: Type[BaseModel], model: Optional[str] = None,
+                  max_tokens: Optional[int] = None,
                   ) -> Tuple[dict, Optional[dict]]:
     """One chat completion that must come back as JSON matching ``schema``.
 
@@ -119,10 +120,25 @@ def generate_json(prompt: str, schema: Type[BaseModel], model: Optional[str] = N
         {"role": "system", "content": "You answer with a single JSON object and nothing else."},
         {"role": "user", "content": prompt},
     ]
+
+    # Enforce concise token budgets for local CPU models to avoid prolonged stalls
+    if max_tokens is None:
+        env_tokens = os.environ.get("LLM_MAX_TOKENS")
+        if env_tokens and env_tokens.isdigit():
+            max_tokens = int(env_tokens)
+        else:
+            schema_name = getattr(schema, "__name__", "")
+            if "Score" in schema_name:
+                max_tokens = 350
+            elif "Detail" in schema_name:
+                max_tokens = 800
+            else:
+                max_tokens = 1000
+
     last_rejection: Optional[str] = None
     with _client() as client:
         for fmt in _response_formats(schema):
-            body = {"model": model, "messages": messages, "temperature": 0.2, "max_tokens": 1500, "stream": False}
+            body = {"model": model, "messages": messages, "temperature": 0.2, "max_tokens": max_tokens, "stream": False}
             if fmt is not None:
                 body["response_format"] = fmt
             resp = client.post(url, json=body, headers=_headers())

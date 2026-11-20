@@ -3,7 +3,7 @@ import { Scan, Scissors, Activity, Radio, CheckCircle } from 'lucide-react';
 import { getApiUrl } from '../config';
 import { apiFetch } from '../lib/api';
 
-const ProcessingAnimation = ({ media, isComplete, syncedTime, isSyncedPlaying, syncTrigger }) => {
+const ProcessingAnimation = ({ media, isComplete, syncedTime, isSyncedPlaying, syncTrigger, logs }) => {
   const [videoSrc, setVideoSrc] = useState(null);
   const [isYouTube, setIsYouTube] = useState(false);
   const videoRef = useRef(null);
@@ -91,11 +91,17 @@ const ProcessingAnimation = ({ media, isComplete, syncedTime, isSyncedPlaying, s
   };
 
   const isLiveStream = isYouTube && (
-    typeof media?.payload === 'string' && (
-      media.payload.includes('/live/') ||
+    Boolean(media?.is_live || media?.isLive) ||
+    (typeof media?.payload === 'string' && (
+      media.payload.includes('/live') ||
       media.payload.includes('live=1') ||
       media.payload.includes('live_stream')
-    )
+    )) ||
+    (Array.isArray(logs) && logs.some(l => typeof l === 'string' && (
+      l.toLowerCase().includes('live video stream') ||
+      l.toLowerCase().includes('live monitor') ||
+      l.toLowerCase().includes('capturing live stream')
+    )))
   );
 
   const containerClasses = `relative w-full aspect-[2/1] sm:aspect-video rounded-card overflow-hidden bg-black border border-rule2 mb-4 sm:mb-8 group animate-fade transition-all duration-500
@@ -174,7 +180,7 @@ const ProcessingAnimation = ({ media, isComplete, syncedTime, isSyncedPlaying, s
       )}
 
       {/* Visual Flair */}
-      {!isSyncedPlaying && !isComplete && (
+      {!isSyncedPlaying && !isComplete && !isLiveStream && (
           <div className="hidden sm:block absolute inset-0 pointer-events-none z-20 overflow-hidden">
              <div className="absolute top-0 bottom-0 left-[35%] w-px border-r border-dashed border-brass opacity-40"></div>
              <div className="absolute top-0 bottom-0 right-[35%] w-px border-l border-dashed border-brass opacity-40"></div>

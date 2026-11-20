@@ -1130,7 +1130,13 @@ def _live_ffmpeg_input_opts(url: str, start_index: int) -> list:
 def capture_live_stream_segment(info, expected_path, live_seconds=45, start_index=None, cycle_num=None):
     """Captures a window of live stream directly from the live edge via ffmpeg HLS demuxer."""
     if start_index is None:
-        start_index = int(os.environ.get("LIVE_START_INDEX", "-1"))
+        env_idx = os.environ.get("LIVE_START_INDEX")
+        if env_idx is not None:
+            start_index = int(env_idx)
+        else:
+            # Pull from recent DVR cache (e.g. ~20-25 segments back) so ffmpeg downloads
+            # immediately in a few seconds instead of blocking wall-clock seconds waiting for the live edge.
+            start_index = -max(15, int(live_seconds // 2) + 5)
 
     stream_url, v_url, a_url = _select_live_stream_urls(info)
     if not stream_url and not (v_url and a_url):
@@ -1217,7 +1223,11 @@ class _LiveSegmentProducer:
     def start(self, info: dict, start_index: Optional[int] = None) -> bool:
         self.stop_process()
         if start_index is None:
-            start_index = int(os.environ.get("LIVE_START_INDEX", "-1"))
+            env_idx = os.environ.get("LIVE_START_INDEX")
+            if env_idx is not None:
+                start_index = int(env_idx)
+            else:
+                start_index = -20
         stream_url, v_url, a_url = _select_live_stream_urls(info)
         if not stream_url and not (v_url and a_url):
             return False
