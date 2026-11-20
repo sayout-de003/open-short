@@ -392,16 +392,62 @@ def present_in_scene(video_path, box, start_f, end_f, samples=3):
 MAX_CAMERA_RATIO = 0.40
 
 
-def inset_filtergraph(orig_w, orig_h, out_w, out_h, box, camera_ratio=None, cam_position="bottom", add_divider=False):
+def inset_filtergraph(orig_w, orig_h, out_w, out_h, box, camera_ratio=None, cam_position="bottom", add_divider=False, fill_screen=False):
     """Screen and webcam inset composited for vertical 9:16 layout.
 
     When cam_position is "bottom" (default): screen on top at full width, webcam inset below.
-    When cam_position is "top": webcam inset at the top (~25-30% height), gameplay/screen below.
+    When cam_position is "top": webcam inset at the top (~20% height), gameplay/screen below.
+    When fill_screen is True and cam_position is "top": clean 20% top cam + 80% full-bleed gameplay with zero blurred gaps.
 
     The screen keeps its whole width, which is the point: a game HUD or a
     desktop puts what matters at the edges. The inset is scaled up so the person
     reads at a size the source never gave them.
     """
+    if fill_screen and str(cam_position).lower() == "top":
+        cam_h = int(out_h * (camera_ratio or 0.20))
+        cam_h -= cam_h % 2
+        screen_h = out_h - cam_h
+        screen_h -= screen_h % 2
+
+        # 1. Streamer camera crop (scaled to out_w x cam_h)
+        target_aspect = out_w / float(cam_h)
+        x, y, w, h = box
+        if w / float(h) < target_aspect:
+            want_w = min(orig_w, int(round(h * target_aspect)))
+            x = int(round(x + w / 2.0 - want_w / 2.0))
+            w = want_w
+        else:
+            want_h = min(orig_h, int(round(w / target_aspect)))
+            y = int(round(y + h / 2.0 - want_h / 2.0))
+            h = want_h
+        x = max(0, min(x, orig_w - w))
+        y = max(0, min(y, orig_h - h))
+        w -= w % 2
+        h -= h % 2
+        x -= x % 2
+        y -= y % 2
+
+        # 2. Gameplay crop (center-cropped to out_w / screen_h aspect)
+        target_screen_aspect = out_w / float(screen_h)
+        screen_crop_w = int(round(orig_h * target_screen_aspect))
+        screen_crop_w = min(orig_w, screen_crop_w - (screen_crop_w % 2))
+        screen_crop_x = (orig_w - screen_crop_w) // 2
+        screen_crop_x -= screen_crop_x % 2
+
+        base_graph = (
+            f"[0:v]split=2[sa][ca];"
+            f"[ca]crop=w={w}:h={h}:x={x}:y={y},scale={out_w}:{cam_h}[cam];"
+            f"[sa]crop=w={screen_crop_w}:h={orig_h}:x={screen_crop_x}:y=0,scale={out_w}:{screen_h}[screen];"
+            f"[cam][screen]vstack"
+        )
+        if add_divider:
+            return (
+                f"{base_graph}[stacked];"
+                f"[stacked]drawbox=x=0:y={cam_h - 1}:w={out_w}:h=2:color=white@0.5:t=fill,"
+                f"setsar=1[v]"
+            )
+        return f"{base_graph},setsar=1[v]"
+
     box_w = max(2, box[2])
     box_h = max(2, box[3])
 

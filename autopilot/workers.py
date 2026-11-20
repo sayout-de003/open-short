@@ -115,6 +115,9 @@ class VODWorker:
         ]
         env = os.environ.copy()
         env["CONTENT_PROFILE"] = "gaming"
+        env["CLIPPING_PROFILE"] = "gaming"
+        env["TEMPLATE_ID"] = "streamer_stacked_top"
+        env["STREAMER_CAM_POSITION"] = "top"
         env["MAX_CLIP_DURATION"] = str(self.config.clip_max_duration)
         env["MIN_CLIP_DURATION"] = str(self.config.clip_min_duration)
 

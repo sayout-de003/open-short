@@ -770,10 +770,9 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
 
     if is_gaming and inset:
         # Gaming with streamer webcam: reframe scenes into stacked INSET layout
-        # (defaults to TOP_INSET if requested by streamer_stacked_top template or STREAMER_CAM_POSITION=top)
+        # (defaults to TOP_INSET unless STREAMER_CAM_POSITION=bottom is explicitly set)
         top_cam = (
-            os.environ.get("STREAMER_CAM_POSITION", "").strip().lower() == "top"
-            or os.environ.get("TEMPLATE_ID", "").strip().lower() in ("streamer_stacked_top", "stacked_top_cam")
+            os.environ.get("STREAMER_CAM_POSITION", "").strip().lower() != "bottom"
         )
         target_strategy = 'TOP_INSET' if top_cam else 'INSET'
         for scene_idx in range(len(scenes)):
@@ -901,9 +900,12 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
 
             if strategy in ('INSET', 'TOP_INSET'):
                 cam_pos = "top" if strategy == 'TOP_INSET' else "bottom"
+                fill_screen = (cam_pos == "top")
                 graph = camera_inset.inset_filtergraph(
                     orig_w, orig_h, out_w, out_h, insets.get(start_f, inset),
+                    camera_ratio=0.20 if cam_pos == "top" else None,
                     cam_position=cam_pos, add_divider=(cam_pos == "top"),
+                    fill_screen=fill_screen,
                 )
             elif strategy == 'SCREENCAST':
                 graph = screencast_layout.screencast_filtergraph(

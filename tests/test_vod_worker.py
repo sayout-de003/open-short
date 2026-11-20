@@ -100,3 +100,72 @@ def test_live_worker_uses_cooldown_and_approves_clips(tmp_path: Path) -> None:
 
     assert len(approved) == 1
     assert fake_pipe.detector.cooldown_sec == float(cfg.live_clip_cooldown_seconds)
+
+
+def test_vod_worker_invokes_pipeline_with_gaming_env(tmp_path: Path) -> None:
+    cfg = _make_cfg(tmp_path)
+    db = AutopilotDatabase(cfg.database_path)
+    q = PersistentQueue(db)
+    storage = LocalMediaStorage(db, cfg.clips_dir, cfg.temp_dir, cfg.public_api_url)
+    quality = MagicMock(spec=ClipQualityValidator)
+
+    worker = VODWorker(cfg, q, quality, storage)
+    captured_env = {}
+
+    def _mock_run(cmd, env=None, **kwargs):
+        captured_env.update(env or {})
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        return mock_res
+
+    with patch("subprocess.run", side_effect=_mock_run):
+        worker._invoke_main_pipeline("https://youtube.com/watch?v=sample", tmp_path / "out")
+
+    assert captured_env.get("CONTENT_PROFILE") == "gaming"
+    assert captured_env.get("CLIPPING_PROFILE") == "gaming"
+    assert captured_env.get("TEMPLATE_ID") == "streamer_stacked_top"
+    assert captured_env.get("STREAMER_CAM_POSITION") == "top"
+
+
+def test_fast_vertical_renderer_uses_20_80_when_inset_detected(tmp_path: Path) -> None:
+    from gaming_intelligence.live.clipping.renderer import FastVerticalRenderer
+    import camera_inset
+
+    out_dir = str(tmp_path / "rendered")
+    renderer = FastVerticalRenderer(output_dir=out_dir)
+
+    dummy_video = tmp_path / "dummy_draft.mp4"
+    dummy_video.write_bytes(b"0" * 1000)
+
+    captured_cmds = []
+
+    def _mock_run(cmd, **kwargs):
+        captured_cmds.append(cmd)
+        # Create output file so renderer succeeds
+        final_mp4 = Path(cmd[-1])
+        final_mp4.parent.mkdir(parents=True, exist_ok=True)
+        final_mp4.write_bytes(b"0" * 2000)
+        res = MagicMock()
+        res.returncode = 0
+        return res
+
+    with patch("camera_inset.detect", return_value=(1500, 880, 350, 200)), \
+         patch("cv2.VideoCapture") as mock_cap, \
+         patch("subprocess.run", side_effect=_mock_run):
+        cap_instance = MagicMock()
+        cap_instance.isOpened.return_value = True
+        cap_instance.get.side_effect = lambda prop: 1920 if prop == 3 else 1080
+        mock_cap.return_value = cap_instance
+
+        res_path = renderer.render_vertical_short(str(dummy_video), "out_short.mp4")
+
+    assert Path(res_path).exists()
+    assert len(captured_cmds) == 1
+    cmd = captured_cmds[0]
+    assert "-filter_complex" in cmd
+    fc_idx = cmd.index("-filter_complex")
+    graph = cmd[fc_idx + 1]
+    assert "scale=1080:384[cam]" in graph
+    assert "scale=1080:1536[screen]" in graph
+    assert "[cam][screen]vstack" in graph
+    assert "drawbox=x=0:y=383:w=1080:h=2:color=white@0.5:t=fill" in graph

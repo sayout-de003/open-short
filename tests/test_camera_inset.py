@@ -154,3 +154,15 @@ class TestInsetFiltergraph:
         assert "drawbox=x=0" in graph
         assert "color=white@0.5" in graph
         assert graph.endswith("[v]")
+
+    def test_top_cam_fill_screen_20_80_layout(self):
+        # 20% Top Streamer (384px) + 80% Bottom Gameplay (1536px) full bleed layout
+        graph = inset_filtergraph(
+            1920, 1080, 1080, 1920, (1500, 880, 350, 200),
+            camera_ratio=0.20, cam_position="top", add_divider=True, fill_screen=True
+        )
+        assert "scale=1080:384[cam]" in graph
+        assert "scale=1080:1536[screen]" in graph
+        assert "[cam][screen]vstack" in graph
+        assert "drawbox=x=0:y=383:w=1080:h=2:color=white@0.5:t=fill" in graph
+        assert graph.endswith("[v]")

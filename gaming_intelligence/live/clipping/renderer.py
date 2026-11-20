@@ -68,13 +68,20 @@ class FastVerticalRenderer:
 
         final_path = os.path.join(self.output_dir, output_filename)
 
-        # 9:16 Crop filter: center gameplay crop to 1080x1920
-        # crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2
-        vf_filter = (
-            "crop=ih*9/16:ih:(iw-ow)/2:0,"
-            "scale=1080:1920:force_original_aspect_ratio=decrease,"
-            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
-        )
+        # Check if webcam inset is detected for 20% Top Streamer + 80% Gameplay stacked layout
+        inset_box = None
+        orig_w, orig_h = 1920, 1080
+        try:
+            import camera_inset
+            import cv2
+            cap = cv2.VideoCapture(draft_video_path)
+            if cap.isOpened():
+                orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1920)
+                orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1080)
+                cap.release()
+            inset_box = camera_inset.detect(draft_video_path)
+        except Exception as e:
+            logger.debug(f"Fast camera inset detection skipped: {e}")
 
         cmd = [
             self.ffmpeg_bin, "-y", "-nostdin",
@@ -84,14 +91,37 @@ class FastVerticalRenderer:
         if target_duration:
             cmd.extend(["-t", str(target_duration)])
 
-        cmd.extend([
-            "-vf", vf_filter,
-            *self.encoder_args,
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-movflags", "+faststart",
-            final_path
-        ])
+        if inset_box:
+            graph = camera_inset.inset_filtergraph(
+                orig_w, orig_h, 1080, 1920, inset_box,
+                camera_ratio=0.20, cam_position="top",
+                add_divider=True, fill_screen=True
+            )
+            cmd.extend([
+                "-filter_complex", graph,
+                "-map", "[v]",
+                "-map", "0:a?",
+                *self.encoder_args,
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-movflags", "+faststart",
+                final_path
+            ])
+        else:
+            # Fallback 9:16 Crop filter: center gameplay crop to 1080x1920
+            vf_filter = (
+                "crop=ih*9/16:ih:(iw-ow)/2:0,"
+                "scale=1080:1920:force_original_aspect_ratio=decrease,"
+                "pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
+            )
+            cmd.extend([
+                "-vf", vf_filter,
+                *self.encoder_args,
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-movflags", "+faststart",
+                final_path
+            ])
 
         t0 = time.time()
         res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
