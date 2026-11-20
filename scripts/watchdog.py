@@ -9,6 +9,8 @@ import time
 import subprocess
 import requests
 
+sys.path.insert(0, "/root/openshort")
+
 BACKEND_URL = "http://127.0.0.1:8000"
 FRONTEND_URL = "http://127.0.0.1:5175"
 NGINX_URL = "http://127.0.0.1"
