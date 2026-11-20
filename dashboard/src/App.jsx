@@ -3038,6 +3038,12 @@ function App() {
                           >
                             <Film size={14} /> Back to History
                           </button>
+                          <button
+                            onClick={() => goToTab('autopilot')}
+                            className="btn-quiet py-2 px-4 text-xs flex items-center gap-1.5 text-brass hover:text-ink"
+                          >
+                            <Rocket size={14} /> Back to Autopilot
+                          </button>
                         </div>
                       </div>
                     ) : (
@@ -3059,6 +3065,12 @@ function App() {
                             className="btn-quiet py-2 px-4 text-xs flex items-center gap-1.5"
                           >
                             <Film size={14} /> Back to History
+                          </button>
+                          <button
+                            onClick={() => goToTab('autopilot')}
+                            className="btn-quiet py-2 px-4 text-xs flex items-center gap-1.5 text-brass hover:text-ink"
+                          >
+                            <Rocket size={14} /> Back to Autopilot
                           </button>
                         </div>
                       </div>

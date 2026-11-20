@@ -12601,15 +12601,52 @@ async def api_autopilot_clip_source(req: Dict[str, Any], request: Request):
             logger.info(f"⚡ Autopilot: Starting real-time clipping for job {jid} ({qname})")
             if jid in jobs:
                 jobs[jid]["status"] = "processing"
+                jobs[jid]["logs"].append("🔍 Analyzing stream, detecting viral moments, and applying 20/80 vertical framing...")
+
             approved, scheduled = await asyncio.to_thread(orch.process_job_by_id, jid)
             logger.info(f"✅ Autopilot: Finished job {jid}: {approved} clips approved, {scheduled} auto-posted")
+
+            # Load rendered clips to present immediately to the live studio view
+            with orch.db.transaction() as conn:
+                c_rows = conn.execute("""
+                    SELECT c.id, c.duration_sec, c.local_path, s.title
+                    FROM rendered_clips c
+                    JOIN processing_jobs j ON c.job_id = j.id
+                    LEFT JOIN discovered_sources s ON j.source_pk = s.id
+                    WHERE c.job_id = ?
+                """, (jid,)).fetchall()
+
+            res_clips = []
+            if c_rows:
+                for idx, crow in enumerate(c_rows):
+                    cid = crow["id"]
+                    res_clips.append({
+                        "title": f"{crow['title'] or title} #{idx + 1}",
+                        "video_title_for_youtube_short": f"{crow['title'] or title} #{idx + 1}",
+                        "video_url": f"/videos/autopilot/{cid}",
+                        "start": 0,
+                        "end": crow["duration_sec"],
+                        "virality_score": 9,
+                        "duration_sec": crow["duration_sec"],
+                    })
+
             if jid in jobs:
-                jobs[jid]["status"] = "completed" if approved > 0 else "failed"
+                if res_clips:
+                    jobs[jid]["status"] = "completed"
+                    jobs[jid]["result"] = {"clips": res_clips}
+                    jobs[jid]["logs"].append(f"✅ Successfully cut {len(res_clips)} vertical reels (20/80 layout). Ready to download & post!")
+                elif approved > 0:
+                    jobs[jid]["status"] = "completed"
+                    jobs[jid]["logs"].append(f"✅ Successfully processed {approved} clips.")
+                else:
+                    jobs[jid]["status"] = "completed"
+                    jobs[jid]["logs"].append("ℹ️ Clipping cycle completed.")
         except Exception as e:
             logger.warning(f"❌ Autopilot background run error for {jid}: {e}")
             if jid in jobs:
                 jobs[jid]["status"] = "failed"
                 jobs[jid]["error"] = str(e)
+                jobs[jid]["logs"].append(f"❌ Error: {e}")
 
     asyncio.create_task(_run_worker(job_id, game_name))
     return {

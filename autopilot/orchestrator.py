@@ -188,11 +188,19 @@ class AutopilotOrchestrator:
 
     def _execute_job(self, job, is_live: bool) -> tuple[int, int]:
         try:
-            clip_ids = (
-                self.live_worker.process_job(job)
-                if is_live
-                else self.vod_worker.process_job(job)
-            )
+            clip_ids: List[str] = []
+            if is_live:
+                try:
+                    clip_ids = self.live_worker.process_job(job)
+                except Exception as live_err:
+                    logger.warning(
+                        "Live chat hype monitor did not produce clips (%s). Seamlessly falling back to direct stream clipping...",
+                        live_err,
+                    )
+                    clip_ids = self.vod_worker.process_job(job)
+            else:
+                clip_ids = self.vod_worker.process_job(job)
+
             scheduled_count = 0
             with self.db.transaction() as conn:
                 src = conn.execute(

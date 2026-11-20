@@ -219,17 +219,26 @@ class LiveWorker:
         pipe.detector.cooldown_sec = float(self.config.live_clip_cooldown_seconds)
 
         async def _run_bounded() -> None:
-            coro = (
-                pipe.start_twitch(src["channel_name"].lower(), stream_url=src["url"])
-                if job.platform == "twitch"
-                else pipe.start_youtube(src["source_id"], api_key=self.config.youtube_api_key)
-            )
             try:
-                await asyncio.wait_for(coro, timeout=float(self.config.live_monitor_window_minutes * 60))
-            except asyncio.TimeoutError:
-                pass
+                if job.platform == "twitch":
+                    await pipe.start_twitch(src["channel_name"].lower(), stream_url=src["url"])
+                else:
+                    await pipe.start_youtube(src["source_id"], api_key=self.config.youtube_api_key)
+
+                # Monitor live stream and capture hype bursts
+                window_sec = min(60.0, float(self.config.live_monitor_window_minutes * 60))
+                elapsed = 0.0
+                check_interval = 2.0
+                while elapsed < window_sec:
+                    if pipe.completed_jobs and len(pipe.completed_jobs) >= 1:
+                        break
+                    await asyncio.sleep(check_interval)
+                    elapsed += check_interval
             finally:
-                pipe.scheduler.close()
+                try:
+                    await pipe.stop()
+                except Exception:
+                    pass
 
         try:
             loop = asyncio.get_event_loop()

@@ -132,6 +132,9 @@ class AutopilotConfig:
         else:
             database_path = output_dir / "autopilot.db"
 
+        buf_token = os.getenv("BUFFER_ACCESS_TOKEN", "").strip() or None
+        public_url = os.getenv("PUBLIC_API_URL", "").strip().rstrip("/") or "https://evworx.co.in"
+
         return cls(
             base_dir=BASE_DIR,
             output_dir=output_dir,
@@ -139,14 +142,14 @@ class AutopilotConfig:
             temp_dir=output_dir / "temp",
             logs_dir=output_dir / "logs",
             database_path=database_path,
-            buffer_access_token=os.getenv("BUFFER_ACCESS_TOKEN", "").strip() or None,
-            public_api_url=os.getenv("PUBLIC_API_URL", "").strip().rstrip("/") or None,
+            buffer_access_token=buf_token,
+            public_api_url=public_url,
             youtube_api_key=os.getenv("YOUTUBE_API_KEY", "").strip() or None,
             twitch_client_id=os.getenv("TWITCH_CLIENT_ID", "").strip() or None,
             twitch_client_secret=os.getenv("TWITCH_CLIENT_SECRET", "").strip() or None,
             youtube_discovery_enabled=_env_bool("YOUTUBE_DISCOVERY_ENABLED", True),
             twitch_discovery_enabled=_env_bool("TWITCH_DISCOVERY_ENABLED", True),
-            buffer_enabled=_env_bool("BUFFER_ENABLED", True),
+            buffer_enabled=_env_bool("BUFFER_ENABLED", bool(buf_token)),
             live_capture_enabled=_env_bool("LIVE_CAPTURE_ENABLED", True),
             gaming_categories=_env_list("GAMING_CATEGORIES", ["GTA 6", "Valorant", "Minecraft", "Fortnite"]),
             discovery_top_n=_env_int("DISCOVERY_TOP_N", 10),
