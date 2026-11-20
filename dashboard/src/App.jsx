@@ -429,7 +429,47 @@ function App() {
     }
   }, [logs, logsVisible]);
   const [processingMedia, setProcessingMedia] = useState(null);
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, settings
+  const getInitialTab = () => {
+    try {
+      const hash = window.location.hash || '';
+      if (hash.startsWith('#app?') || hash.startsWith('#/app?')) {
+        const q = hash.slice(hash.indexOf('?') + 1);
+        const params = new URLSearchParams(q);
+        const tab = params.get('tab');
+        if (tab) {
+          return tab === 'clips' ? 'dashboard' : tab;
+        }
+      }
+      const saved = localStorage.getItem('creovis_last_tab') || localStorage.getItem('os_last_active_tab');
+      if (saved) {
+        return saved === 'clips' ? 'dashboard' : saved;
+      }
+    } catch (_) {}
+    return 'dashboard';
+  };
+
+  const [activeTab, setActiveTab] = useState(getInitialTab);
+
+  // Persist active tab to localStorage and sync with URL hash
+  useEffect(() => {
+    if (activeTab) {
+      try {
+        const tabName = activeTab === 'clips' ? 'dashboard' : activeTab;
+        localStorage.setItem('creovis_last_tab', tabName);
+        localStorage.setItem('os_last_active_tab', tabName);
+        const hash = window.location.hash || '';
+        if (hash === '#app' || hash.startsWith('#app?') || hash === '#/app' || hash.startsWith('#/app?')) {
+          const q = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+          const params = new URLSearchParams(q);
+          params.set('tab', tabName);
+          const targetHash = `#app?${params.toString()}`;
+          if (hash !== targetHash) {
+            window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${targetHash}`);
+          }
+        }
+      } catch (_) {}
+    }
+  }, [activeTab]);
   const [selectedTemplate, setSelectedTemplate] = useState(() => {
     try { return localStorage.getItem('os_template_id') || ''; } catch { return ''; }
   });
@@ -761,7 +801,10 @@ function App() {
         else if (!session.noSource) setProcessingMedia({ type: 'server', payload: `/api/source/${session.jobId}` });
         if (session.noSource) setNoSource(true);
         if (session.projectState) setProjectState(session.projectState);
-        if (session.activeTab) setActiveTab(session.activeTab);
+        if (session.activeTab) {
+          const t = session.activeTab === 'clips' ? 'dashboard' : session.activeTab;
+          setActiveTab(t);
+        }
         // If was processing, resume polling; if complete/error, just show results
         setStatus(normalizeStatus(session.status));
         setSessionRecovered(true);
@@ -772,8 +815,14 @@ function App() {
     }
   }, []);
 
+  const isInitialMount = useRef(true);
+
   // Session Recovery: Save state changes
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
     if (status === 'idle') {
       localStorage.removeItem(SESSION_KEY);
       return;
@@ -1086,21 +1135,27 @@ function App() {
   // dropped so a reload does not keep forcing the tab.
   const [autopilotConnected, setAutopilotConnected] = useState(null); // connect outcome, see lib/connectReturn.js
   useEffect(() => {
-    const DEEP_LINK_TABS = ['autopilot', 'history', 'settings', 'thumbnails', 'dashboard', 'saasshorts'];
+    const DEEP_LINK_TABS = ['dashboard', 'clips', 'autopilot', 'history', 'settings', 'thumbnails', 'saasshorts', 'ai-agent', 'ugc-gallery', 'templates'];
     const apply = () => {
       const hash = window.location.hash || '';
-      if (!hash.startsWith('#app?')) return;
-      const params = new URLSearchParams(hash.slice(5));
+      if (!hash.startsWith('#app?') && !hash.startsWith('#/app?')) return;
+      const q = hash.slice(hash.indexOf('?') + 1);
+      const params = new URLSearchParams(q);
       const tab = params.get('tab');
-      if (!tab || !DEEP_LINK_TABS.includes(tab)) return;  // e.g. #app?tutorial=1
-      setActiveTab(tab);
+      if (!tab) return;
+      const resolvedTab = tab === 'clips' ? 'dashboard' : tab;
+      if (!DEEP_LINK_TABS.includes(resolvedTab)) return;
+      setActiveTab(resolvedTab);
       // The connect outcome rides in the query string, not in the hash
       // (lib/connectReturn.js): a cancel also comes back with connected=1.
-      if (tab === 'autopilot' && params.get('connected') === '1') {
+      if (resolvedTab === 'autopilot' && params.get('connected') === '1') {
         setAutopilotConnected(readConnectReturn(window.location.search));
       }
       try {
-        window.history.replaceState(null, '', `${window.location.pathname}${stripConnectReturn(window.location.search)}#app`);
+        const remainingParams = new URLSearchParams(hash.slice(hash.indexOf('?') + 1));
+        remainingParams.delete('connected');
+        remainingParams.set('tab', resolvedTab);
+        window.history.replaceState(null, '', `${window.location.pathname}${stripConnectReturn(window.location.search)}#app?${remainingParams.toString()}`);
       } catch (_) { /* ignore */ }
     };
     apply();
@@ -1483,8 +1538,9 @@ function App() {
   }, [navOpen]);
 
   const goToTab = (id) => {
-    if (tutorialLock && id !== 'dashboard') return;
-    setActiveTab(id);
+    const targetId = id === 'clips' ? 'dashboard' : id;
+    if (tutorialLock && targetId !== 'dashboard') return;
+    setActiveTab(targetId);
     setNavOpen(false);
   };
   const tabLocked = (id) => tutorialLock && id !== 'dashboard';
@@ -2415,11 +2471,13 @@ function App() {
                     }
                     if (d?.status) {
                       const norm = normalizeStatus(d.status);
-                      if (proj?.clips?.length && norm !== 'error') {
+                      if ((proj?.clips?.length || d?.result?.clips?.length) && norm !== 'error') {
                         setStatus('complete');
                       } else {
                         setStatus(norm);
                       }
+                    } else if (proj?.clips?.length || d?.result?.clips?.length) {
+                      setStatus('complete');
                     }
                     setNoSource(true);
                     setProcessingMedia(null);
@@ -2904,7 +2962,29 @@ function App() {
                           </button>
                         </div>
                       </div>
-                    ) : null
+                    ) : (
+                      <div className="h-full min-h-[180px] flex flex-col items-center justify-center p-6 text-center space-y-3 animate-fade">
+                        <Film size={32} className="text-muted/60" />
+                        <p className="font-medium text-sm text-ink">No clips to display</p>
+                        <p className="text-xs text-muted max-w-sm leading-relaxed">
+                          No clips were found for this project, or they are still rendering. You can check History or start fresh.
+                        </p>
+                        <div className="flex items-center gap-2 pt-2">
+                          <button
+                            onClick={handleReset}
+                            className="btn-primary py-2 px-4 text-xs flex items-center gap-1.5"
+                          >
+                            <Plus size={14} /> Create Shorts
+                          </button>
+                          <button
+                            onClick={() => goToTab('history')}
+                            className="btn-quiet py-2 px-4 text-xs flex items-center gap-1.5"
+                          >
+                            <Film size={14} /> Back to History
+                          </button>
+                        </div>
+                      </div>
+                    )
                   )}
                 </div>
               </div>
@@ -2918,6 +2998,16 @@ function App() {
               <p className="text-sm text-muted">No active project in progress.</p>
               <button onClick={handleReset} className="btn-primary py-2 px-4 text-xs flex items-center gap-2">
                 <Plus size={14} /> Create Shorts
+              </button>
+            </div>
+          )}
+
+          {/* Fallback if an unrecognized tab is active */}
+          {!['settings', 'saasshorts', 'ai-agent', 'ugc-gallery', 'autopilot', 'history', 'templates', 'thumbnails', 'dashboard', 'clips'].includes(activeTab) && (
+            <div className="h-full min-h-[200px] flex flex-col items-center justify-center p-6 text-center space-y-3 animate-fade">
+              <p className="text-sm text-muted">Page not found.</p>
+              <button onClick={() => goToTab('dashboard')} className="btn-primary py-2 px-4 text-xs flex items-center gap-2">
+                <LayoutDashboard size={14} /> Return to Clip Generator
               </button>
             </div>
           )}

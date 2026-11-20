@@ -199,6 +199,7 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
     // A reopened project seeds it from the persisted project state.
     const [serverVideoFile, setServerVideoFile] = useState(initialState?.server_file || (clip.video_url || '').split('/').pop());
     const [videoErrored, setVideoErrored] = useState(false);
+    const [videoLoaded, setVideoLoaded] = useState(false);
     const [resolution, setResolution] = useState(null);
 
     // Adopt the durable copy only while it matches the current server file, and
@@ -1090,6 +1091,7 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                     controls
                     className="w-full h-full object-contain max-h-[350px] sm:max-h-[420px] md:max-h-none"
                     playsInline
+                    onLoadedData={() => setVideoLoaded(true)}
                     onLoadedMetadata={(e) => {
                         if (e.target.videoWidth) {
                             setResolution(`${e.target.videoWidth}×${e.target.videoHeight}`);
@@ -1113,10 +1115,15 @@ export default function ResultCard({ clip, index, jobId, durable, uploadPostKey,
                     onEnded={() => {
                         if (videoRef.current) {
                             videoRef.current.currentTime = 0;
-                            videoRef.current.play();
+                            videoRef.current.play().catch(() => {});
                         }
                     }}
                 />
+                {!videoLoaded && !videoErrored && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-paper2/50 pointer-events-none z-[1]">
+                        <Loader2 size={22} className="animate-spin text-brass/70" />
+                    </div>
+                )}
                 <div className="absolute top-3 left-3 flex gap-2">
                     <span className="bg-black/75 backdrop-blur-sm text-ink font-mono text-micro uppercase px-2 py-1 rounded-full border border-rule">
                         Clip {index + 1}

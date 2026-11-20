@@ -30,6 +30,7 @@ export default defineConfig({
     },
   },
   server: {
+    hmr: false,
     allowedHosts: [
       'openshorts.app',
       'www.openshorts.app'

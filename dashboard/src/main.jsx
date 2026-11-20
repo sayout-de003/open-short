@@ -118,7 +118,7 @@ function Root() {
     // visitor" shortcut into the app: the static fallback is the landing, so
     // swapping it for the app after hydration made / jump a second after load,
     // and the logo of every page has to reach the landing.
-    if (hash === '#app' || hash.startsWith('#app?') || hash === '#/app') return 'app';
+    if (hash === '#app' || hash.startsWith('#app?') || hash === '#/app' || hash.startsWith('#/app?')) return 'app';
     return 'landing';
   };
 

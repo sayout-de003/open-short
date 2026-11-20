@@ -58,8 +58,7 @@ export default function HistoryTab({ onReopenProject }) {
     if (onReopenProject) {
       onReopenProject(jobId, proj);
     } else {
-      window.location.hash = `#/app?job=${jobId}`;
-      window.location.reload();
+      window.location.hash = `#app?tab=dashboard&job=${jobId}`;
     }
   };
 
