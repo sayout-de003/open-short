@@ -9,6 +9,7 @@ import contextlib
 import threading
 import unicodedata
 import uuid
+from typing import Optional, Tuple, List, Dict, Union, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scenedetect import open_video, SceneManager
 from scenedetect.detectors import ContentDetector
@@ -1060,6 +1061,18 @@ def _select_live_stream_urls(info: dict):
         f for f in (info.get("formats") or [])
         if f.get("url") and f.get("protocol") != "mhtml" and f.get("ext") != "mhtml"
     ]
+    if not formats and (info.get("webpage_url") or info.get("original_url")):
+        try:
+            target_u = info.get("webpage_url") or info.get("original_url")
+            with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True, 'live_from_start': False}) as ydl:
+                proc = ydl.extract_info(target_u, download=False, process=True)
+                if proc and proc.get("formats"):
+                    formats = [
+                        f for f in (proc.get("formats") or [])
+                        if f.get("url") and f.get("protocol") != "mhtml" and f.get("ext") != "mhtml"
+                    ]
+        except Exception:
+            pass
 
     def _is_hls_fmt(f):
         proto = (f.get("protocol") or "").lower()
@@ -2811,11 +2824,11 @@ def get_viral_clips(transcript_result, video_duration, viewer_clips=None, input_
 
         profile = os.getenv("CLIPPING_PROFILE", "auto").lower()
         is_gaming = (profile == "gaming")
-        if is_gaming and input_video and os.path.exists(input_video):
-            print("   🎮 Extracting multi-modal gameplay action peaks (motion & audio energy)...")
+        if input_video and os.path.exists(input_video):
+            print("   ⚡ Extracting multi-modal viral action & audio energy peaks...")
             peaks = extract_action_peaks(input_video, video_duration)
             if peaks:
-                print(f"   ⚡ Detected {len(peaks)} action moment(s) from gameplay footage.")
+                print(f"   ⚡ Detected {len(peaks)} high-energy action/reaction moment(s).")
                 fuse_action_peaks_into_windows(windows, peaks)
 
         # --- Pass 1: score windows in batches, keep the highest-scoring ---

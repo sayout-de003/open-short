@@ -90,15 +90,29 @@ const ProcessingAnimation = ({ media, isComplete, syncedTime, isSyncedPlaying, s
     return (match && match[2] && match[2].length === 11) ? match[2] : null;
   };
 
+  const isLiveStream = isYouTube && (
+    typeof media?.payload === 'string' && (
+      media.payload.includes('/live/') ||
+      media.payload.includes('live=1') ||
+      media.payload.includes('live_stream')
+    )
+  );
+
   const containerClasses = `relative w-full aspect-[2/1] sm:aspect-video rounded-card overflow-hidden bg-black border border-rule2 mb-4 sm:mb-8 group animate-fade transition-all duration-500
     ${isComplete && !isSyncedPlaying ? 'grayscale brightness-50' : ''}
-    ${isSyncedPlaying ? 'ring-2 ring-brass ring-offset-2 ring-offset-black' : ''}`;
+    ${isSyncedPlaying ? 'ring-2 ring-brass ring-offset-2 ring-offset-black' : ''}
+    ${isLiveStream ? 'ring-1 ring-red-500/50' : ''}`;
 
   const getVideoOpacityClass = () => {
+    if (isLiveStream) return 'opacity-100';    // Live Stream: Full real-time visibility
     if (isSyncedPlaying) return 'opacity-100'; // Playing: Full visibility
     if (isComplete) return 'opacity-30';       // Idle Result: Darker
     return 'opacity-40 grayscale group-hover:grayscale-0'; // Processing: Dark + Grayscale effect
   };
+
+  const embedSrc = isLiveStream
+    ? `https://www.youtube.com/embed/${videoSrc}?autoplay=1&mute=1&controls=1&modestbranding=1&rel=0&enablejsapi=1`
+    : `https://www.youtube.com/embed/${videoSrc}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoSrc}&modestbranding=1&showinfo=0&rel=0&enablejsapi=1`;
 
   return (
     <div className={containerClasses}>
@@ -107,9 +121,9 @@ const ProcessingAnimation = ({ media, isComplete, syncedTime, isSyncedPlaying, s
         {isYouTube && videoSrc ? (
             <iframe
             ref={iframeRef}
-            className={`w-full h-full ${isSyncedPlaying ? '' : 'pointer-events-none scale-110'}`}
+            className={`w-full h-full ${isLiveStream ? 'pointer-events-auto' : (isSyncedPlaying ? '' : 'pointer-events-none scale-110')}`}
             // Add enablejsapi=1 for postMessage control
-            src={`https://www.youtube.com/embed/${videoSrc}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoSrc}&modestbranding=1&showinfo=0&rel=0&enablejsapi=1`}
+            src={embedSrc}
             title="Processing Video"
             frameBorder="0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -131,8 +145,8 @@ const ProcessingAnimation = ({ media, isComplete, syncedTime, isSyncedPlaying, s
         )}
       </div>
 
-      {/* Overlays - Hide when synced playing so user sees clean video */}
-      {!isSyncedPlaying && !isComplete && (
+      {/* Overlays - Hide when synced playing or watching live stream so user sees clean video */}
+      {!isSyncedPlaying && !isComplete && !isLiveStream && (
         <>
             <div className="hidden sm:block absolute inset-0 bg-[linear-gradient(var(--rule-blueprint)_1px,transparent_1px),linear-gradient(90deg,var(--rule-blueprint)_1px,transparent_1px)] bg-[size:40px_40px] z-10 pointer-events-none"></div>
             <div className="absolute left-0 w-full h-[2px] bg-brass shadow-[0_0_15px_2px_var(--color-glow)] animate-[scan_2.5s_linear_infinite] z-20 pointer-events-none"></div>
@@ -140,18 +154,14 @@ const ProcessingAnimation = ({ media, isComplete, syncedTime, isSyncedPlaying, s
         </>
       )}
 
-      {/* Top HUD bar. One flex row, not two pills pinned to opposite corners:
-          pinned, they overlapped and interleaved their letters as soon as the
-          box was narrower than their combined ~330px — every phone, and the
-          md tablet width too, where this panel is only 55% of the viewport.
-          justify-between + a truncating left pill degrades instead. */}
+      {/* Top HUD bar */}
       {!isSyncedPlaying && (
           <div className="absolute top-2.5 left-2.5 right-2.5 sm:top-4 sm:left-4 sm:right-4 z-30 flex items-start justify-between gap-2 pointer-events-none">
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/70 readout min-w-0 transition-colors duration-500 ${isComplete ? 'text-ok' : 'text-brass animate-pulse'}`}>
-              {isComplete
-                ? <CheckCircle size={14} className="shrink-0" />
-                : <Scan size={14} className="shrink-0" />}
-              <span className="truncate">{isComplete ? 'Analysis Complete' : 'Scanning Content...'}</span>
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-sm readout min-w-0 transition-colors duration-500 ${isLiveStream ? 'text-red-400 border border-red-500/40' : (isComplete ? 'text-ok' : 'text-brass animate-pulse')}`}>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${isLiveStream ? 'bg-red-500 animate-ping' : (isComplete ? 'bg-ok' : 'bg-brass animate-ping')}`} />
+              <span className="truncate uppercase tracking-wider text-[11px] font-mono font-medium">
+                {isLiveStream ? 'LIVE STREAM MONITORING' : (isComplete ? 'Processing Complete' : 'AI Analysis in Progress')}
+              </span>
             </div>
             {/* Carries nothing the left pill doesn't; it is the first thing to
                 go when there is no room. */}
