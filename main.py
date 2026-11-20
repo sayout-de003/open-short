@@ -866,7 +866,8 @@ def sanitize_filename(filename):
     # every clip with a Spanish title. Normalising here fixes the whole chain at
     # its source, and is a no-op for the ASCII names that already worked.
     filename = unicodedata.normalize('NFC', filename)
-    filename = re.sub(r'[<>:"/\\|?*#]', '', filename)
+    filename = filename.replace('%', '_pct_')
+    filename = re.sub(r'[<>:"/\\|?*#%]', '', filename)
     filename = filename.replace(' ', '_')
     return truncate_bytes(filename, MAX_TITLE_BYTES)
 
