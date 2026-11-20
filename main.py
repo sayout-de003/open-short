@@ -1303,6 +1303,16 @@ class _LiveSegmentProducer:
                 os.remove(f)
             except OSError:
                 pass
+        # Free up any segments older than the consumed index to prevent disk buildup
+        try:
+            for f in _glob.glob(os.path.join(self.seg_dir, "seg_*.ts")):
+                if self._parse_idx(f) <= self._consumed_idx:
+                    try:
+                        os.remove(f)
+                    except OSError:
+                        pass
+        except Exception:
+            pass
         return res.returncode == 0 and os.path.exists(dest_mp4) and os.path.getsize(dest_mp4) > 256 * 1024
 
     @staticmethod

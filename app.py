@@ -3149,6 +3149,150 @@ def _sweep_retained_sources(now=None):
             continue
 
 
+def _prune_unnecessary_storage(now=None):
+    """Frees up unnecessary disk storage every prune cycle:
+    1. Prunes output/temp (renders, live_buffer) for inactive jobs or files older than 30m.
+    2. Purges stale .live_segments and .early_audio.* in completed or inactive job directories.
+    3. Purges intermediate temp_*.mp4 files in completed jobs where finished/subtitled clips exist.
+    4. Purges empty job directories in OUTPUT_DIR older than 10 minutes that contain no clips or metadata.
+    5. Cleans stale temporary files in /tmp (pip-unpack-*, reframe_v2_*, cdp_bench_*, tmp*) older than 1 hour.
+    6. Checks disk free space; if free disk < 20 GB, cleans system caches (pip cache, apt cache, journal vacuum).
+    """
+    now = time.time() if now is None else now
+    freed_bytes = 0
+
+    # 1. Prune output/temp
+    temp_dir = os.path.join(OUTPUT_DIR, "temp")
+    if os.path.isdir(temp_dir):
+        for sub in ("renders", "live_buffer", "live_renders"):
+            subpath = os.path.join(temp_dir, sub)
+            if not os.path.isdir(subpath):
+                continue
+            try:
+                sub_items = os.listdir(subpath)
+            except OSError:
+                continue
+            for item in sub_items:
+                item_path = os.path.join(subpath, item)
+                try:
+                    job_key = item.replace("job_", "")
+                    if _job_is_active(item, now) or _job_is_active(job_key, now):
+                        continue
+                    mtime = os.path.getmtime(item_path)
+                    # Purge inactive temp folders older than 30 minutes
+                    if now - mtime > 1800:
+                        size = _dir_size(item_path) if os.path.isdir(item_path) else os.path.getsize(item_path)
+                        if os.path.isdir(item_path):
+                            shutil.rmtree(item_path, ignore_errors=True)
+                        else:
+                            os.remove(item_path)
+                        freed_bytes += size
+                        print(f"🧹 Pruned inactive temp: {item} ({size / 1024**2:.1f} MB)")
+                except Exception:
+                    pass
+
+    # 2. Prune completed/failed job folders of intermediate residues
+    try:
+        entries = os.listdir(OUTPUT_DIR)
+    except OSError:
+        entries = []
+
+    for entry in entries:
+        if _not_a_job_dir(entry) or entry in ("thumbnails", "assets", "temp", "clips", "logs"):
+            continue
+        job_dir = os.path.join(OUTPUT_DIR, entry)
+        if not os.path.isdir(job_dir):
+            continue
+        if _job_is_active(entry, now):
+            continue
+
+        # Stale .live_segments in completed/inactive jobs
+        live_seg_dir = os.path.join(job_dir, ".live_segments")
+        if os.path.isdir(live_seg_dir):
+            try:
+                sz = _dir_size(live_seg_dir)
+                shutil.rmtree(live_seg_dir, ignore_errors=True)
+                freed_bytes += sz
+                print(f"🧹 Pruned stale live segments in {entry} ({sz / 1024**2:.1f} MB)")
+            except Exception:
+                pass
+
+        # Stale early audio, logs, and part files
+        for pat in (".early_audio*", ".ffmpeg_live_*.log", "*.part"):
+            for f in glob.glob(os.path.join(job_dir, pat)):
+                try:
+                    sz = os.path.getsize(f)
+                    os.remove(f)
+                    freed_bytes += sz
+                except Exception:
+                    pass
+
+        # Intermediate temp_*.mp4 if final subtitled / canonical clips exist
+        final_clips = [f for f in glob.glob(os.path.join(job_dir, "*.mp4"))
+                       if not os.path.basename(f).startswith("temp_") and "clip_" in os.path.basename(f)]
+        if final_clips:
+            for f in glob.glob(os.path.join(job_dir, "temp_*.mp4")):
+                try:
+                    sz = os.path.getsize(f)
+                    os.remove(f)
+                    freed_bytes += sz
+                    print(f"🧹 Pruned intermediate render {os.path.basename(f)} ({sz / 1024**2:.1f} MB)")
+                except Exception:
+                    pass
+
+        # 3. Prune empty job dirs older than 10 minutes
+        try:
+            items = os.listdir(job_dir)
+            if not items:
+                mtime = os.path.getmtime(job_dir)
+                if now - mtime > 600:
+                    shutil.rmtree(job_dir, ignore_errors=True)
+                    print(f"🧹 Purged empty project folder: {entry}")
+        except Exception:
+            pass
+
+    # 4. Prune stale /tmp processing directories older than 1 hour
+    try:
+        tmp_patterns = [
+            "/tmp/pip-unpack-*",
+            "/tmp/reframe_v2_*",
+            "/tmp/tmp*",
+            "/tmp/electron-download-*",
+            "/tmp/cdp_bench_*",
+            "/tmp/blender_*"
+        ]
+        for pat in tmp_patterns:
+            for p in glob.glob(pat):
+                try:
+                    mtime = os.path.getmtime(p)
+                    if now - mtime > 3600:
+                        sz = _dir_size(p) if os.path.isdir(p) else os.path.getsize(p)
+                        if os.path.isdir(p):
+                            shutil.rmtree(p, ignore_errors=True)
+                        else:
+                            os.remove(p)
+                        freed_bytes += sz
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # 5. Check total disk space: if free disk < 20 GB, clean system caches
+    try:
+        usage = shutil.disk_usage("/")
+        free_gb = usage.free / (1024 ** 3)
+        if free_gb < 20.0:
+            print(f"⚠️ Low disk space warning: {free_gb:.1f} GB free. Performing deep system cache cleanup...")
+            subprocess.run(["pip", "cache", "purge"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+            subprocess.run(["apt-get", "clean"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+            subprocess.run(["journalctl", "--vacuum-size=100M"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+    except Exception:
+        pass
+
+    if freed_bytes > 0:
+        print(f"🧹 Storage pruning completed: freed {freed_bytes / 1024**2:.1f} MB.")
+
+
 async def cleanup_jobs():
     """Background task to remove old jobs and files."""
     import time
@@ -3172,6 +3316,9 @@ async def cleanup_jobs():
             # on demand, so this only costs a re-download.
             _enforce_output_size_cap()
             _enforce_uploads_size_cap()
+
+            # Automatic deep storage pruning every cycle
+            _prune_unnecessary_storage(now)
 
             # Cleanup SaaSShorts jobs from memory
             try:
@@ -5716,6 +5863,23 @@ async def get_system_resources():
     }
 
 
+@app.post("/api/system/prune-disk")
+async def trigger_prune_disk():
+    """Manually trigger immediate storage and disk pruning."""
+    import time
+    now = time.time()
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, lambda: _prune_unnecessary_storage(now))
+    usage = shutil.disk_usage("/")
+    return {
+        "status": "success",
+        "free_gb": round(usage.free / (1024 ** 3), 2),
+        "total_gb": round(usage.total / (1024 ** 3), 2),
+        "used_gb": round(usage.used / (1024 ** 3), 2),
+        "free_percent": round((usage.free / usage.total) * 100, 1)
+    }
+
+
 @app.get("/api/tasks")
 async def list_bg_tasks():
     """List background async clip/crop/edit/capture tasks."""
@@ -7266,7 +7430,7 @@ async def list_projects_endpoint():
 
     for entry in entries:
         job_dir = os.path.join(OUTPUT_DIR, entry)
-        if not os.path.isdir(job_dir) or entry in ("thumbnails", "assets"):
+        if not os.path.isdir(job_dir) or entry in ("thumbnails", "assets", "temp", "clips", "logs") or entry.startswith("."):
             continue
 
         try:
@@ -7338,6 +7502,9 @@ async def list_projects_endpoint():
             status = "failed"
         else:
             status = "empty"
+
+        if status == "empty" and entry not in jobs and not clip_list:
+            continue
 
         projects.append({
             "job_id": entry,
