@@ -5020,8 +5020,7 @@ def _finish_job(job_id, returncode, output_dir):
                                 final_title = clip.get('video_title_for_youtube_short') or clip.get('title', 'Viral Short')
                                 final_description = clip.get('video_description_for_instagram') or clip.get('video_description_for_tiktok') or f"{final_title} #shorts"
                                 logger.info(f"📡 [Zero-Touch] Auto-uploading clip to YouTube: {filename}...")
-                                yt_res = await asyncio.to_thread(
-                                    youtube_publisher.upload_video_to_youtube,
+                                yt_res = youtube_publisher.upload_video_to_youtube(
                                     file_path=file_path,
                                     title=final_title,
                                     description=final_description,
