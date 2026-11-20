@@ -17,7 +17,7 @@ class TranscriptAnalyzer:
         self,
         base_url: Optional[str] = None,
         model_name: str = "qwen3:1.7b",
-        timeout: float = 60.0,
+        timeout: float = 12.0,
     ):
         self.base_url = (base_url or os.getenv("LLM_BASE_URL") or "http://localhost:11434/v1").rstrip("/")
         self.model_name = os.getenv("LLM_MODEL") or model_name

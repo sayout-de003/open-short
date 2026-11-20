@@ -3309,7 +3309,7 @@ def analyze_and_detect_clips(input_video, duration, viewer_clips=None,
         clips_data = get_visual_clips(input_video, duration, viewer_clips=viewer_clips)
 
     if is_live_continuous and clips_data and clips_data.get('shorts'):
-        min_v_score = float(os.environ.get("LIVE_MIN_VIRALITY_SCORE", "6.5"))
+        min_v_score = float(os.environ.get("LIVE_MIN_VIRALITY_SCORE", "5.0"))
         filtered_shorts = []
         for s in clips_data['shorts']:
             score_val = s.get("predicted_score")
@@ -3319,11 +3319,15 @@ def analyze_and_detect_clips(input_video, duration, viewer_clips=None,
                 score_val = s.get("score")
             if score_val is None or float(score_val) >= min_v_score:
                 filtered_shorts.append(s)
+        if not filtered_shorts and clips_data['shorts']:
+            # Keep at least the highest scoring moment rather than returning zero clips
+            best_clip = max(clips_data['shorts'], key=lambda s: float(s.get("predicted_score") or s.get("virality_score") or s.get("score") or 0))
+            filtered_shorts = [best_clip]
         if len(filtered_shorts) < len(clips_data['shorts']):
             print(f"🎯 [Live Monitor] Kept {len(filtered_shorts)}/{len(clips_data['shorts'])} clip(s) meeting virality >= {min_v_score}.")
         clips_data['shorts'] = filtered_shorts
 
-    if (not clips_data or not clips_data.get('shorts')) and not is_live_continuous:
+    if not clips_data or not clips_data.get('shorts'):
         print("🤖 LLM did not return usable clips — activating 100% Local Intelligence Pipeline...")
         try:
             from gaming_intelligence.pipeline import LocalIntelligencePipeline
