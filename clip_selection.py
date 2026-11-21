@@ -655,27 +655,80 @@ def generate_clips_from_windows_and_peaks(
 
     scored_windows.sort(key=lambda x: x[0], reverse=True)
 
-    target_count = max(min_clips, min(max_clips, len(scored_windows)))
-    chosen_windows = [w for _, w in scored_windows[:target_count]]
+    target_count = max(min_clips, min(max_clips, 5))
+
+    # Collect candidate moment seeds from all detected peaks and windows
+    candidate_seeds = []
+    seen_centers = []
+
+    # First, collect from windows' action moments or standalone action_peaks
+    all_peaks = list(action_peaks or [])
+    for _, w in scored_windows:
+        for m in w.get("action_moments", []):
+            if m not in all_peaks:
+                all_peaks.append(m)
+
+    all_peaks.sort(key=lambda p: float(p.get("intensity", 0.0)), reverse=True)
+
+    for p in all_peaks:
+        p_start = float(p.get("start", 0.0))
+        p_end = float(p.get("end", p_start + min_secs))
+        center = (p_start + p_end) / 2.0
+        # Ensure at least 15s distance between seed centers
+        if not any(abs(center - c) < 15.0 for c in seen_centers):
+            seen_centers.append(center)
+            candidate_seeds.append({
+                "center": center,
+                "peak_type": p.get("type", "action_climax"),
+                "intensity": float(p.get("intensity", 0.8)),
+                "window": next((w for _, w in scored_windows if float(w.get("start", 0)) <= center <= float(w.get("end", video_duration))), scored_windows[0][1]),
+            })
+            if len(candidate_seeds) >= target_count:
+                break
+
+    # If still fewer seeds than target_count, backfill from remaining window centers
+    if len(candidate_seeds) < target_count:
+        for _, w in scored_windows:
+            w_start = float(w.get("start", 0.0))
+            w_end = float(w.get("end", video_duration))
+            center = (w_start + w_end) / 2.0
+            if not any(abs(center - c) < 15.0 for c in seen_centers):
+                seen_centers.append(center)
+                candidate_seeds.append({
+                    "center": center,
+                    "peak_type": "action_highlight",
+                    "intensity": float(w.get("action_intensity", 0.6)),
+                    "window": w,
+                })
+                if len(candidate_seeds) >= target_count:
+                    break
+
+    # If video is long enough, split available timeline into segments to hit target_count
+    if len(candidate_seeds) < target_count and video_duration > min_secs:
+        step = max(min_secs, video_duration / max(1, target_count))
+        cur = 0.0
+        while cur + min_secs <= video_duration and len(candidate_seeds) < target_count:
+            center = cur + min_secs / 2.0
+            if not any(abs(center - c) < 15.0 for c in seen_centers):
+                seen_centers.append(center)
+                candidate_seeds.append({
+                    "center": center,
+                    "peak_type": "highlight",
+                    "intensity": 0.6,
+                    "window": scored_windows[0][1],
+                })
+            cur += step
 
     raw_clips = []
     default_tags = "#gaming #gameplay #twitch #viralshorts #fyp" if is_gaming else "#shorts #viral #trending #reels"
 
-    for idx, w in enumerate(chosen_windows):
-        w_start = float(w.get("start", 0.0))
-        w_end = float(w.get("end", video_duration))
-        w_len = max(1.0, w_end - w_start)
-        moments = w.get("action_moments") or []
+    for idx, seed in enumerate(candidate_seeds):
+        w = seed["window"]
+        center = seed["center"]
+        peak_type = seed["peak_type"]
+        intensity = seed["intensity"]
 
-        if moments:
-            best_moment = max(moments, key=lambda m: float(m.get("intensity", 0.0)))
-            center = (float(best_moment.get("start", w_start)) + float(best_moment.get("end", w_end))) / 2.0
-            peak_type = best_moment.get("type", "action_moment")
-        else:
-            center = (w_start + w_end) / 2.0
-            peak_type = "action_highlight"
-
-        desired_duration = min(max_secs, max(min_secs, min(w_len, (min_secs + max_secs) / 2.0)))
+        desired_duration = min(max_secs, max(min_secs, (min_secs + max_secs) / 2.0))
         raw_start = max(0.0, center - desired_duration / 2.0)
         raw_end = min(video_duration, raw_start + desired_duration)
         if raw_end - raw_start < min_secs:

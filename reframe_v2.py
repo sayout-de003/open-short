@@ -845,7 +845,8 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
     cameraman = m.SmoothedCameraman(out_w, out_h, orig_w, orig_h, aspect_ratio=aspect_ratio)
     tracker = m.SpeakerTracker(cooldown_frames=30)
 
-    needs_tracking = any(s == 'TRACK' for s in strategies.values())
+    strat_vals = strategies.values() if hasattr(strategies, 'values') else strategies
+    needs_tracking = any(s == 'TRACK' for s in strat_vals)
     if not needs_tracking:
         # Optimization: no scenes require face tracking (e.g. all TOP_INSET, INSET, WIDE, or SPLIT).
         # Skip expensive per-frame trajectory analysis to save up to 2 minutes of CPU rendering time.
@@ -865,7 +866,16 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
         xs = _analyze_trajectory(input_video, scene_boundaries, strategies, fps,
                                  orig_w, orig_h, cameraman, tracker)
     if not xs:
-        raise RuntimeError("analysis produced no frames")
+        print("   ⚠️ Trajectory produced no frames — using stabilized center framing")
+        crop_w = cameraman.crop_width
+        center_x = max(0, int((orig_w - crop_w) / 2))
+        total_frames = scene_boundaries[-1][1] if scene_boundaries else 0
+        if total_frames <= 0:
+            import cv2
+            cap = cv2.VideoCapture(input_video)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1800
+            cap.release()
+        xs = [center_x] * max(1, total_frames)
 
     # Beats are found once per clip; each scene takes the ones inside it.
     beats = []

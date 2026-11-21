@@ -867,8 +867,12 @@ def sanitize_filename(filename):
     # its source, and is a no-op for the ASCII names that already worked.
     filename = unicodedata.normalize('NFC', filename)
     filename = filename.replace('%', '_pct_')
+    # Strip emojis and pictographs (e.g. 🔴, 🎬, 🔥) and problematic symbols that break OpenCV/Nginx
+    filename = re.sub(r'[\U00010000-\U0010ffff]', '', filename)
+    filename = re.sub(r'[\u2600-\u27bf\u2300-\u23ff\u2b50-\u2b55]', '', filename)
     filename = re.sub(r'[<>:"/\\|?*#%]', '', filename)
     filename = filename.replace(' ', '_')
+    filename = re.sub(r'_+', '_', filename)
     return truncate_bytes(filename, MAX_TITLE_BYTES)
 
 
