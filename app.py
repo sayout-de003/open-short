@@ -6635,6 +6635,7 @@ async def process_endpoint(
                 tmpl_layout = tmpl_obj.get("layout")
                 if tmpl_layout == "stacked_top_cam":
                     env["STREAMER_CAM_POSITION"] = "top"
+                    env["TEMPLATE_LAYOUT"] = "stacked_top_cam"
                 elif tmpl_layout in ("split_two_speaker", "split") and "split" not in layouts:
                     layouts.append("split")
                 if tmpl_obj.get("duration_range") and not clip_min_seconds and not clip_max_seconds:
@@ -6682,6 +6683,7 @@ async def process_endpoint(
     env.update(chosen)
     if "stacked_top_cam" in layouts:
         env["STREAMER_CAM_POSITION"] = "top"
+        env["TEMPLATE_LAYOUT"] = "stacked_top_cam"
     if chosen:
         print(f"[layouts] job={job_id} enabled={sorted(chosen)}")
 

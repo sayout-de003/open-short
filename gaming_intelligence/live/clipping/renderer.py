@@ -34,13 +34,13 @@ def detect_best_encoder(ffmpeg_bin: str) -> List[str]:
 
         # 2. Linux / Windows NVIDIA NVENC
         if _test_encoder("h264_nvenc"):
-            return ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-b:v", "6000k"]
+            return ["-c:v", "h264_nvenc", "-preset", "p4", "-tune", "hq", "-cq", "22", "-b:v", "0", "-pix_fmt", "yuv420p"]
 
     except Exception:
         pass
 
-    # 3. CPU Ultrafast fallback
-    return ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "22"]
+    # 3. CPU Fast fallback (high quality 9:16 vertical render)
+    return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p"]
 
 
 class FastVerticalRenderer:

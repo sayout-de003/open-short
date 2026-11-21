@@ -224,15 +224,15 @@ def detect(video_path, samples=10):
             # BlazeFace even at full resolution, while YOLO still finds the
             # person.
             faces = screencast_layout.detect_faces_full_res(frame)
-            if faces:
-                box = max(faces, key=lambda c: c['score'])['box']
+            corner_faces = [f for f in (faces or []) if is_cornered(f['box'], frame_w, frame_h)]
+            if corner_faces:
+                box = max(corner_faces, key=lambda c: c['score'])['box']
+                boxes.append(inset_box(box, frame_w, frame_h, face=True))
             else:
-                box = m.detect_person_yolo(frame)
-            if not box:
-                continue
-            if not is_cornered(box, frame_w, frame_h):
-                continue
-            boxes.append(inset_box(box, frame_w, frame_h, face=bool(faces)))
+                person = m.detect_person_yolo(frame)
+                if person and is_cornered(person, frame_w, frame_h):
+                    boxes.append(inset_box(person, frame_w, frame_h, face=False))
+            continue
     finally:
         cap.release()
 
@@ -432,6 +432,11 @@ def inset_filtergraph(orig_w, orig_h, out_w, out_h, box, camera_ratio=None, cam_
         screen_crop_w = int(round(orig_h * target_screen_aspect))
         screen_crop_w = min(orig_w, screen_crop_w - (screen_crop_w % 2))
         screen_crop_x = (orig_w - screen_crop_w) // 2
+        # If webcam is in a corner and overlaps with centered gameplay crop, offset away from webcam
+        if x < orig_w * 0.35 and screen_crop_x < x + w:
+            screen_crop_x = min(orig_w - screen_crop_w, max(screen_crop_x, x + w))
+        elif (x + w) > orig_w * 0.65 and (screen_crop_x + screen_crop_w) > x:
+            screen_crop_x = max(0, min(screen_crop_x, x - screen_crop_w))
         screen_crop_x -= screen_crop_x % 2
 
         base_graph = (

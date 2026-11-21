@@ -1151,7 +1151,9 @@ def capture_live_stream_segment(info, expected_path, live_seconds=45, start_inde
                 *_live_ffmpeg_input_opts(stream_url, start_index),
                 '-i', stream_url,
                 '-t', str(int(live_seconds)),
-                '-c', 'copy',
+                '-c:v', 'copy',
+                '-c:a', 'copy',
+                '-bsf:a', 'aac_adtstoasc',
                 '-avoid_negative_ts', 'make_zero',
                 '-movflags', '+frag_keyframe+empty_moov',
                 expected_path
@@ -1164,7 +1166,9 @@ def capture_live_stream_segment(info, expected_path, live_seconds=45, start_inde
                 *_live_ffmpeg_input_opts(a_url, start_index),
                 '-i', a_url,
                 '-t', str(int(live_seconds)),
-                '-c', 'copy',
+                '-c:v', 'copy',
+                '-c:a', 'copy',
+                '-bsf:a', 'aac_adtstoasc',
                 '-avoid_negative_ts', 'make_zero',
                 '-shortest',
                 '-movflags', '+frag_keyframe+empty_moov',
@@ -1603,7 +1607,7 @@ def _download_youtube_video(url, output_dir=".", on_audio=None, allow_paid=True,
             print(f"🔴 Live video stream detected! Real-time live clipping active (capturing {live_seconds:.0f}s live-edge window)...")
             os.environ["IS_LIVE_STREAM"] = "1"
             if not os.environ.get("X264_PRESET"):
-                os.environ["X264_PRESET"] = "ultrafast"
+                os.environ["X264_PRESET"] = "veryfast"
             if not os.environ.get("CLIP_TARGET_MAX"):
                 os.environ["CLIP_TARGET_MAX"] = "5"
             # Do not force CLIP_TARGET_MIN=3 in continuous mode — otherwise quiet

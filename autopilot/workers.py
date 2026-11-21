@@ -119,7 +119,10 @@ class VODWorker:
         env["CONTENT_PROFILE"] = "gaming"
         env["CLIPPING_PROFILE"] = "gaming"
         env["TEMPLATE_ID"] = "streamer_stacked_top"
+        env["TEMPLATE_LAYOUT"] = "stacked_top_cam"
         env["STREAMER_CAM_POSITION"] = "top"
+        env["LIVE_CUT_SECONDS"] = "60"
+        env["LIVE_CONTINUOUS_MONITOR"] = "1"
         env["MAX_CLIP_DURATION"] = str(self.config.clip_max_duration)
         env["MIN_CLIP_DURATION"] = str(self.config.clip_min_duration)
 

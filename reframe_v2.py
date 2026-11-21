@@ -751,16 +751,28 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
     # five clips that had one, while camera_inset.detect finds all five with no
     # false positives. The box is fixed for the whole video, so it is found once.
     profile = os.getenv("CLIPPING_PROFILE", "auto").lower()
+    cam_pos_env = os.environ.get("STREAMER_CAM_POSITION", "").strip().lower()
+    tmpl_env = os.environ.get("TEMPLATE_ID", "").strip().lower()
+    tmpl_layout_env = os.environ.get("TEMPLATE_LAYOUT", "").strip().lower()
+    wants_stacked_cam = (
+        cam_pos_env in ("top", "bottom")
+        or tmpl_env == "streamer_stacked_top"
+        or tmpl_layout_env == "stacked_top_cam"
+    )
     is_gaming = (profile == "gaming")
 
     inset = None
-    if is_gaming or (content_ranges and screencast_layout.ENABLED):
+    if is_gaming or wants_stacked_cam or (content_ranges and screencast_layout.ENABLED) or profile in ("auto", "generic"):
         try:
             inset = camera_inset.detect(input_video)
         except Exception as e:
             print(f"   ⚠️ Inset check failed ({e}) — using standard layout.")
         if inset:
             print(f"   📹 Webcam inset at {inset}")
+        elif wants_stacked_cam:
+            # Explicit stacked cam layout requested; fallback to corner streamer inset
+            inset = (0, max(0, orig_h - int(orig_h * 0.28)), int(orig_w * 0.25), int(orig_h * 0.28))
+            print(f"   🎮 Stacked streamer cam requested: fallback inset at {inset}")
 
     screencasts = {}
     focus_crops = {}
@@ -768,12 +780,10 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
     wide_count = 0
     inset_count = 0
 
-    if is_gaming and inset:
-        # Gaming with streamer webcam: reframe scenes into stacked INSET layout
+    if inset and (is_gaming or wants_stacked_cam or cam_pos_env == "top"):
+        # Streamer webcam: reframe scenes into stacked INSET layout
         # (defaults to TOP_INSET unless STREAMER_CAM_POSITION=bottom is explicitly set)
-        top_cam = (
-            os.environ.get("STREAMER_CAM_POSITION", "").strip().lower() != "bottom"
-        )
+        top_cam = (cam_pos_env != "bottom")
         target_strategy = 'TOP_INSET' if top_cam else 'INSET'
         for scene_idx in range(len(scenes)):
             start_f, end_f = scene_boundaries[scene_idx]
@@ -782,7 +792,7 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
             alternates.pop(start_f, None)
             insets[start_f] = inset
             inset_count += 1
-        print(f"   🎮 Streamer webcam detected: routed {inset_count} gaming scene(s) to stacked {target_strategy} layout")
+        print(f"   🎮 Streamer webcam detected: routed {inset_count} scene(s) to stacked {target_strategy} layout (20/80)")
     elif content_ranges:
         for scene_idx, (plan, centre) in screencast_layout.detect_screencast_scenes(
                 input_video, scenes, strategies, content_ranges).items():
@@ -835,7 +845,15 @@ def render(input_video, final_output_video, aspect_ratio, content_ranges=None,
     cameraman = m.SmoothedCameraman(out_w, out_h, orig_w, orig_h, aspect_ratio=aspect_ratio)
     tracker = m.SpeakerTracker(cooldown_frames=30)
 
-    if is_gaming and not inset:
+    needs_tracking = any(s == 'TRACK' for s in strategies.values())
+    if not needs_tracking:
+        # Optimization: no scenes require face tracking (e.g. all TOP_INSET, INSET, WIDE, or SPLIT).
+        # Skip expensive per-frame trajectory analysis to save up to 2 minutes of CPU rendering time.
+        crop_w = cameraman.crop_width
+        center_x = max(0, int((orig_w - crop_w) / 2))
+        total_frames = scene_boundaries[-1][1] if scene_boundaries else 0
+        xs = [center_x] * total_frames
+    elif is_gaming and not inset:
         # Pure gameplay (e.g. GTA 6, action games without facecam):
         # Center-lock the framing so the tracker does not erratically whip to pedestrian NPCs or billboards.
         crop_w = cameraman.crop_width

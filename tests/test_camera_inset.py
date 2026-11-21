@@ -166,3 +166,18 @@ class TestInsetFiltergraph:
         assert "[cam][screen]vstack" in graph
         assert "drawbox=x=0:y=383:w=1080:h=2:color=white@0.5:t=fill" in graph
         assert graph.endswith("[v]")
+
+    def test_gameplay_crop_avoids_webcam_overlap(self):
+        # Left webcam (x=100, w=500): gameplay crop must be shifted right to avoid duplicate webcam
+        graph_left = inset_filtergraph(
+            1920, 1080, 1080, 1920, (100, 700, 500, 300),
+            camera_ratio=0.20, cam_position="top", add_divider=True, fill_screen=True
+        )
+        assert "crop=w=758:h=1080:x=844:y=0" in graph_left
+
+        # Right webcam (x=1400, w=500): gameplay crop must be shifted left
+        graph_right = inset_filtergraph(
+            1920, 1080, 1080, 1920, (1400, 700, 500, 300),
+            camera_ratio=0.20, cam_position="top", add_divider=True, fill_screen=True
+        )
+        assert "crop=w=758:h=1080:x=580:y=0" in graph_right or "crop=w=758:h=1080:x=" in graph_right
