@@ -19,6 +19,10 @@ which corner they are nearest, and grow a box from that corner until it covers
 them with margin.
 """
 import os
+import threading
+
+_INSET_CACHE = {}
+_INSET_CACHE_LOCK = threading.Lock()
 
 from ffmpeg_utils import blurred_backdrop
 
@@ -197,6 +201,15 @@ def detect(video_path, samples=10):
     None means "no usable inset here", which callers must treat as "use another
     layout" rather than as an error.
     """
+    try:
+        mtime = os.path.getmtime(video_path) if os.path.exists(video_path) else 0
+        cache_key = (os.path.abspath(video_path), mtime, samples)
+        with _INSET_CACHE_LOCK:
+            if cache_key in _INSET_CACHE:
+                return _INSET_CACHE[cache_key]
+    except Exception:
+        cache_key = None
+
     import cv2
     import numpy as np
     import main as m
@@ -236,10 +249,16 @@ def detect(video_path, samples=10):
     finally:
         cap.release()
 
-    if len(boxes) < max(3, samples // 3):
-        return None
+    res = None
+    if len(boxes) >= max(3, samples // 3):
+        res = stable_box(boxes, frame_w, frame_h)
 
-    return stable_box(boxes, frame_w, frame_h)
+    if cache_key is not None:
+        with _INSET_CACHE_LOCK:
+            _INSET_CACHE[cache_key] = res
+            if len(_INSET_CACHE) > 100:
+                _INSET_CACHE.pop(next(iter(_INSET_CACHE)))
+    return res
 
 
 def stable_box(boxes, frame_w, frame_h, min_agree=3):

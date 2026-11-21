@@ -121,8 +121,9 @@ class VODWorker:
         env["TEMPLATE_ID"] = "streamer_stacked_top"
         env["TEMPLATE_LAYOUT"] = "stacked_top_cam"
         env["STREAMER_CAM_POSITION"] = "top"
-        env["LIVE_CUT_SECONDS"] = "60"
-        env["LIVE_CONTINUOUS_MONITOR"] = "1"
+        env["LIVE_CUT_SECONDS"] = "45"
+        env["LIVE_CONTINUOUS_MONITOR"] = "0"
+        env["X264_PRESET"] = "veryfast"
         env["MAX_CLIP_DURATION"] = str(self.config.clip_max_duration)
         env["MIN_CLIP_DURATION"] = str(self.config.clip_min_duration)
 
@@ -138,17 +139,34 @@ class VODWorker:
             except Exception:
                 pass
 
+        _push_log(f"⚡ Starting video pipeline: capturing & cutting viral reels for {url[:50]}...")
+        recent_lines = []
         try:
-            res = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=1800)
-            if res.returncode != 0:
-                err = (res.stderr or res.stdout or "")[-400:]
-                raise RetryableError(f"main.py exited {res.returncode}: {err}")
-            if res.stdout and job_id:
-                for line in res.stdout.splitlines():
-                    clean = line.strip()
-                    if clean and any(marker in clean for marker in ("Download", "Transcrib", "Gemini", "Detect", "Render", "Clip", "✅", "⚠️", "❌", "ffmpeg")):
-                        _push_log(clean)
+            proc = subprocess.Popen(
+                cmd,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            for raw_line in proc.stdout:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                recent_lines.append(line)
+                if len(recent_lines) > 50:
+                    recent_lines.pop(0)
+                # Stream real-time progress to app logs
+                if any(k in line for k in ("Live", "Captur", "Download", "Transcrib", "Whisper", "Gemini", "Detect", "Render", "Clip", "fram", "✅", "⚠️", "❌", "ffmpeg", "Short")):
+                    _push_log(line)
+            ret = proc.wait(timeout=600)
+            if ret != 0:
+                err_summary = "\n".join(recent_lines[-10:])
+                raise RetryableError(f"main.py exited {ret}: {err_summary[-400:]}")
         except subprocess.TimeoutExpired as e:
+            if 'proc' in locals():
+                proc.kill()
             raise RetryableError(f"main.py timed out for {url}") from e
 
     def _collect_generated_clips(self, output_dir: Path) -> List[Dict[str, Any]]:

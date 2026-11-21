@@ -32,6 +32,12 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
   const [clipFeedback, setClipFeedback] = useState(null);
   const [activeJobs, setActiveJobs] = useState([]);
 
+  // Selected project filter for the right panel
+  const [selectedJobId, setSelectedJobId] = useState(null);
+  const [selectedSourceId, setSelectedSourceId] = useState(null);
+  const [selectedProjectTitle, setSelectedProjectTitle] = useState(null);
+  const [clipFilterScope, setClipFilterScope] = useState('project'); // 'project' | 'all'
+
   // Status & channel config
   const [overview, setOverview] = useState(null);
   const [ytConfig, setYtConfig] = useState(null);
@@ -80,6 +86,31 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
     }
   }, [searchQuery]);
 
+  // Compute clips strictly filtered to the selected project when in 'project' mode
+  const selectedJobActive = activeJobs.find(j => 
+    (selectedJobId && j.id === selectedJobId) || 
+    (selectedSourceId && (j.source_id === selectedSourceId || j.source_pk === selectedSourceId))
+  );
+  const isSelectedProjectRunning = selectedJobActive && ['queued', 'claimed', 'processing', 'running'].includes((selectedJobActive.status || '').toLowerCase());
+
+  const displayedClips = React.useMemo(() => {
+    if (clipFilterScope === 'all') return clips;
+    if (!selectedJobId && !selectedSourceId) {
+      if (activeJobs.length > 0) {
+        const topJob = activeJobs[0];
+        const match = clips.filter(c => c.job_id === topJob.id || (topJob.source_id && c.source_id === topJob.source_id));
+        if (match.length > 0) return match;
+      }
+      return clips;
+    }
+    return clips.filter(c => {
+      if (selectedJobId && c.job_id === selectedJobId) return true;
+      if (selectedSourceId && c.source_id === selectedSourceId) return true;
+      if (selectedProjectTitle && c.source_title && c.source_title.toLowerCase().includes(selectedProjectTitle.toLowerCase().slice(0, 15))) return true;
+      return false;
+    });
+  }, [clips, clipFilterScope, selectedJobId, selectedSourceId, selectedProjectTitle, activeJobs]);
+
   // Initial load
   useEffect(() => {
     fetchYtConfig();
@@ -115,7 +146,14 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
         }),
       });
 
-      // Instantly show in active jobs UI
+      // Instantly show in active jobs UI and select for right-side clips
+      if (res.job_id) {
+        setSelectedJobId(res.job_id);
+      }
+      setSelectedSourceId(source.source_id);
+      setSelectedProjectTitle(source.title);
+      setClipFilterScope('project');
+
       setActiveJobs(prev => [
         {
           id: res.job_id || `job_${Date.now()}`,
@@ -446,21 +484,50 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
         {/* RIGHT COLUMN: Generated Reels & Auto-Post Monitor (5 cols) */}
         <div className="lg:col-span-5 space-y-4">
           <div className="card p-4 sm:p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Sparkles size={16} className="text-brass" />
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-ink">
-                  Generated Reels &amp; Auto-Posting
-                </h2>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2.5 border-b border-rule">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={16} className="text-brass shrink-0" />
+                  <h2 className="text-sm font-semibold uppercase tracking-wider text-ink truncate">
+                    {clipFilterScope === 'project' ? 'Project Reels' : 'All Reels'}
+                  </h2>
+                </div>
+                {selectedProjectTitle && clipFilterScope === 'project' && (
+                  <p className="text-[10px] text-muted truncate max-w-[240px] mt-0.5">
+                    Stream: <span className="text-sky-400 font-medium">{selectedProjectTitle}</span>
+                  </p>
+                )}
               </div>
-              <button
-                onClick={fetchClips}
-                disabled={loadingClips}
-                className="btn-quiet p-1.5 text-xs text-muted hover:text-ink"
-                title="Refresh clips"
-              >
-                <RefreshCw size={13} className={loadingClips ? "animate-spin text-brass" : ""} />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="bg-paper3 p-0.5 rounded-full border border-rule flex text-[10px]">
+                  <button
+                    onClick={() => setClipFilterScope('project')}
+                    className={`px-2 py-0.5 rounded-full font-medium transition-colors ${
+                      clipFilterScope === 'project' ? 'bg-brass text-paper font-semibold shadow-xs' : 'text-muted hover:text-ink'
+                    }`}
+                    title="Show only reels for selected stream"
+                  >
+                    Project ({displayedClips.length})
+                  </button>
+                  <button
+                    onClick={() => setClipFilterScope('all')}
+                    className={`px-2 py-0.5 rounded-full font-medium transition-colors ${
+                      clipFilterScope === 'all' ? 'bg-brass text-paper font-semibold shadow-xs' : 'text-muted hover:text-ink'
+                    }`}
+                    title="Show all cut reels"
+                  >
+                    All ({clips.length})
+                  </button>
+                </div>
+                <button
+                  onClick={fetchClips}
+                  disabled={loadingClips}
+                  className="btn-quiet p-1.5 text-xs text-muted hover:text-ink"
+                  title="Refresh clips"
+                >
+                  <RefreshCw size={13} className={loadingClips ? "animate-spin text-brass" : ""} />
+                </button>
+              </div>
             </div>
 
             {/* Active Running/Queued Jobs Card */}
@@ -483,9 +550,15 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
                   {activeJobs.filter(j => ['queued', 'claimed', 'processing', 'running'].includes((j.status || '').toLowerCase())).map(j => (
                     <div
                       key={j.id}
-                      onClick={() => onOpenProject && onOpenProject(j.id, j)}
+                      onClick={() => {
+                        setSelectedJobId(j.id);
+                        setSelectedSourceId(j.source_id);
+                        setSelectedProjectTitle(j.title);
+                        setClipFilterScope('project');
+                        if (onOpenProject) onOpenProject(j.id, j);
+                      }}
                       className="p-2.5 rounded bg-paper border border-rule hover:border-sky-500/60 hover:bg-paper2 cursor-pointer flex items-center justify-between gap-3 text-xs transition-all group shadow-xs"
-                      title="Click to open live clipping screen with video preview & system logs"
+                      title="Click to select this project & view live video preview, logs and clips"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="font-medium text-ink group-hover:text-sky-400 transition-colors truncate flex items-center gap-1.5">
@@ -516,22 +589,38 @@ export default function AutopilotTab({ onOpenProject, onUpgrade, justConnected }
               </div>
             )}
 
-            {loadingClips && clips.length === 0 ? (
+            {loadingClips && displayedClips.length === 0 ? (
               <div className="py-16 flex flex-col items-center justify-center text-muted space-y-2">
                 <Loader2 size={24} className="animate-spin text-brass" />
                 <p className="text-xs">Loading cut reels...</p>
               </div>
-            ) : clips.length === 0 ? (
-              <div className="py-14 text-center text-muted space-y-3 bg-paper/40 rounded border border-rule/50 p-4">
-                <Scissors size={28} className="mx-auto text-muted/60" />
-                <p className="text-xs text-ink font-medium">No reels cut yet</p>
-                <p className="text-[11px] leading-relaxed max-w-xs mx-auto text-muted">
-                  Click <strong>&quot;Cut Reels Now&quot;</strong> on any stream on the left. The AI will extract viral moments, apply the 20/80 layout, and list them here ready to post.
-                </p>
-              </div>
+            ) : displayedClips.length === 0 ? (
+              isSelectedProjectRunning ? (
+                <div className="py-12 text-center text-muted space-y-3 bg-paper/60 rounded border border-sky-500/30 p-5 animate-fade">
+                  <Loader2 size={26} className="animate-spin text-sky-400 mx-auto" />
+                  <p className="text-xs text-ink font-medium">Clipping in progress for &quot;{selectedProjectTitle || selectedJobActive?.title}&quot;</p>
+                  <p className="text-[11px] leading-relaxed max-w-xs mx-auto text-muted">
+                    20/80 streamer top cam &amp; gameplay framing is rendering. Your reels will appear here automatically when finished.
+                  </p>
+                </div>
+              ) : (
+                <div className="py-14 text-center text-muted space-y-3 bg-paper/40 rounded border border-rule/50 p-4">
+                  <Scissors size={28} className="mx-auto text-muted/60" />
+                  <p className="text-xs text-ink font-medium">
+                    {clipFilterScope === 'project' && selectedProjectTitle ? 'No reels cut yet for this project' : 'No reels cut yet'}
+                  </p>
+                  <p className="text-[11px] leading-relaxed max-w-xs mx-auto text-muted">
+                    {clipFilterScope === 'project' && selectedProjectTitle ? (
+                      <>Reels for this stream will appear here as soon as clipping completes. You can also <button onClick={() => setClipFilterScope('all')} className="text-brass underline">view all reels</button>.</>
+                    ) : (
+                      <>Click <strong>&quot;Cut Reels Now&quot;</strong> on any stream on the left. The AI will extract viral moments, apply the 20/80 layout, and list them here ready to post.</>
+                    )}
+                  </p>
+                </div>
+              )
             ) : (
               <div className="space-y-4 max-h-[640px] overflow-y-auto custom-scrollbar pr-1">
-                {clips.map((clip) => {
+                {displayedClips.map((clip) => {
                   const isPosted = clip.posted || clip.publication_status === 'sent';
                   const isPublishing = publishingClipId === clip.id;
                   const feedback = publishFeedback[clip.id];

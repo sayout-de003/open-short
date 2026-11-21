@@ -144,11 +144,11 @@ def mark_ai_generated(path, detail=""):
 
 
 def audio_encode_args():
-    """AAC encode args for a delivered clip, with loudness normalisation."""
-    args = ["-c:a", "aac"]
+    """AAC encode args for a delivered clip, with sample-accurate PTS sync and loudness normalisation."""
+    filters = ["aresample=async=1:first_pts=0"]
     if os.environ.get("AUDIO_NORMALIZE", "1").strip() != "0":
-        args = ["-af", LOUDNORM_FILTER] + args
-    return args
+        filters.append(LOUDNORM_FILTER)
+    return ["-af", ",".join(filters), "-c:a", "aac", "-b:a", "192k"]
 
 _probe_lock = threading.Lock()
 _nvenc_ok = None  # None = not probed yet
@@ -431,11 +431,15 @@ def cut_clip(input_video, clip_temp_path, start, end, clip_number):
     """
     encode_args = video_encode_args(INTERMEDIATE)
     rate = cut_rate_filter(input_video)
+    duration = max(1.0, round(float(end) - float(start), 3))
+    # Frame-accurate seeking: -ss <start> -i <input> -t <duration> with -accurate_seek
+    # guarantees exact frame duration, avoids relative -to timestamp bugs, and locks PTS timestamps.
     command = [
         'ffmpeg', '-y',
+        '-accurate_seek',
         '-ss', str(start),
-        '-to', str(end),
         '-i', input_video,
+        '-t', str(duration),
         *rate,
         *encode_args,
         *audio_encode_args(),
@@ -451,7 +455,7 @@ def cut_clip(input_video, clip_temp_path, start, end, clip_number):
             i = gpu_args.index("-pix_fmt")
             del gpu_args[i:i + 2]
         gpu_command = ['ffmpeg', '-y', '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda',
-                       '-ss', str(start), '-to', str(end), '-i', input_video,
+                       '-accurate_seek', '-ss', str(start), '-i', input_video, '-t', str(duration),
                        *rate, *gpu_args, *audio_encode_args(),
                        '-avoid_negative_ts', 'make_zero', clip_temp_path]
 

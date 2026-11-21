@@ -49,10 +49,8 @@ def clip_count_targets(n_windows):
     import os
 
     n = max(1, int(n_windows or 1))
-    # Floor grows with material and duration: scales up to 15 for long sources
-    low = max(2, min(15, n // 2 + 2))
-    # Ceiling allows rich material across long videos to yield more clips without padding
-    high = min(30, max(4, n * 2))
+    low = max(2, min(6, n // 2 + 2))
+    high = min(12, max(4, n * 2))
     low = min(low, high)
 
     def _override(name, current):
@@ -89,8 +87,7 @@ def shortlist_target(video_duration):
         seconds = float(video_duration or 0)
     except (TypeError, ValueError):
         seconds = 0.0
-    # Scaled up to 35 for multi-hour streams and longform content
-    return max(3, min(35, int(seconds // 90) + 2))
+    return max(3, min(10, int(seconds // 90) + 2))
 
 
 def score_batches(windows, batch_size):
@@ -409,14 +406,21 @@ def snap_clip_to_words(start, end, words, video_duration,
         prev_ends = [e for e in ends if e <= word_start]
         if prev_ends:
             gap = max(0.0, word_start - max(prev_ends))
-            lead = min(max_lead, max(0.20, gap * 0.75)) if gap >= 0.20 else min(max_lead, gap)
+            lead = min(max_lead, gap / 2.0) if gap > 0.05 else 0.0
         else:
-            lead = min(max_lead, max(0.25, word_start))
+            lead = min(max_lead, word_start / 2.0) if word_start > 0.05 else 0.0
         new_start = max(0.0, word_start - lead)
 
     # END: snap to the nearest word end, favoring sentence or clause completions
     new_end = float(end)
-    end_candidates = [i for i, e in enumerate(ends) if abs(e - new_end) <= search_window + 0.8]
+    # Adaptive lookahead: if candidate is mid-clause, search forward up to 3.5s
+    # (bounded by max_duration) to keep punchlines and full sentences intact.
+    max_lookahead = max(0.8, min(3.5, max_duration - (new_end - new_start)))
+    end_candidates = [
+        i for i, e in enumerate(ends)
+        if (e >= new_end and (e - new_end) <= search_window + max_lookahead) or
+           (e < new_end and (new_end - e) <= search_window)
+    ]
     if end_candidates:
         best_end_i = end_candidates[0]
         min_end_dist = float("inf")
@@ -428,15 +432,23 @@ def snap_clip_to_words(start, end, words, video_duration,
             has_pause_after = False
             if i + 1 < n_words:
                 next_s = starts[i + 1]
-                has_pause_after = (next_s - e_val >= 0.40)
+                has_pause_after = (next_s - e_val >= 0.35)
             else:
                 has_pause_after = True
 
             weight = dist
             if _is_sentence_terminal(w_text):
-                weight -= 0.5
-            elif _is_clause_terminal(w_text) or has_pause_after:
-                weight -= 0.25
+                weight -= 2.2  # Decisive bonus for complete sentences and punchlines
+            elif _is_clause_terminal(w_text):
+                weight -= 1.0
+            elif has_pause_after:
+                weight -= 0.8
+            else:
+                # Active speech continuation - penalize severing an unfinished phrase
+                weight += 2.0
+
+            if _is_conjunction_or_filler(w_text):
+                weight += 1.5  # Never end on unfinished conjunctions ("and", "so", "but")
 
             if weight < min_end_dist:
                 min_end_dist = weight
@@ -612,3 +624,110 @@ def fuse_action_peaks_into_windows(windows, action_peaks):
             w["action_intensity"] = 0.0
 
     return windows
+
+
+def generate_clips_from_windows_and_peaks(
+    windows, action_peaks, words, video_duration,
+    min_clips=1, max_clips=5, min_secs=30.0, max_secs=60.0,
+    is_gaming=True
+):
+    """
+    Deterministically generates structured viral clips from candidate windows and action/audio peaks
+    when LLM inference times out or is unavailable. Snaps boundaries to word/sentence boundaries.
+    """
+    if not windows:
+        return []
+
+    high_energy_keywords = {
+        "omg", "what", "no way", "insane", "crazy", "wow", "kill", "win", "fail",
+        "secret", "never", "always", "how", "why", "died", "look", "run", "fast",
+        "unbelievable", "huge", "holy", "dude", "bro", "epic", "legendary", "cut", "shot"
+    }
+
+    scored_windows = []
+    for w in windows:
+        w_int = float(w.get("action_intensity", 0.0))
+        n_moments = len(w.get("action_moments", []))
+        text = str(w.get("text", "")).lower()
+        k_hits = sum(1 for k in high_energy_keywords if k in text)
+        score = 50 + int(w_int * 35) + min(10, n_moments * 3) + min(5, k_hits * 1)
+        scored_windows.append((min(98, score), w))
+
+    scored_windows.sort(key=lambda x: x[0], reverse=True)
+
+    target_count = max(min_clips, min(max_clips, len(scored_windows)))
+    chosen_windows = [w for _, w in scored_windows[:target_count]]
+
+    raw_clips = []
+    default_tags = "#gaming #gameplay #twitch #viralshorts #fyp" if is_gaming else "#shorts #viral #trending #reels"
+
+    for idx, w in enumerate(chosen_windows):
+        w_start = float(w.get("start", 0.0))
+        w_end = float(w.get("end", video_duration))
+        w_len = max(1.0, w_end - w_start)
+        moments = w.get("action_moments") or []
+
+        if moments:
+            best_moment = max(moments, key=lambda m: float(m.get("intensity", 0.0)))
+            center = (float(best_moment.get("start", w_start)) + float(best_moment.get("end", w_end))) / 2.0
+            peak_type = best_moment.get("type", "action_moment")
+        else:
+            center = (w_start + w_end) / 2.0
+            peak_type = "action_highlight"
+
+        desired_duration = min(max_secs, max(min_secs, min(w_len, (min_secs + max_secs) / 2.0)))
+        raw_start = max(0.0, center - desired_duration / 2.0)
+        raw_end = min(video_duration, raw_start + desired_duration)
+        if raw_end - raw_start < min_secs:
+            raw_start = max(0.0, raw_end - min_secs)
+
+        # Snap to sentence / word boundaries
+        snapped_start, snapped_end = snap_clip_to_words(
+            raw_start, raw_end, words, video_duration,
+            min_duration=min_secs, max_duration=max_secs
+        )
+
+        hook = ""
+        span_words = [item["w"] for item in words if snapped_start <= item["s"] <= snapped_end]
+        if span_words:
+            first_words = " ".join(span_words[:6]).strip()
+            if len(first_words) > 5:
+                hook = first_words.capitalize()
+
+        if not hook:
+            hook = f"Wait till the end of this {peak_type.replace('_', ' ')}!"
+
+        if is_gaming:
+            title_labels = [
+                "Insane Gameplay Clutch",
+                "High Speed Action Stunt",
+                "Wild Streamer Reaction",
+                "Epic Game Physics Moment",
+                "Can't Believe This Happened",
+            ]
+            title = title_labels[idx % len(title_labels)]
+        else:
+            title = f"Viral Moment #{idx + 1}"
+
+        score_val = 80 + min(18, int(w.get("action_intensity", 0.5) * 15) + (idx % 3))
+
+        raw_clips.append({
+            "start": round(snapped_start, 2),
+            "end": round(snapped_end, 2),
+            "source_window_id": str(w.get("id", f"local_{idx}")),
+            "predicted_score": score_val,
+            "virality_score": max(7, min(10, int(round(score_val / 10)))),
+            "title": title,
+            "video_title_for_youtube_short": title,
+            "hook": hook,
+            "viral_hook_text": hook,
+            "video_description_for_tiktok": f"{hook} 🔥 Watch till the end! {default_tags}",
+            "video_description_for_instagram": f"{hook}\n\nWhat are your thoughts on this? Drop a comment below! 👇\n\n{default_tags}",
+            "why": f"High energy {peak_type.replace('_', ' ')} with audio reaction spike.",
+            "caption": hook,
+            "hashtags": default_tags.split(),
+        })
+
+    deduped = dedupe_overlapping(raw_clips)
+    return deduped or raw_clips
+

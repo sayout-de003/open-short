@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DEFAULT_MODEL = "llama3.1:8b"
-DEFAULT_TIMEOUT = 45.0  # Fast timeout: fallback to Local Intelligence Pipeline if CPU inference stalls
+DEFAULT_TIMEOUT = 15.0  # Fast timeout: fallback to Local Intelligence Pipeline if CPU inference stalls
 
 
 def provider() -> str:
@@ -138,7 +138,17 @@ def generate_json(prompt: str, schema: Type[BaseModel], model: Optional[str] = N
     last_rejection: Optional[str] = None
     with _client() as client:
         for fmt in _response_formats(schema):
-            body = {"model": model, "messages": messages, "temperature": 0.2, "max_tokens": max_tokens, "stream": False}
+            body = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0.2,
+                "max_tokens": max_tokens,
+                "stream": False,
+                "options": {
+                    "num_ctx": 2048,
+                    "num_thread": 8,
+                },
+            }
             if fmt is not None:
                 body["response_format"] = fmt
             resp = client.post(url, json=body, headers=_headers())

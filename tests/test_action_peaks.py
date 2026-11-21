@@ -105,3 +105,53 @@ def test_clip_selector_adaptive_backfill_short_video():
         assert s["end"] <= 120.0
         assert s["start"] < s["end"]
         assert (s["end"] - s["start"]) >= 15.0
+
+
+def test_generate_clips_from_windows_and_peaks_fallback():
+    from clip_selection import generate_clips_from_windows_and_peaks
+    windows = [
+        {"id": "w1", "start": 0.0, "end": 60.0, "text": "driving around waiting"},
+        {"id": "w2", "start": 60.0, "end": 120.0, "text": "oh no cops are here look at that crash", "action_intensity": 0.95,
+         "action_moments": [{"start": 75.0, "end": 90.0, "intensity": 0.95, "type": "action_climax"}]},
+        {"id": "w3", "start": 120.0, "end": 180.0, "text": "insane stunt jump over the building", "action_intensity": 0.88,
+         "action_moments": [{"start": 135.0, "end": 150.0, "intensity": 0.88, "type": "motion_peak"}]},
+    ]
+    words = [
+        {"w": "Driving", "s": 0.0, "e": 0.5},
+        {"w": "around.", "s": 0.5, "e": 1.0},
+        {"w": "Oh", "s": 65.0, "e": 65.4},
+        {"w": "no,", "s": 65.4, "e": 65.8},
+        {"w": "cops", "s": 65.8, "e": 66.2},
+        {"w": "are", "s": 66.2, "e": 66.5},
+        {"w": "here.", "s": 66.5, "e": 67.0},
+        {"w": "Look", "s": 75.0, "e": 75.4},
+        {"w": "at", "s": 75.4, "e": 75.6},
+        {"w": "that", "s": 75.6, "e": 75.9},
+        {"w": "crash!", "s": 75.9, "e": 76.5},
+        {"w": "Done.", "s": 95.0, "e": 95.5},
+        {"w": "Insane", "s": 135.0, "e": 135.5},
+        {"w": "jump!", "s": 135.5, "e": 136.0},
+        {"w": "Ended.", "s": 165.0, "e": 165.5},
+    ]
+
+    shorts = generate_clips_from_windows_and_peaks(
+        windows=windows,
+        action_peaks=[],
+        words=words,
+        video_duration=180.0,
+        min_clips=2,
+        max_clips=3,
+        min_secs=25.0,
+        max_secs=45.0,
+        is_gaming=True,
+    )
+
+    assert len(shorts) >= 2
+    for s in shorts:
+        assert s["start"] < s["end"]
+        assert s["predicted_score"] >= 70
+        assert s["video_title_for_youtube_short"]
+        assert s["viral_hook_text"]
+        assert s["video_description_for_tiktok"]
+        assert s["video_description_for_instagram"]
+

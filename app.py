@@ -12785,6 +12785,24 @@ async def api_autopilot_clip_source(req: Dict[str, Any], request: Request):
     jtype = "live" if raw_type == "live" else "vod"
 
     orch = _get_autopilot_orch()
+
+    # Prevent concurrent duplicate clipping for the exact same stream
+    with orch.db.transaction() as conn:
+        existing = conn.execute("""
+            SELECT j.id, j.status FROM processing_jobs j
+            JOIN discovered_sources s ON j.source_pk = s.id
+            WHERE (s.source_id = ? OR s.url = ?)
+              AND UPPER(j.status) IN ('QUEUED', 'CLAIMED', 'PROCESSING')
+            ORDER BY j.created_at DESC LIMIT 1
+        """, (source_id, url)).fetchone()
+        if existing:
+            logger.info(f"⚡ Autopilot: Reusing already running job {existing['id']} for source {source_id}")
+            return {
+                "status": "processing",
+                "job_id": existing["id"],
+                "message": f"Job {existing['id']} is already in progress for this stream.",
+            }
+
     import uuid
     job_id = f"job_{uuid.uuid4().hex[:12]}"
 

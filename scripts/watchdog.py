@@ -98,8 +98,13 @@ def check_and_heal():
                     """)
                     log(f"♻️ Watchdog recovered {stale['cnt']} stale processing jobs to QUEUED.")
 
-                # If there are queued jobs waiting, process ONLY those specific jobs (do not run discovery)
-                queued = conn.execute("SELECT id FROM processing_jobs WHERE UPPER(status) = 'QUEUED' LIMIT 2").fetchall()
+                # If there are queued jobs waiting (orphaned for > 45 seconds), process them
+                queued = conn.execute("""
+                    SELECT id FROM processing_jobs 
+                    WHERE UPPER(status) = 'QUEUED'
+                      AND (created_at IS NULL OR created_at < datetime('now', '-45 seconds'))
+                    LIMIT 2
+                """).fetchall()
                 if queued:
                     log(f"⚡ Watchdog found {len(queued)} queued jobs waiting. Processing existing queued jobs...")
                     from autopilot.orchestrator import AutopilotOrchestrator

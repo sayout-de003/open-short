@@ -118,7 +118,14 @@ def test_vod_worker_invokes_pipeline_with_gaming_env(tmp_path: Path) -> None:
         mock_res.returncode = 0
         return mock_res
 
-    with patch("subprocess.run", side_effect=_mock_run):
+    def _mock_popen(cmd, env=None, **kwargs):
+        captured_env.update(env or {})
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter(["[Live HLS] Streaming started", "Clip rendered ✅"])
+        mock_proc.wait.return_value = 0
+        return mock_proc
+
+    with patch("subprocess.Popen", side_effect=_mock_popen), patch("subprocess.run", side_effect=_mock_run):
         worker._invoke_main_pipeline("https://youtube.com/watch?v=sample", tmp_path / "out")
 
     assert captured_env.get("CONTENT_PROFILE") == "gaming"

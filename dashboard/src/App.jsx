@@ -774,6 +774,9 @@ function App() {
     flushClipState();
     setNoSource(true);
     setLogsVisible(true);
+    // BUG FIX: Clear out any previous project's results immediately so
+    // old clips from other projects never bleed into the right-side panel!
+    setResults(null);
 
     if (proj?.source_url) {
       setProcessingMedia({
