@@ -3,6 +3,7 @@ import { Link2, Upload, FileVideo, X, Info, Loader2, ChevronDown, ClipboardPaste
 import { track } from '../lib/analytics';
 import { getApiUrl } from '../config';
 import SourceCost from './SourceCost';
+import TemplatePreview from './TemplatePreview';
 
 const SUPPORTED_PLATFORMS = [
     'YouTube', 'Vimeo', 'TikTok', 'X / Twitter', 'Twitch', 'Kick',
@@ -570,15 +571,43 @@ export default function MediaInput({
                         )}
                     </div>
                     {currentTemplate && (
-                        <div className="mt-2 bg-paper3/60 rounded px-3 py-2 text-[11px] text-muted flex items-center justify-between gap-2 border border-rule/50 animate-fade">
-                            <div className="flex items-center gap-2 truncate">
-                                <span className="w-1.5 h-1.5 rounded-full bg-brass shrink-0" />
-                                <span className="truncate">
-                                    <strong className="text-ink">{currentTemplate.name}</strong> · Layout: <span className="font-mono text-ink2">{currentTemplate.layout}</span> · Captions: <span className="font-mono text-ink2">{currentTemplate.caption_preset}</span> · Range: <span className="font-mono text-ink2">{currentTemplate.duration_range?.[0]}–{currentTemplate.duration_range?.[1]}s</span>
-                                </span>
+                        <div className="mt-2.5 bg-paper3/60 rounded-md p-2.5 text-[11px] text-muted flex items-center gap-3 border border-rule/60 animate-fade">
+                            <TemplatePreview template={currentTemplate} size="md" />
+                            <div className="flex-1 min-w-0 space-y-1">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-brass shrink-0" />
+                                    <strong className="text-ink text-xs truncate">{currentTemplate.name}</strong>
+                                </div>
+                                <p className="m-0 text-[11px] text-ink2">
+                                    Layout: <span className="font-mono">{currentTemplate.layout}</span>
+                                </p>
+                                <p className="m-0 text-[11px] text-ink2">
+                                    Captions: <span className="font-mono">{currentTemplate.caption_preset}</span> · {currentTemplate.duration_range?.[0]}–{currentTemplate.duration_range?.[1]}s
+                                </p>
                             </div>
                         </div>
                     )}
+                    {/* Quick visual template cards for the top presets */}
+                    <div className="mt-2.5 flex gap-2 overflow-x-auto pb-1">
+                        {templates.slice(0, 8).map((t) => {
+                            const active = t.id === templateId;
+                            return (
+                                <button
+                                    key={t.id}
+                                    type="button"
+                                    onClick={() => handleTemplateChange(t.id)}
+                                    className={`shrink-0 flex flex-col items-center gap-1 p-1.5 rounded-md border text-center transition-colors ${
+                                        active
+                                            ? 'border-brass bg-paper3 text-ink'
+                                            : 'border-rule/60 bg-paper2/60 text-muted hover:border-rule2 hover:text-ink2'
+                                    }`}
+                                >
+                                    <TemplatePreview template={t} size="sm" />
+                                    <span className="text-[10px] font-medium max-w-[68px] truncate">{t.name}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
 
                 {/* Advanced generation controls — collapsed by default */}

@@ -39,7 +39,7 @@ from sqlalchemy import select, delete, func
 from .config import settings, DELETION_LOG_RETENTION_DAYS
 from . import database, email_policy, storage
 from .models import (
-    User, Subscription, CreditTopup, UsageLedger, MagicLinkToken,
+    User, Subscription, CreditTopup, UsageLedger, MagicLinkToken, EmailOtp,
     SignupAttribution, ApiKey, UploadPostProfile, UserVideo, ClipExpiryWarning,
     Project, AccountDeletion, OAuthCode, OAuthRefreshToken, AutopilotRun, AutopilotSettings,
     LifecycleEmail, CancellationFeedback, OnboardingSurvey, LoginCode, EvidenceEvent,
@@ -242,6 +242,8 @@ async def _erase_rows(user_id, email, stripe_customer_id, plan, r2_deleted, reas
                     delete(model).where(model.user_id == user_id))
             await session.execute(
                 delete(MagicLinkToken).where(MagicLinkToken.email == email))
+            await session.execute(
+                delete(EmailOtp).where(EmailOtp.email == email))
             # Evidence rows also carry the address; catch any without a user_id.
             await session.execute(
                 delete(EvidenceEvent).where(EvidenceEvent.email == email))

@@ -3397,12 +3397,20 @@ def analyze_and_detect_clips(input_video, duration, viewer_clips=None,
         min_v_score = float(os.environ.get("LIVE_MIN_VIRALITY_SCORE", "5.0"))
         filtered_shorts = []
         for s in clips_data['shorts']:
-            score_val = s.get("predicted_score")
-            if score_val is None:
-                score_val = s.get("virality_score")
-            if score_val is None:
-                score_val = s.get("score")
-            if score_val is None or float(score_val) >= min_v_score:
+            pred = s.get("predicted_score")
+            vir = s.get("virality_score")
+            sc = s.get("score")
+            if vir is not None:
+                norm_score = float(vir)
+            elif pred is not None:
+                p_val = float(pred)
+                norm_score = (p_val / 10.0) if p_val > 10.0 else p_val
+            elif sc is not None:
+                s_val = float(sc)
+                norm_score = (s_val / 10.0) if s_val > 10.0 else s_val
+            else:
+                norm_score = None
+            if norm_score is None or norm_score >= min_v_score:
                 filtered_shorts.append(s)
         if not filtered_shorts and clips_data['shorts']:
             # Keep at least the highest scoring moment rather than returning zero clips
@@ -3566,17 +3574,23 @@ class _LiveChatHypeMonitor:
             orig_on_ready(job)
             try:
                 rel_short_file = os.path.relpath(job.final_path, self.output_dir)
+                clip_start = round(float(getattr(job, "clip_start_time", 0.0) or 0.0), 2)
+                clip_end = round(float(getattr(job, "clip_end_time", 0.0) or 0.0), 2)
+                clip_dur = round(max(0.0, clip_end - clip_start), 2)
+                z_score = float(getattr(job.event, "z_score", 0.0) or 0.0)
+                top_chants = getattr(job.event, "top_chants", None) or []
+                chants_str = ", ".join(str(c) for c in top_chants[:5]) if top_chants else "High velocity"
                 clip_data = {
-                    "start": round(max(0.0, job.event.stream_timestamp - 25.0), 2),
-                    "end": round(job.event.stream_timestamp + 10.0, 2),
-                    "duration": round(job.duration, 2),
+                    "start": clip_start,
+                    "end": clip_end,
+                    "duration": clip_dur,
                     "video_title_for_youtube_short": f"🔥 {self.video_title} - Peak Moment",
                     "video_description_for_instagram": f"Unreal live moment from {self.video_title}! #shorts #live #viral",
                     "video_description_for_tiktok": f"Unreal live moment! #shorts #live #viral",
                     "short_file": rel_short_file,
-                    "virality_score": min(9.9, max(7.5, round(6.0 + (job.event.hype_score or 2.0), 1))),
+                    "virality_score": min(9.9, max(7.5, round(6.0 + min(3.9, z_score * 0.6), 1))),
                     "caption": f"⚡ Live Chat Hype Burst",
-                    "reason": f"Chat sentiment explosion: {job.event.top_keywords or 'High velocity'}",
+                    "reason": f"Chat sentiment explosion: {chants_str}",
                     "live_chat_hype": True,
                 }
                 with self.lock:
@@ -4079,15 +4093,24 @@ if __name__ == '__main__':
                     print(f"⚠️ [Live Chat Hype] Startup warning: {hm_err}", flush=True)
                     hype_monitor = None
 
-            # 2. If continuous live mode, loop until live broadcast ends
+            # 2. If continuous live mode, loop until live broadcast ends or target clip count reached
             if continuous_mode and args.url:
-                print(f"🔴 Continuous live monitor active: real-time rolling capture until broadcast ends...", flush=True)
+                target_live_clips = 0
+                try:
+                    target_live_clips = max(0, int(os.environ.get("TARGET_CLIP_COUNT") or 0))
+                except (ValueError, TypeError):
+                    target_live_clips = 0
+                print(f"🔴 Continuous live monitor active: real-time rolling capture until broadcast ends"
+                      f"{f' (target: {target_live_clips} clips)' if target_live_clips else ''}...", flush=True)
                 cycle = 2
                 live_seconds = float(os.environ.get("LIVE_CUT_SECONDS", "45"))
                 consecutive_failures = 0
                 consecutive_offline = 0
 
                 while True:
+                    if target_live_clips > 0 and len(all_shorts) >= target_live_clips:
+                        print(f"🎯 Target clip count ({target_live_clips}) reached! Stopping continuous live monitor.", flush=True)
+                        break
                     if not producer.is_running():
                         stream_info = None
                         try:

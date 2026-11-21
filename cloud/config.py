@@ -309,10 +309,10 @@ class Settings:
         origins = [o.strip() for o in raw.split(",") if o.strip()]
         return origins or [self.frontend_url]
 
-    # Email (SMTP — e.g. Namecheap Private Email)
+    # Email (SMTP — Google SMTP by default, or any SMTP provider)
     @property
     def smtp_host(self) -> str:
-        return os.environ.get("SMTP_HOST", "mail.privateemail.com")
+        return os.environ.get("SMTP_HOST", "smtp.gmail.com")
 
     @property
     def smtp_port(self) -> int:

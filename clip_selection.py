@@ -784,3 +784,84 @@ def generate_clips_from_windows_and_peaks(
     deduped = dedupe_overlapping(raw_clips)
     return deduped or raw_clips
 
+
+def best_cut_around_moment(
+    words: list,
+    window_len: float,
+    event_t: float,
+    min_len: float = 15.0,
+    max_len: float = 45.0,
+    hype_curve: list[float] | None = None,
+    audio_energy: list[float] | None = None,
+) -> tuple[float, float, float]:
+    """Pick the best [start, end] cut inside a window around `event_t`.
+
+    Snaps boundaries to sentence starts/ends or >0.5s silences and scores:
+    0.5 * hype + 0.3 * audio_energy + 0.2 * speech_coverage, while ensuring
+    `event_t` remains inside [start, end].
+    """
+    if window_len <= 0:
+        return 0.0, 0.0, 0.0
+
+    norm_words = []
+    for w in words or []:
+        ws = float(w.get("s", w.get("start", 0.0)) if isinstance(w, dict) else getattr(w, "start", 0.0))
+        we = float(w.get("e", w.get("end", ws)) if isinstance(w, dict) else getattr(w, "end", ws))
+        wt = str(w.get("w", w.get("word", w.get("text", ""))) if isinstance(w, dict) else getattr(w, "text", getattr(w, "word", ""))).strip()
+        if wt:
+            norm_words.append((ws, we, wt))
+
+    starts = {0.0}
+    ends = {round(window_len, 2)}
+    if norm_words:
+        starts.add(round(max(0.0, norm_words[0][0] - 0.15), 2))
+        for idx, (ws, we, wt) in enumerate(norm_words):
+            if idx + 1 < len(norm_words):
+                next_ws = norm_words[idx + 1][0]
+                if wt.endswith((".", "!", "?")) or (next_ws - we) > 0.5:
+                    mid = 0.5 * (we + next_ws)
+                    ends.add(round(min(window_len, we + 0.25), 2))
+                    starts.add(round(max(0.0, next_ws - 0.15), 2))
+                    if (next_ws - we) > 0.5:
+                        starts.add(round(mid, 2))
+                        ends.add(round(mid, 2))
+        ends.add(round(min(window_len, norm_words[-1][1] + 0.25), 2))
+
+    cand_starts = sorted(x for x in starts if 0.0 <= x < window_len)
+    cand_ends = sorted(x for x in ends if 0.0 < x <= window_len)
+    eff_min = min(float(min_len), window_len)
+    eff_max = max(eff_min, float(max_len))
+
+    hype_total = sum(max(0.0, float(v)) for v in (hype_curve or [])) or 1e-6
+    best: tuple[float, float, float] | None = None
+
+    for st in cand_starts:
+        for en in cand_ends:
+            dur = en - st
+            if dur < eff_min or dur > eff_max or not (st <= event_t <= en):
+                continue
+            if hype_curve:
+                i0 = max(0, int(st))
+                i1 = min(len(hype_curve), max(i0 + 1, int(math.ceil(en))))
+                hype_val = sum(max(0.0, float(v)) for v in hype_curve[i0:i1]) / hype_total
+            else:
+                hype_val = 0.5
+            if audio_energy:
+                e0 = max(0, int(st))
+                e1 = min(len(audio_energy), max(e0 + 1, int(math.ceil(en))))
+                seg_e = audio_energy[e0:e1]
+                energy_val = (sum(seg_e) / len(seg_e)) if seg_e else 0.0
+            else:
+                energy_val = 0.5
+            spoken = sum(max(0.0, min(we, en) - max(ws, st)) for ws, we, _ in norm_words)
+            coverage = min(1.0, spoken / max(dur, 1e-6))
+            score = 0.5 * hype_val + 0.3 * energy_val + 0.2 * coverage + 0.02 * (dur / eff_max)
+            if best is None or score > best[2]:
+                best = (st, en, round(score, 4))
+
+    if best is None:
+        dur = min(eff_max, window_len)
+        st = min(max(event_t - dur * 0.66, 0.0), max(0.0, window_len - dur))
+        return round(st, 2), round(st + dur, 2), 0.0
+    return best
+

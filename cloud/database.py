@@ -21,6 +21,9 @@ _ADDITIVE_COLUMNS = (
     # Account ban set by the support back-office (cloud/support_ops.py).
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS ban_reason TEXT",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS banned_at TIMESTAMPTZ",
+    # Password + email-OTP authentication (cloud/auth.py).
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ",
     # The per-network first-video check joins first_video_grants on job_id.
     "CREATE INDEX IF NOT EXISTS ix_usage_job_id ON usage_ledger (job_id)",
     # cancellation_feedback shipped without it; rows before it are all cancels.

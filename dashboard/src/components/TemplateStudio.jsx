@@ -5,6 +5,7 @@ import {
     Sliders, RefreshCw, Save, Trash2, ArrowUpRight, ShieldCheck, Eye, X
 } from 'lucide-react';
 import { getApiUrl } from '../config';
+import TemplatePreview from './TemplatePreview';
 
 const CATEGORY_ITEMS = [
     { id: 'all', label: 'All Templates', Icon: LayoutTemplate },
@@ -277,36 +278,7 @@ export default function TemplateStudio({ selectedTemplateId = '', onApplyTemplat
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-center">
                             {/* Layout Simulation Container */}
                             <div className="flex justify-center">
-                                <div className="w-[180px] h-[320px] bg-black rounded-lg border-2 border-rule2 relative overflow-hidden flex flex-col shadow-inner">
-                                    {activeTemplate.layout === 'stacked_top_cam' ? (
-                                        <>
-                                            <div className="h-[30%] bg-zinc-800 border-b border-white/40 flex items-center justify-center text-[11px] font-mono text-zinc-300">
-                                                Streamer Cam (Top)
-                                            </div>
-                                            <div className="flex-1 bg-zinc-900 flex items-center justify-center text-[11px] font-mono text-zinc-400">
-                                                Gameplay Stream
-                                            </div>
-                                        </>
-                                    ) : activeTemplate.layout === 'split_two_speaker' ? (
-                                        <>
-                                            <div className="h-[50%] bg-zinc-800 border-b border-rule flex items-center justify-center text-[11px] font-mono text-zinc-300">
-                                                Speaker 1 (Top)
-                                            </div>
-                                            <div className="h-[50%] bg-zinc-900 flex items-center justify-center text-[11px] font-mono text-zinc-300">
-                                                Speaker 2 (Bottom)
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div className="flex-1 bg-zinc-900 flex items-center justify-center text-[11px] font-mono text-zinc-400">
-                                            {activeTemplate.name}
-                                        </div>
-                                    )}
-
-                                    {/* Simulated Dynamic Subtitles */}
-                                    <div className="absolute bottom-6 inset-x-2 text-center bg-black/60 py-1 px-1.5 rounded text-[10px] text-yellow-300 font-bold tracking-wide">
-                                        CAPTION: {activeTemplate.caption_preset.toUpperCase()}
-                                    </div>
-                                </div>
+                                <TemplatePreview template={activeTemplate} size="lg" />
                             </div>
 
                             {/* Configuration Options */}

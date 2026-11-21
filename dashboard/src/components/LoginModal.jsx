@@ -1,49 +1,122 @@
 import React, { useEffect, useState } from 'react';
-import { Mail, Lock, Check, Loader2 } from 'lucide-react';
+import { Mail, Lock, KeyRound, Check, Loader2, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import Modal from './ui/Modal';
+import SegmentedControl from './ui/SegmentedControl';
 
-// Sign-in modal: magic link (email) + Google OAuth.
-// `queued` says the visitor pressed "get free clips" before signing in and the
-// request is parked: the work resumes by itself once they are back, and saying
-// so is the difference between a sign-in wall and a saved job.
+const MODE_OPTIONS = [
+  { value: 'login', label: 'Sign in' },
+  { value: 'signup', label: 'Sign up' },
+  { value: 'magic', label: 'Magic link' },
+];
+
+// Sign-in / Sign-up modal:
+// - Sign in: email + password -> 6-digit email OTP (except review account)
+// - Sign up: email + password -> 6-digit email OTP
+// - Magic link & Google OAuth
 export default function LoginModal({ onClose, queued = false }) {
-  const { requestMagicLink, loginWithPassword, usesPassword, loginWithGoogle, googleAuthEnabled } = useAuth();
+  const {
+    requestMagicLink,
+    loginWithPassword,
+    usesPassword,
+    signupWithPassword,
+    verifySignupOtp,
+    loginWithPasswordOtp,
+    verifyLoginOtp,
+    resendOtp,
+    requestPasswordReset,
+    confirmPasswordReset,
+    loginWithGoogle,
+    googleAuthEnabled,
+  } = useAuth();
+
+  const [mode, setMode] = useState('login'); // 'login' | 'signup' | 'magic' | 'reset'
+  const [step, setStep] = useState('form');  // 'form' | 'otp' | 'sent'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [needsPassword, setNeedsPassword] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [needsReviewPassword, setNeedsReviewPassword] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
-  // App-directory reviewers are given a username and a password: show the
-  // password field as soon as their email is typed, before any button that
-  // reads like an email verification step.
   useEffect(() => {
+    if (mode !== 'magic' && mode !== 'login') {
+      setNeedsReviewPassword(false);
+      return undefined;
+    }
     const value = email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) { setNeedsPassword(false); return undefined; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      setNeedsReviewPassword(false);
+      return undefined;
+    }
     let live = true;
     const t = setTimeout(async () => {
       const yes = await usesPassword(value);
-      if (live) setNeedsPassword(yes);
+      if (live) setNeedsReviewPassword(yes);
     }, 300);
     return () => { live = false; clearTimeout(t); };
-  }, [email, usesPassword]);
+  }, [email, mode, usesPassword]);
 
-  const submit = async (e) => {
+  const switchMode = (nextMode) => {
+    setMode(nextMode);
+    setStep('form');
+    setOtp('');
+    setPassword('');
+    setConfirmPassword('');
+    setError('');
+    setNotice('');
+  };
+
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    const cleanEmail = email.trim();
+    if (!cleanEmail) return;
     setBusy(true);
     setError('');
+    setNotice('');
     try {
-      if (needsPassword) {
-        await loginWithPassword(email.trim(), password);
-        onClose();
+      if (mode === 'login') {
+        if (needsReviewPassword) {
+          await loginWithPassword(cleanEmail, password);
+          onClose();
+          return;
+        }
+        await loginWithPasswordOtp(cleanEmail, password);
+        setOtp('');
+        setStep('otp');
         return;
       }
-      const { passwordRequired } = await requestMagicLink(email.trim());
-      if (passwordRequired) setNeedsPassword(true);
-      else setSent(true);
+      if (mode === 'signup') {
+        if (password.length < 8) {
+          setError('Password must be at least 8 characters.');
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('Passwords do not match.');
+          return;
+        }
+        await signupWithPassword(cleanEmail, password);
+        setOtp('');
+        setStep('otp');
+        return;
+      }
+      if (mode === 'reset') {
+        await requestPasswordReset(cleanEmail);
+        setOtp('');
+        setPassword('');
+        setStep('otp');
+        return;
+      }
+      const { passwordRequired } = await requestMagicLink(cleanEmail);
+      if (passwordRequired) {
+        setMode('login');
+        setNeedsReviewPassword(true);
+      } else {
+        setStep('sent');
+      }
     } catch (err) {
       setError(err.message || 'Something went wrong.');
     } finally {
@@ -51,9 +124,61 @@ export default function LoginModal({ onClose, queued = false }) {
     }
   };
 
+  const handleOtpSubmit = async (e) => {
+    e.preventDefault();
+    const cleanEmail = email.trim();
+    const cleanOtp = otp.trim();
+    if (cleanOtp.length !== 6) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      if (mode === 'signup') {
+        await verifySignupOtp(cleanEmail, cleanOtp);
+        onClose();
+      } else if (mode === 'login') {
+        await verifyLoginOtp(cleanEmail, cleanOtp);
+        onClose();
+      } else if (mode === 'reset') {
+        if (password.length < 8) {
+          setError('New password must be at least 8 characters.');
+          return;
+        }
+        await confirmPasswordReset(cleanEmail, cleanOtp, password);
+        onClose();
+      }
+    } catch (err) {
+      setError(err.message || 'Invalid verification code.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setResending(true);
+    setError('');
+    setNotice('');
+    try {
+      await resendOtp(email.trim(), mode);
+      setNotice('A new verification code was sent to your email.');
+    } catch (err) {
+      setError(err.message || 'Could not resend code.');
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const title = mode === 'signup'
+    ? 'Create your CREOVIS account'
+    : mode === 'reset'
+      ? 'Reset your password'
+      : 'Sign in to CREOVIS';
+
   return (
-    <Modal isOpen onClose={onClose} eyebrow="ACCOUNT" title="Sign in to CREOVIS" size="md">
-      <p className="text-muted text-sm mb-6 lowercase">Access your plan and generate shorts with no API keys.</p>
+    <Modal isOpen onClose={onClose} eyebrow="ACCOUNT" title={title} size="md">
+      <p className="text-muted text-sm mb-5 lowercase">
+        Access your plan and generate shorts with no API keys.
+      </p>
 
       {queued && (
         <div className="flex items-start gap-2 border border-rule2 rounded-input bg-paper2 px-3 py-2 mb-5">
@@ -64,19 +189,117 @@ export default function LoginModal({ onClose, queued = false }) {
         </div>
       )}
 
-      {sent ? (
+      {step !== 'sent' && mode !== 'reset' && step === 'form' && (
+        <div className="mb-5">
+          <SegmentedControl
+            options={MODE_OPTIONS}
+            value={mode}
+            onChange={switchMode}
+            size="sm"
+          />
+        </div>
+      )}
+
+      {step === 'sent' ? (
         <div className="text-center py-6">
           <span className="badge-ok px-3 py-1"><Check size={14} /> sent</span>
           <p className="text-ink font-medium lowercase mt-4">Check your inbox</p>
-          <p className="text-muted text-sm mt-1">We sent a sign-in link to <b className="text-ink font-medium">{email}</b>. It expires in 15 minutes.</p>
+          <p className="text-muted text-sm mt-1">
+            We sent a sign-in link to <b className="text-ink font-medium">{email}</b>. It expires in 15 minutes.
+          </p>
         </div>
+      ) : step === 'otp' ? (
+        <form onSubmit={handleOtpSubmit} className="space-y-3">
+          <button
+            type="button"
+            onClick={() => { setStep('form'); setError(''); setNotice(''); }}
+            className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-ink transition-colors mb-1"
+          >
+            <ArrowLeft size={14} /> Back
+          </button>
+
+          <p className="text-sm text-ink2">
+            Enter the 6-digit verification code sent to <b className="text-ink font-medium">{email.trim()}</b>.
+          </p>
+
+          <div className="relative">
+            <KeyRound size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="000000"
+              className="input-field pl-10 tracking-[0.3em] font-mono"
+              autoFocus
+            />
+          </div>
+
+          {mode === 'reset' && (
+            <div className="relative">
+              <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="new password (min 8 characters)"
+                className="input-field pl-10"
+              />
+            </div>
+          )}
+
+          {notice && <p className="text-ok text-xs">{notice}</p>}
+          {error && <p className="text-danger text-sm">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={busy || otp.trim().length !== 6 || (mode === 'reset' && password.length < 8)}
+            className="btn-primary w-full"
+          >
+            {busy ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : mode === 'signup' ? (
+              'Verify & create account'
+            ) : mode === 'reset' ? (
+              'Reset password & sign in'
+            ) : (
+              'Verify & sign in'
+            )}
+          </button>
+
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs text-muted">Code expires in 10 minutes.</span>
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={resending}
+              className="text-xs text-ink2 underline underline-offset-2 hover:text-brass transition-colors disabled:opacity-50"
+            >
+              {resending ? 'Sending…' : 'Resend code'}
+            </button>
+          </div>
+        </form>
       ) : (
         <>
-          <form onSubmit={submit} className="space-y-3">
+          <form onSubmit={handleFormSubmit} className="space-y-3">
+            {mode === 'reset' && (
+              <button
+                type="button"
+                onClick={() => switchMode('login')}
+                className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-ink transition-colors mb-1"
+              >
+                <ArrowLeft size={14} /> Back to sign in
+              </button>
+            )}
+
             <div className="relative">
               <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
               <input
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@email.com"
@@ -84,30 +307,76 @@ export default function LoginModal({ onClose, queued = false }) {
                 autoFocus
               />
             </div>
-            {needsPassword && (
+
+            {(mode === 'login' || mode === 'signup') && (
               <div className="relative">
                 <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                 <input
                   type="password"
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="password"
+                  placeholder={mode === 'signup' ? 'password (min 8 characters)' : 'password'}
                   className="input-field pl-10"
-                  autoFocus
                 />
               </div>
             )}
+
+            {mode === 'signup' && (
+              <div className="relative">
+                <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="confirm password"
+                  className="input-field pl-10"
+                />
+              </div>
+            )}
+
+            {mode === 'login' && !needsReviewPassword && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => switchMode('reset')}
+                  className="text-xs text-muted hover:text-ink transition-colors"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
+
             {error && <p className="text-danger text-sm">{error}</p>}
+
             <button
               type="submit"
-              disabled={busy || !email.trim() || (needsPassword && !password)}
+              disabled={
+                busy ||
+                !email.trim() ||
+                ((mode === 'login' || mode === 'signup') && !password) ||
+                (mode === 'signup' && !confirmPassword)
+              }
               className="btn-primary w-full"
             >
-              {busy ? <Loader2 size={18} className="animate-spin" /> : needsPassword ? 'Sign in' : 'Email me a sign-in link'}
+              {busy ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : mode === 'signup' ? (
+                'Continue'
+              ) : mode === 'reset' ? (
+                'Send reset code'
+              ) : mode === 'magic' ? (
+                'Email me a sign-in link'
+              ) : needsReviewPassword ? (
+                'Sign in'
+              ) : (
+                'Continue'
+              )}
             </button>
           </form>
 
-          {googleAuthEnabled && (
+          {googleAuthEnabled && mode !== 'reset' && (
             <>
               <div className="flex items-center gap-3 my-5">
                 <div className="flex-1 border-t border-rule" />
@@ -115,6 +384,7 @@ export default function LoginModal({ onClose, queued = false }) {
                 <div className="flex-1 border-t border-rule" />
               </div>
               <button
+                type="button"
                 onClick={loginWithGoogle}
                 className="btn-ghost w-full"
               >
@@ -125,7 +395,7 @@ export default function LoginModal({ onClose, queued = false }) {
           )}
 
           {/* The account is created by this button, so the terms have to be
-              reachable from it: a magic-link signup never passes the footer. */}
+              reachable from it: a signup never passes the footer. */}
           <p className="text-muted text-xs mt-5 text-center leading-relaxed">
             By signing in you agree to our{' '}
             <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-ink2 underline underline-offset-2 hover:text-brass transition-colors">Terms of Service</a>

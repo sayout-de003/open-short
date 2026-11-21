@@ -71,6 +71,11 @@ class FastVerticalRenderer:
         # Check if webcam inset is detected for 20% Top Streamer + 80% Gameplay stacked layout
         inset_box = None
         orig_w, orig_h = 1920, 1080
+        wants_stacked = (
+            os.environ.get("TEMPLATE_LAYOUT", "").strip().lower() == "stacked_top_cam"
+            or os.environ.get("STREAMER_CAM_POSITION", "").strip().lower() == "top"
+            or os.environ.get("CLIPPING_PROFILE", "").strip().lower() == "gaming"
+        )
         try:
             import camera_inset
             import cv2
@@ -82,6 +87,11 @@ class FastVerticalRenderer:
             inset_box = camera_inset.detect(draft_video_path)
         except Exception as e:
             logger.debug(f"Fast camera inset detection skipped: {e}")
+
+        if inset_box is None and wants_stacked:
+            import camera_inset
+            inset_box = (0, max(0, orig_h - int(orig_h * 0.28)), int(orig_w * 0.25), int(orig_h * 0.28))
+            logger.info(f"Using fallback 20/80 corner webcam inset: {inset_box}")
 
         cmd = [
             self.ffmpeg_bin, "-y", "-nostdin",

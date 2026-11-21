@@ -147,6 +147,7 @@ class LiveHypePipeline:
     async def start_youtube(self, video_id_or_url: str, stream_url: Optional[str] = None, api_key: Optional[str] = None):
         """Starts live monitoring on a YouTube live stream."""
         logger.info(f"Starting YouTube live pipeline on: {video_id_or_url}")
+        self.recorder.url_refresher = lambda: self._resolve_youtube_stream_url_sync(video_id_or_url)
         if not stream_url:
             loop = asyncio.get_running_loop()
             stream_url = await loop.run_in_executor(

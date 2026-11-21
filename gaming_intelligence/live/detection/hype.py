@@ -40,7 +40,7 @@ class FastHypeDetector:
         short_window_sec: int = 5,
         baseline_window_sec: int = 60,
         z_score_threshold: float = 2.5,
-        min_mps: float = 3.0,
+        min_mps: float = 1.8,
         min_unique_users: int = 2,
         cooldown_sec: float = 30.0,
         on_hype_event: Optional[Callable[[HypeEvent], None]] = None,
@@ -136,18 +136,12 @@ class FastHypeDetector:
         short_users: Set[str] = set()
         short_chants: Counter = collections.Counter()
 
-        baseline_msgs = 0
-        n_baseline = 0
-        sum_x = 0
-        sum_x2 = 0
+        baseline_counts: List[int] = []
 
         for b in self._buckets:
             # Baseline stats from prior history before short window
             if b.sec_epoch <= short_cutoff:
-                count = b.message_count
-                sum_x += count
-                sum_x2 += count * count
-                n_baseline += 1
+                baseline_counts.append(b.message_count)
             else:
                 # Short window stats
                 count = b.message_count
@@ -163,11 +157,18 @@ class FastHypeDetector:
         acceleration = velocity - self._last_velocity
         self._last_velocity = velocity
 
-        # Baseline mean and std dev (if no baseline yet, use default expected idle rate 0.5 mps)
-        mean_mps = (sum_x / float(n_baseline)) if n_baseline > 0 else 0.5
-        var = ((sum_x2 / float(n_baseline)) - (mean_mps * mean_mps)) if n_baseline > 0 else 0.25
-        std_dev = math.sqrt(max(0.01, var))
-        z_score = (velocity - mean_mps) / std_dev
+        # Robust Median + MAD baseline so an earlier viral spike doesn't blind the next one
+        if baseline_counts:
+            sorted_b = sorted(baseline_counts)
+            mid = len(sorted_b) // 2
+            med_mps = float(sorted_b[mid]) if len(sorted_b) % 2 else 0.5 * (sorted_b[mid - 1] + sorted_b[mid])
+            devs = sorted(abs(c - med_mps) for c in sorted_b)
+            mad = float(devs[mid]) if len(devs) % 2 else 0.5 * (devs[mid - 1] + devs[mid])
+            std_dev = max(0.5, 1.4826 * mad)
+        else:
+            med_mps = 0.5
+            std_dev = 0.5
+        z_score = (velocity - med_mps) / std_dev
 
         chant_density = (short_hype_toks / float(short_total_toks)) if short_total_toks > 0 else 0.0
         caps_ratio = (short_caps_sum / float(short_msgs)) if short_msgs > 0 else 0.0
@@ -204,7 +205,7 @@ class FastHypeDetector:
             metrics.z_score >= self.z_score_threshold
             and metrics.velocity_mps >= self.min_mps
             and metrics.unique_users >= self.min_unique_users
-            and (metrics.chant_density >= 0.15 or metrics.velocity_mps >= (self.min_mps * 2))
+            and (metrics.chant_density >= 0.12 or metrics.velocity_mps >= (self.min_mps * 2))
         ):
             self._last_trigger_time = now
             # Assume 3.0s viewer latency reaction offset

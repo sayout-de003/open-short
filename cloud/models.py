@@ -50,6 +50,9 @@ class User(Base):
     # cloud/database._ADDITIVE_COLUMNS.
     ban_reason = Column(Text, nullable=True)
     banned_at = Column(DateTime(timezone=True), nullable=True)
+    # Password auth (cloud/auth.py): scrypt hash, NULL for Google/magic-link-only accounts.
+    password_hash = Column(Text, nullable=True)
+    email_verified_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class MagicLinkToken(Base):
@@ -67,6 +70,25 @@ class MagicLinkToken(Base):
         # applied by hand: CREATE INDEX IF NOT EXISTS ix_magic_ip_created
         #   ON magic_link_tokens (request_ip, created_at);
         Index("ix_magic_ip_created", "request_ip", "created_at"),
+    )
+
+
+class EmailOtp(Base):
+    """Single-use 6-digit OTP for password signup, password login 2FA, and password reset."""
+    __tablename__ = "email_otps"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    email = Column(CITEXT, nullable=False)
+    purpose = Column(String(16), nullable=False)  # signup | login | reset
+    code_hash = Column(Text, nullable=False)
+    pending_password_hash = Column(Text, nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    request_ip = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    __table_args__ = (
+        Index("ix_email_otps_email_purpose_created", "email", "purpose", "created_at"),
+        Index("ix_email_otps_ip_created", "request_ip", "created_at"),
     )
 
 

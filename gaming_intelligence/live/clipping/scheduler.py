@@ -120,6 +120,20 @@ class ClipScheduler:
 
             # 2. Re-pin to include any newly written post-roll segments
             pinned = self.buffer.pin_range(job.clip_start_time, job.clip_end_time, job.job_id)
+            if not pinned and self.buffer._segments:
+                # Fallback if segment clock drifted slightly from wall-clock
+                wanted_dur = max(10.0, job.clip_end_time - job.clip_start_time)
+                all_segs = [s for _, s in sorted(self.buffer._segments.items())]
+                acc = 0.0
+                fallback_segs = []
+                for s in reversed(all_segs):
+                    fallback_segs.append(s)
+                    acc += s.duration
+                    if acc >= wanted_dur:
+                        break
+                pinned = list(reversed(fallback_segs))
+                if pinned:
+                    self.buffer.pin_range(pinned[0].start_time, pinned[-1].end_time, job.job_id)
             if not pinned:
                 job.status = "failed"
                 job.error = "No segments found in buffer for the requested time range"
@@ -177,6 +191,11 @@ class ClipScheduler:
 
             # 5. Unpin segments from buffer now that extraction & render are complete
             self.buffer.unpin(job.job_id)
+            if os.environ.get("LIVE_CLEANUP_DRAFT") == "1" and job.draft_path and os.path.exists(job.draft_path):
+                try:
+                    os.remove(job.draft_path)
+                except OSError:
+                    pass
 
             logger.info(
                 f"🎉 [Clip Ready] Job {job.job_id} completed! "

@@ -85,6 +85,32 @@ async def send_magic_link_email(email: str, link: str):
     await send_email(email, "Your CREOVIS sign-in link", html)
 
 
+_OTP_COPY = {
+    "signup": ("Verify your CREOVIS account", "Use this verification code to finish creating your account."),
+    "login": ("Your CREOVIS sign-in code", "Use this verification code to complete your sign-in."),
+    "reset": ("Reset your CREOVIS password", "Use this verification code to reset your password."),
+}
+
+
+async def send_otp_email(email: str, code: str, purpose: str = "login"):
+    """Send a 6-digit OTP code via configured SMTP (Google SMTP by default)."""
+    subject, intro = _OTP_COPY.get(purpose, _OTP_COPY["login"])
+    if not settings.smtp_configured:
+        print(f"✉️  [DEV {purpose} OTP] {email} -> {code}")
+        return
+    safe_code = _html.escape(code)
+    html = f"""
+      <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto">
+        <h2>{subject}</h2>
+        <p>{intro} This code expires in 10 minutes.</p>
+        <p style="font-size:28px;font-weight:700;letter-spacing:6px;background:#f4f4f5;
+           padding:14px 20px;border-radius:8px;display:inline-block;margin:8px 0;color:#111">{safe_code}</p>
+        <p style="color:#666;font-size:13px">If you didn't request this, ignore this email.</p>
+      </div>
+    """
+    await send_email(email, f"{subject}: {code}", html)
+
+
 async def send_clips_ready_email(email: str, job_title: str, clip_count: int,
                                  dashboard_url: str):
     """Job-completion notice: lets the user close the tab during processing."""

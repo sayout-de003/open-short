@@ -198,6 +198,57 @@ export function AuthProvider({ children }) {
     await refreshMe();
   }, [refreshMe]);
 
+  const _postAuthJson = useCallback(async (path, body) => {
+    try {
+      return await apiJson(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw new Error(err?.detail || 'Something went wrong.');
+    }
+  }, []);
+
+  const _finishAuthSession = useCallback(async (data, isNewSignup = false) => {
+    if (data?.token) setToken(data.token);
+    const signedInMe = await refreshMe();
+    if (isNewSignup && signedInMe?.user) {
+      track('Signup', { props: { method: 'password_otp' } });
+      await reportAttribution(apiJson);
+    }
+    return signedInMe;
+  }, [refreshMe]);
+
+  const signupWithPassword = useCallback((email, password) =>
+    _postAuthJson('/api/auth/signup', { email, password }), [_postAuthJson]);
+
+  const verifySignupOtp = useCallback(async (email, otp) => {
+    const data = await _postAuthJson('/api/auth/signup/verify', { email, otp });
+    return _finishAuthSession(data, true);
+  }, [_postAuthJson, _finishAuthSession]);
+
+  const loginWithPasswordOtp = useCallback((email, password) =>
+    _postAuthJson('/api/auth/login', { email, password }), [_postAuthJson]);
+
+  const verifyLoginOtp = useCallback(async (email, otp) => {
+    const data = await _postAuthJson('/api/auth/login/verify', { email, otp });
+    return _finishAuthSession(data, false);
+  }, [_postAuthJson, _finishAuthSession]);
+
+  const resendOtp = useCallback((email, purpose) =>
+    _postAuthJson('/api/auth/otp/resend', { email, purpose }), [_postAuthJson]);
+
+  const requestPasswordReset = useCallback((email) =>
+    _postAuthJson('/api/auth/password-reset/request', { email }), [_postAuthJson]);
+
+  const confirmPasswordReset = useCallback(async (email, otp, newPassword) => {
+    const data = await _postAuthJson('/api/auth/password-reset/confirm', {
+      email, otp, new_password: newPassword,
+    });
+    return _finishAuthSession(data, false);
+  }, [_postAuthJson, _finishAuthSession]);
+
   const loginWithGoogle = useCallback(async () => {
     let query = '';
     try {
@@ -240,6 +291,13 @@ export function AuthProvider({ children }) {
     requestMagicLink,
     loginWithPassword,
     usesPassword,
+    signupWithPassword,
+    verifySignupOtp,
+    loginWithPasswordOtp,
+    verifyLoginOtp,
+    resendOtp,
+    requestPasswordReset,
+    confirmPasswordReset,
     loginWithGoogle,
     logout,
   };

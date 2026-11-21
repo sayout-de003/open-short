@@ -26,16 +26,21 @@ class SegmentedStreamRecorder:
         buffer: RollingSegmentBuffer,
         sync: TimestampSynchronizer,
         segment_time_sec: float = 2.0,
+        url_refresher: Optional[Callable[[], Optional[str]]] = None,
     ):
         self.buffer = buffer
         self.sync = sync
         self.segment_time_sec = segment_time_sec
+        self.url_refresher = url_refresher
         self._process: Optional[subprocess.Popen] = None
+        self._stderr_file = None
         self._watcher_task: Optional[asyncio.Task] = None
         self._running = False
         self._last_detected_idx = -1
         self._stream_url: Optional[str] = None
         self._restart_count = 0
+        self._last_healthy_segment_at = 0.0
+        self._calibrated_sync = False
 
     def _spawn_ffmpeg(self, stream_url: str) -> subprocess.Popen:
         segment_pattern = os.path.join(self.buffer.buffer_dir, "seg_%05d.ts")
@@ -65,7 +70,14 @@ class SegmentedStreamRecorder:
             segment_pattern
         ]
         logger.info(f"Starting FFmpeg segmented recording (start_num={start_num}): {' '.join(cmd[:6])}...")
-        return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        log_path = os.path.join(self.buffer.buffer_dir, "ffmpeg_recorder.log")
+        if self._stderr_file:
+            try:
+                self._stderr_file.close()
+            except OSError:
+                pass
+        self._stderr_file = open(log_path, "wb")
+        return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=self._stderr_file)
 
     async def start_recording(self, stream_url: str):
         """Starts background FFmpeg process to record into rolling segments."""
@@ -94,6 +106,12 @@ class SegmentedStreamRecorder:
             except subprocess.TimeoutExpired:
                 self._process.kill()
             self._process = None
+        if self._stderr_file:
+            try:
+                self._stderr_file.close()
+            except OSError:
+                pass
+            self._stderr_file = None
 
     async def _watch_segments_loop(self):
         """Monitors the buffer directory for finished segments and registers them."""
@@ -113,6 +131,13 @@ class SegmentedStreamRecorder:
                         idx = int(num_str)
                         if idx > self._last_detected_idx:
                             self._last_detected_idx = idx
+                            now = time.time()
+                            if not self._calibrated_sync:
+                                self._calibrated_sync = True
+                                self.sync.stream_start_wall_clock = now - (idx + 1) * self.segment_time_sec
+                            if self._last_healthy_segment_at and (now - self._last_healthy_segment_at) < 30.0:
+                                self._restart_count = 0
+                            self._last_healthy_segment_at = now
                             start_t = idx * self.segment_time_sec
                             end_t = start_t + self.segment_time_sec
                             self.buffer.register_segment(idx, f, start_t, end_t)
@@ -122,14 +147,22 @@ class SegmentedStreamRecorder:
 
                 if self._process and self._process.poll() is not None and self._running and self._stream_url:
                     self._restart_count += 1
-                    if self._restart_count <= 5:
-                        logger.warning(
-                            f"FFmpeg segmenter exited (code={self._process.returncode}); "
-                            f"restarting ({self._restart_count}/5)..."
-                        )
-                        await asyncio.sleep(min(5.0, float(self._restart_count)))
-                        if self._running:
-                            self._process = self._spawn_ffmpeg(self._stream_url)
+                    delay = min(15.0, float(self._restart_count) * 1.5)
+                    logger.warning(
+                        f"FFmpeg segmenter exited (code={self._process.returncode}); "
+                        f"restarting (attempt {self._restart_count}) in {delay:.1f}s..."
+                    )
+                    await asyncio.sleep(delay)
+                    if self._running:
+                        if self.url_refresher is not None:
+                            try:
+                                loop = asyncio.get_running_loop()
+                                fresh_url = await loop.run_in_executor(None, self.url_refresher)
+                                if fresh_url:
+                                    self._stream_url = fresh_url
+                            except Exception as ref_err:
+                                logger.warning(f"Stream URL refresh failed: {ref_err}")
+                        self._process = self._spawn_ffmpeg(self._stream_url)
 
                 await asyncio.sleep(0.5)
             except asyncio.CancelledError:

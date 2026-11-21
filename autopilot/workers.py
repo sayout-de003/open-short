@@ -238,14 +238,37 @@ class LiveWorker:
         self.quality = quality
         self.storage = storage
 
+    def _fetch_live_viewers(self, platform: str, source_id: str) -> Optional[int]:
+        """Best-effort live viewer count check for auto-mode stream switching."""
+        try:
+            if platform == "youtube" and self.config.youtube_api_key:
+                import urllib.request
+                url = (
+                    "https://www.googleapis.com/youtube/v3/videos"
+                    f"?part=liveStreamingDetails&id={source_id}&key={self.config.youtube_api_key}"
+                )
+                with urllib.request.urlopen(url, timeout=8) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                items = data.get("items") or []
+                if items:
+                    v = (items[0].get("liveStreamingDetails") or {}).get("concurrentViewers")
+                    return int(v) if v is not None else None
+        except Exception:
+            pass
+        return None
+
     def process_job(self, job: ProcessingJob) -> List[str]:
-        """Run bounded-window live monitoring using LiveHypePipeline."""
+        """Run continuous live monitoring using LiveHypePipeline until stream ends, target reached, or auto-switched."""
         with self.queue.db.transaction() as conn:
             src = conn.execute("SELECT * FROM discovered_sources WHERE id = ?", (job.source_pk,)).fetchone()
         if not src:
             raise PermanentError(f"Source row missing for live job {job.id}")
 
         from gaming_intelligence.live.pipeline import LiveHypePipeline
+
+        os.environ.setdefault("CLIPPING_PROFILE", "gaming")
+        os.environ.setdefault("TEMPLATE_LAYOUT", "stacked_top_cam")
+        os.environ.setdefault("STREAMER_CAM_POSITION", "top")
 
         buf_dir = self.config.temp_dir / "live_buffer" / job.id
         out_dir = self.config.temp_dir / "live_renders" / job.id
@@ -256,8 +279,51 @@ class LiveWorker:
             post_roll_sec=10.0,
         )
         pipe.detector.cooldown_sec = float(self.config.live_clip_cooldown_seconds)
+        target_clips = max(1, int(self.config.max_clips_per_source or 5))
+        auto_switch = os.environ.get("AUTOPILOT_AUTO_SWITCH", "1") in ("1", "true", "yes")
+        start_viewers = int(src["concurrent_viewers"] or 0) if "concurrent_viewers" in src.keys() else 0
+        peak_viewers = start_viewers
 
-        async def _run_bounded() -> None:
+        approved_clip_ids: List[str] = []
+        processed_job_ids = set()
+
+        def _register_completed_clips() -> None:
+            for cjob in list(pipe.completed_jobs):
+                if cjob.job_id in processed_job_ids or len(approved_clip_ids) >= target_clips:
+                    continue
+                processed_job_ids.add(cjob.job_id)
+                if not cjob.final_path or not Path(cjob.final_path).exists():
+                    continue
+                qres = self.quality.validate(cjob.final_path)
+                if not qres.passed:
+                    continue
+                start_t = float(getattr(cjob, "clip_start_time", 0.0) or 0.0)
+                end_t = float(getattr(cjob, "clip_end_time", 0.0) or (start_t + qres.duration_sec))
+                moment_id = self.queue.record_moment_if_unique(
+                    job_id=job.id,
+                    platform=job.platform,
+                    source_id=job.source_id,
+                    start_time=start_t,
+                    end_time=end_t,
+                    moment_score=float(getattr(cjob.event, "z_score", 0.0) or 0.0),
+                    reason="live_chat_hype",
+                )
+                if moment_id is None:
+                    continue
+                clip_id = self.storage.register_approved_clip(
+                    job_id=job.id,
+                    moment_id=moment_id,
+                    src_path=Path(cjob.final_path),
+                    duration_sec=qres.duration_sec,
+                    width=qres.width,
+                    height=qres.height,
+                    file_size_bytes=qres.file_size_bytes,
+                )
+                approved_clip_ids.append(clip_id)
+
+        async def _run_continuous() -> None:
+            nonlocal peak_viewers
+
             def _push_log(msg: str):
                 try:
                     import app as app_mod
@@ -268,24 +334,55 @@ class LiveWorker:
 
             try:
                 title = src["title"] if "title" in src.keys() else job.source_id
-                _push_log(f"📡 Connecting to live stream '{title}'...")
+                _push_log(f"📡 Connecting to live stream '{title}' (target: {target_clips} clips)...")
                 if job.platform == "twitch":
                     await pipe.start_twitch(src["channel_name"].lower(), stream_url=src["url"])
                 else:
                     await pipe.start_youtube(src["source_id"], api_key=self.config.youtube_api_key)
 
-                _push_log("⚡ Live hype detection active. Monitoring real-time chat bursts & superchats...")
-                window_sec = min(60.0, float(self.config.live_monitor_window_minutes * 60))
+                _push_log("⚡ Continuous live hype detection active. Monitoring chat bursts & superchats...")
+                max_window_sec = float(os.environ.get("LIVE_MAX_MONITOR_SECONDS", "0"))
                 elapsed = 0.0
                 check_interval = 2.0
                 last_logged = 0.0
-                while elapsed < window_sec:
-                    if pipe.completed_jobs and len(pipe.completed_jobs) >= 1:
-                        _push_log("🔥 Detected viral chat hype event! Processing vertical short...")
+                last_viewer_check = 0.0
+                last_clip_at = 0.0
+
+                while True:
+                    _register_completed_clips()
+                    if len(approved_clip_ids) >= target_clips:
+                        _push_log(f"🎯 Target {target_clips} clip(s) reached! Stopping live monitor cleanly.")
                         break
-                    if elapsed - last_logged >= 10.0:
-                        _push_log(f"👀 Live stream monitoring ({int(elapsed)}s / {int(window_sec)}s) · Chat burst detector listening...")
+                    if max_window_sec > 0 and elapsed >= max_window_sec:
+                        _push_log(f"⏱️ Monitor window ({int(max_window_sec)}s) completed.")
+                        break
+                    if pipe.completed_jobs:
+                        last_clip_at = elapsed
+
+                    if auto_switch and (elapsed - last_viewer_check) >= 90.0:
+                        last_viewer_check = elapsed
+                        cur_viewers = await asyncio.get_running_loop().run_in_executor(
+                            None, lambda: self._fetch_live_viewers(job.platform, job.source_id)
+                        )
+                        if cur_viewers is not None:
+                            if cur_viewers > peak_viewers:
+                                peak_viewers = cur_viewers
+                            dropped_from_peak = peak_viewers > 0 and cur_viewers < (peak_viewers * 0.55)
+                            dropped_from_start = start_viewers > 0 and cur_viewers < (start_viewers * 0.70)
+                            if (dropped_from_peak or dropped_from_start) and (elapsed - last_clip_at) >= 120.0:
+                                _push_log(
+                                    f"📉 Live viewership dropped ({cur_viewers} vs peak {peak_viewers}); "
+                                    "auto-switching to find a hotter stream."
+                                )
+                                break
+
+                    if elapsed - last_logged >= 15.0:
+                        _push_log(
+                            f"👀 Continuous live monitoring ({int(elapsed)}s) · "
+                            f"{len(approved_clip_ids)}/{target_clips} clip(s) cut..."
+                        )
                         last_logged = elapsed
+
                     await asyncio.sleep(check_interval)
                     elapsed += check_interval
             finally:
@@ -293,58 +390,22 @@ class LiveWorker:
                     await pipe.stop()
                 except Exception:
                     pass
+                _register_completed_clips()
 
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    pool.submit(asyncio.run, _run_bounded()).result()
+                    pool.submit(asyncio.run, _run_continuous()).result()
             else:
-                loop.run_until_complete(_run_bounded())
+                loop.run_until_complete(_run_continuous())
         except RuntimeError:
-            asyncio.run(_run_bounded())
+            asyncio.run(_run_continuous())
 
-        if not pipe.completed_jobs:
+        if not approved_clip_ids:
             raise RetryableError(f"No live hype clips captured during window for {job.source_id}")
 
         self.queue.transition_job(job.id, JobStatus.CLIPS_GENERATED)
-        approved_clip_ids: List[str] = []
-
-        for cjob in pipe.completed_jobs:
-            if len(approved_clip_ids) >= self.config.max_clips_per_source:
-                break
-            if not cjob.final_path or not Path(cjob.final_path).exists():
-                continue
-            qres = self.quality.validate(cjob.final_path)
-            if not qres.passed:
-                continue
-            start_t = float(getattr(cjob.event, "detected_at", 0.0) or 0.0)
-            end_t = start_t + qres.duration_sec
-            moment_id = self.queue.record_moment_if_unique(
-                job_id=job.id,
-                platform=job.platform,
-                source_id=job.source_id,
-                start_time=start_t,
-                end_time=end_t,
-                moment_score=float(getattr(cjob.event, "z_score", 0.0) or 0.0),
-                reason="live_chat_hype",
-            )
-            if moment_id is None:
-                continue
-            clip_id = self.storage.register_approved_clip(
-                job_id=job.id,
-                moment_id=moment_id,
-                src_path=Path(cjob.final_path),
-                duration_sec=qres.duration_sec,
-                width=qres.width,
-                height=qres.height,
-                file_size_bytes=qres.file_size_bytes,
-            )
-            approved_clip_ids.append(clip_id)
-
-        if not approved_clip_ids:
-            raise PermanentError(f"No valid live clips approved for job {job.id}")
-
         self.queue.transition_job(job.id, JobStatus.QUALITY_APPROVED)
         return approved_clip_ids

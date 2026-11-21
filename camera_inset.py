@@ -250,8 +250,8 @@ def detect(video_path, samples=10):
         cap.release()
 
     res = None
-    if len(boxes) >= max(3, samples // 3):
-        res = stable_box(boxes, frame_w, frame_h)
+    if len(boxes) >= max(2, samples // 4):
+        res = stable_box(boxes, frame_w, frame_h, min_agree=min(3, len(boxes)))
 
     if cache_key is not None:
         with _INSET_CACHE_LOCK:
@@ -458,9 +458,15 @@ def inset_filtergraph(orig_w, orig_h, out_w, out_h, box, camera_ratio=None, cam_
             screen_crop_x = max(0, min(screen_crop_x, x - screen_crop_w))
         screen_crop_x -= screen_crop_x % 2
 
+        cam_aspect_ok = abs((w / float(max(1, h))) - target_aspect) <= target_aspect * 0.05
+        cam_scale = (
+            f"scale={out_w}:{cam_h}"
+            if cam_aspect_ok
+            else f"scale={out_w}:{cam_h}:force_original_aspect_ratio=increase,crop={out_w}:{cam_h}"
+        )
         base_graph = (
             f"[0:v]split=2[sa][ca];"
-            f"[ca]crop=w={w}:h={h}:x={x}:y={y},scale={out_w}:{cam_h}[cam];"
+            f"[ca]crop=w={w}:h={h}:x={x}:y={y},{cam_scale}[cam];"
             f"[sa]crop=w={screen_crop_w}:h={orig_h}:x={screen_crop_x}:y=0,scale={out_w}:{screen_h}[screen];"
             f"[cam][screen]vstack"
         )
